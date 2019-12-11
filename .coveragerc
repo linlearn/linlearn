@@ -1,0 +1,8 @@
+[run]
+branch = True
+source = linlearn
+include = */linlearn/*
+
+[report]
+exclude_lines =
+    if verbose
