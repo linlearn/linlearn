@@ -39,6 +39,7 @@ specs = [
     ('fit_intercept', boolean),
     ('X', float64[:, ::1]),
     ('y', float64[::1]),
+    ('sample_weight', float64[::1]),
     ('n_samples', int64),
     ('n_features', int64),
     ('is_set', boolean)
@@ -50,10 +51,11 @@ class LogisticNoPython(object):
         self.fit_intercept = fit_intercept
         self.is_set = False
 
-    def set(self, X, y):
+    def set(self, X, y, sample_weight):
         self.n_samples, self.n_features = X.shape
         self.X = X
         self.y = y
+        self.sample_weight = sample_weight
         self.is_set = True
         return self
 
