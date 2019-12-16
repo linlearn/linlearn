@@ -102,7 +102,6 @@ class TestProx(object):
         assert strength * np.abs(w[3:8]).sum() == approx(prox.value(w))
         assert out == approx(prox.call(w, step=step))
 
-
     @staticmethod
     def strength(Prox):
         with pytest.raises(TypeError):
@@ -125,7 +124,7 @@ class TestProx(object):
 
         with pytest.raises(ValueError, match="'strength' must be of "
                                              "float type"):
-            prox = Prox(1)
+            Prox(1)
 
         with pytest.raises(ValueError, match="'strength' must be of "
                                              "float type"):
@@ -134,7 +133,7 @@ class TestProx(object):
 
         with pytest.raises(ValueError, match="'strength' must be "
                                              "non-negative"):
-            prox = Prox(-1.0)
+            Prox(-1.0)
 
         with pytest.raises(ValueError, match="'strength' must be "
                                              "non-negative"):
@@ -168,7 +167,7 @@ class TestProx(object):
 
         with pytest.raises(ValueError, match="'start_end' must be a tuple with "
                                              "2 elements"):
-            prox = Prox(strength, 1)
+            Prox(strength, 1)
 
         with pytest.raises(ValueError, match="'start_end' must be a tuple with "
                                              "2 elements"):
@@ -177,7 +176,7 @@ class TestProx(object):
 
         with pytest.raises(ValueError, match="'start_end' must be a tuple with "
                                              "2 elements"):
-            prox = Prox(strength, [1])
+            Prox(strength, [1])
 
         with pytest.raises(ValueError, match="'start_end' must be a tuple with "
                                              "2 elements"):
@@ -186,7 +185,7 @@ class TestProx(object):
 
         with pytest.raises(ValueError, match="'start_end' must be a tuple with "
                                              "2 elements"):
-            prox = Prox(strength, (1,))
+            Prox(strength, (1,))
 
         with pytest.raises(ValueError, match="'start_end' must be a tuple with "
                                              "2 elements"):
@@ -195,7 +194,7 @@ class TestProx(object):
 
         with pytest.raises(ValueError, match="'start_end' must be a tuple with "
                                              "2 elements"):
-            prox = Prox(strength, (1, 2, 3))
+            Prox(strength, (1, 2, 3))
 
         with pytest.raises(ValueError, match="'start_end' must be a tuple with "
                                              "2 elements"):
@@ -204,7 +203,7 @@ class TestProx(object):
 
         with pytest.raises(ValueError, match="'start_end' tuple must contain "
                                              "integers"):
-            prox = Prox(strength, (1.0, 2.0))
+            Prox(strength, (1.0, 2.0))
 
         with pytest.raises(ValueError, match="'start_end' tuple must contain "
                                              "integers"):
@@ -213,7 +212,7 @@ class TestProx(object):
 
         with pytest.raises(ValueError, match="'start_end' tuple must contain "
                                              "integers"):
-            prox = Prox(strength, (1.0, 2))
+            Prox(strength, (1.0, 2))
 
         with pytest.raises(ValueError, match="'start_end' tuple must contain "
                                              "integers"):
@@ -222,7 +221,7 @@ class TestProx(object):
 
         with pytest.raises(ValueError, match="'start_end' tuple must contain "
                                              "integers"):
-            prox = Prox(strength, (1, 2.0))
+            Prox(strength, (1, 2.0))
 
         with pytest.raises(ValueError, match="'start_end' tuple must contain "
                                              "integers"):
@@ -243,7 +242,7 @@ class TestProx(object):
 
         with pytest.raises(ValueError, match="'positive' must be of boolean "
                                              "type"):
-            prox = Prox(strength, positive=1)
+            Prox(strength, positive=1)
 
         with pytest.raises(ValueError, match="'positive' must be of boolean "
                                              "type"):

@@ -23,7 +23,10 @@ def inner_prods(X, fit_intercept, w, out):
 @njit
 def loss_sample(model, i, w):
     z = inner_prod(model.X, model.fit_intercept, i, w)
-    return model.value(model.y[i], z)
+    if model.sample_weight.size == 0:
+        return model.value(model.y[i], z)
+    else:
+        return model.sample_weight[i] * model.value(model.y[i], z)
 
 
 @njit
@@ -34,15 +37,23 @@ def loss_batch(model, w):
     Xw = np.empty(n_samples)
     # TODO: inner_prods or for loop ? No need for Xw
     Xw = inner_prods(model.X, model.fit_intercept, w, Xw)
-    for i in range(n_samples):
-        out += model.loss(model.y[i], Xw[i]) / n_samples
+    if model.sample_weight.size == 0:
+        for i in range(n_samples):
+            out += model.loss(model.y[i], Xw[i]) / n_samples
+    else:
+        for i in range(n_samples):
+            out += model.sample_weight[i] * model.loss(model.y[i], Xw[i]) \
+                   / n_samples
     return out
 
 
 @njit
 def grad_sample_coef(model, i, w):
     z = inner_prod(model.X, model.fit_intercept, i, w)
-    return model.derivative(model.y[i], z)
+    if model.sample_weight.size == 0:
+        return model.derivative(model.y[i], z)
+    else:
+        return model.sample_weight[i] * model.derivative(model.y[i], z)
 
 
 @njit
@@ -77,9 +88,14 @@ class Model(object):
         self.no_python = no_python_class(fit_intercept)
         self.fit_intercept = fit_intercept
 
-    def set(self, X, y):
+    def set(self, X, y, sample_weight=None):
         # TODO: here all the checks about X and y : C-order and contiguous, etc.
-        self.no_python.set(X, y)
+        if sample_weight is None:
+            sample_weight = np.empty(0)
+        else:
+            # TODO: all checks for sample_weight
+            pass
+        self.no_python.set(X, y, sample_weight)
         return self
 
     @property

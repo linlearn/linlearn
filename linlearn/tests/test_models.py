@@ -1,4 +1,5 @@
 import numpy as np
+from itertools import product
 from numpy.random.mtrand import multivariate_normal
 from scipy.optimize import check_grad
 from scipy.linalg import toeplitz
@@ -70,16 +71,25 @@ class TestModel(object):
         else:
             return np.random.randn(n_features)
 
-    def test_least_squares_loss_and_grad(self):
+    @staticmethod
+    def loss_and_grad_match(Model, simulation_method):
+        """A generic method to test that loss and grad match in a model"""
         np.random.seed(42)
         n_samples = 200
         n_features = 5
-        for fit_intercept in [False, True]:
+        sample_weights = [
+            None,
+            np.linspace(0, n_samples-1, num=n_samples, dtype=np.float64)
+        ]
+
+        # Test that for any combinations loss and grad match
+        for fit_intercept, sample_weight in product([False, True],
+                                                    sample_weights):
             coef, intercept = TestModel.get_coef_intercept(n_features,
                                                            fit_intercept)
-            X, y = TestModel.simulate_lin_reg(n_samples, coef, intercept)
-            w = self.get_weights(n_features, fit_intercept)
-            model = LeastSquares(fit_intercept=fit_intercept).set(X, y)
+            X, y = simulation_method(n_samples, coef, intercept)
+            w = TestModel.get_weights(n_features, fit_intercept)
+            model = Model(fit_intercept=fit_intercept).set(X, y)
 
             def f(w):
                 return model.no_python.loss_batch(w)
@@ -91,26 +101,38 @@ class TestModel(object):
 
             assert check_grad(f, f_prime, w) < 1e-6
 
-    def test_logistic_loss_and_grad(self):
-        np.random.seed(42)
-        n_samples = 200
-        n_features = 5
+        def approx(v):
+            return pytest.approx(v, abs=1e-15)
+
+        # Test that loss and grad match for no weights given and weights equal
+        # to one
         for fit_intercept in [False, True]:
             coef, intercept = TestModel.get_coef_intercept(n_features,
                                                            fit_intercept)
-            X, y = TestModel.simulate_log_reg(n_samples, coef, intercept)
-            w = self.get_weights(n_features, fit_intercept)
-            model = Logistic(fit_intercept=fit_intercept).set(X, y)
+            X, y = simulation_method(n_samples, coef, intercept)
+            w = TestModel.get_weights(n_features, fit_intercept)
+            model1 = Model(fit_intercept=fit_intercept).set(X, y)
+            sample_weight = np.ones(n_samples, dtype=np.float64)
+            model2 = Model(fit_intercept=fit_intercept).set(X, y, sample_weight)
+            w = TestModel.get_weights(n_features, fit_intercept)
 
-            def f(w):
-                return model.no_python.loss_batch(w)
+            assert model1.no_python.loss_batch(w) == \
+                   approx(model2.no_python.loss_batch(w))
 
-            def f_prime(w):
-                out = np.empty(w.shape)
-                model.no_python.grad_batch(w, out)
-                return out
+            out1 = np.empty(w.shape)
+            out2 = np.empty(w.shape)
+            model1.no_python.grad_batch(w, out1)
+            model2.no_python.grad_batch(w, out2)
+            assert out1 == approx(out2)
 
-            assert check_grad(f, f_prime, w) < 1e-6
+        # TODO: test many more things here: sample_weight must be >= 0 ?
+        # TODO: hand-computed loss and grad with weights match the coded one ?
+
+    def test_least_squares_loss_and_grad_match(self):
+        TestModel.loss_and_grad_match(LeastSquares, TestModel.simulate_lin_reg)
+
+    def test_logistic_loss_and_grad_match(self):
+        TestModel.loss_and_grad_match(Logistic, TestModel.simulate_log_reg)
 
     @staticmethod
     def fit_intercept(Model):
@@ -130,7 +152,7 @@ class TestModel(object):
 
         with pytest.raises(ValueError, match="'fit_intercept' must be of "
                                              "boolean type"):
-            model = Model(1)
+            Model(1)
 
         with pytest.raises(ValueError, match="'fit_intercept' must be of "
                                              "boolean type"):
