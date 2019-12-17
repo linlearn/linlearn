@@ -2,7 +2,7 @@ from math import exp, log
 from numba import njit, jitclass, vectorize
 from numba.types import int64, float64, boolean
 from linlearn.model.model import Model
-from linlearn.model.model import loss_batch, grad_batch, grad_sample_coef
+from linlearn.model.utils import loss_batch, grad_batch, grad_sample_coef
 
 
 @njit(fastmath=True)
