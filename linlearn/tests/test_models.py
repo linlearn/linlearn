@@ -125,9 +125,6 @@ class TestModel(object):
             model2.no_python.grad_batch(w, out2)
             assert out1 == approx(out2)
 
-        # TODO: test many more things here: sample_weight must be >= 0 ?
-        # TODO: hand-computed loss and grad with weights match the coded one ?
-
     def test_least_squares_loss_and_grad_match(self):
         TestModel.loss_and_grad_match(LeastSquares, TestModel.simulate_lin_reg)
 
@@ -172,21 +169,106 @@ class TestModel(object):
                                            "n_samples=None, n_features=None)"
 
         X = np.zeros((42, 3))
-        y = np.zeros(3)
+        y = np.zeros(42)
 
         model = Model().set(X, y)
         assert repr(model) == class_name + "(fit_intercept=True, " \
                                            "n_samples=42, n_features=3)"
-        # TODO: test error if X.shape[0] != y.shape[0]
-        # TODO: test error if not C continuous and all...
 
     @staticmethod
     def set(Model):
+        # First, we check that no copy is performed when not required
         np.random.seed(42)
-        X = np.random.randn(42, 3)
-        y = np.random.randn(3)
+        X = np.zeros((42, 3), dtype=np.float64)
+        y = np.zeros(42, dtype=np.float64)
         model = Model().set(X, y)
         assert model.X is X and model.y is y
         assert model.no_python.X is X and model.no_python.y is y
         assert model.is_set is True
         assert model.no_python.is_set is True
+
+        X = np.zeros((42, 3))
+        y = np.zeros((41, ))
+        with pytest.raises(ValueError) as exc_info:
+            Model().set(X, y)
+        assert exc_info.type is ValueError
+        assert exc_info.value.args[0] == "Found input variables with " \
+                                         "inconsistent numbers of " \
+                                         "samples: [42, 41]"
+
+        X = np.zeros((42, 3))
+        y = np.zeros((42, 2))
+        with pytest.raises(ValueError) as exc_info:
+            Model().set(X, y)
+        assert exc_info.type is ValueError
+        assert exc_info.value.args[0] == "bad input shape (42, 2)"
+
+        X = np.zeros((42, 3))
+        X[0, 0] = np.nan
+        y = np.zeros(42,)
+        with pytest.raises(ValueError) as exc_info:
+            Model().set(X, y)
+        assert exc_info.type is ValueError
+        assert exc_info.value.args[0] == "Input contains NaN, infinity or a " \
+                                         "value too large for dtype('float64')."
+
+        X = np.zeros((42, 3))
+        y = np.zeros(42,)
+        y[0] = np.nan
+        with pytest.raises(ValueError) as exc_info:
+            Model().set(X, y)
+        assert exc_info.type is ValueError
+        assert exc_info.value.args[0] == "Input contains NaN, infinity or a " \
+                                         "value too large for dtype('float64')."
+
+        X = np.zeros((42, 3))
+        y = np.zeros((42, ))
+        sample_weight = np.zeros(41)
+        with pytest.raises(ValueError) as exc_info:
+            Model().set(X, y, sample_weight)
+        assert exc_info.type is ValueError
+        assert exc_info.value.args[0] == "sample_weight.shape == (41,), " \
+                                         "expected (42,)!"
+
+        X = np.zeros((42, 3))
+        y = np.zeros((42, ))
+        sample_weight = np.zeros(42)
+        sample_weight[0] = np.nan
+        with pytest.raises(ValueError) as exc_info:
+            Model().set(X, y, sample_weight)
+        assert exc_info.type is ValueError
+        assert exc_info.value.args[0] == "Input contains NaN, infinity or a " \
+                                         "value too large for dtype('float64')."
+
+        X = np.random.binomial(1, 0.5, size=(42, 3))
+        y = np.zeros((42,), dtype=np.int64)
+        ls = Model(fit_intercept=True).set(X, y)
+        assert ls.X.dtype == 'float64'
+        assert ls.y.dtype == 'float64'
+
+        X = np.zeros((42, 3), dtype=np.float32)
+        y = np.zeros((42,), dtype=np.int64)
+        ls = Model(fit_intercept=True).set(X, y)
+        assert ls.X.dtype == 'float64'
+        assert ls.y.dtype == 'float64'
+
+        X = np.zeros((42, 3), dtype=np.float32)
+        y = np.array(21 * ['boo'] + 21 * ['baa'])
+        with pytest.raises(ValueError) as exc_info:
+            Model().set(X, y)
+        assert exc_info.type is ValueError
+        assert exc_info.value.args[0] == "could not convert string to float: " \
+                                         "'boo'"
+
+        X = np.array(42 * 3 * ['boo']).reshape(42, 3)
+        y = np.zeros((42,), dtype=np.int64)
+        with pytest.raises(ValueError) as exc_info:
+            Model().set(X, y)
+        assert exc_info.type is ValueError
+        assert exc_info.value.args[0] == "could not convert string to float: " \
+                                         "'boo'"
+
+        X = np.zeros((42, 3))
+        y = np.zeros((42, 1))
+        model = Model().set(X, y)
+        assert model.y.shape == (42,)

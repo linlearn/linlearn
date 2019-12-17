@@ -106,12 +106,14 @@ class Prox(object):
             raise ValueError("'positive' must be of boolean type")
 
     def call(self, w, step, out=None):
+        # TODO: checks on w, step and out
         if out is None:
             out = np.empty(w.shape[0])
         self.no_python.call(w, step, out)
         return out
 
     def value(self, w):
+        # TODO: checks on w
         return self.no_python.value(w)
 
     def __repr__(self):

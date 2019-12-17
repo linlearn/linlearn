@@ -1,4 +1,5 @@
 import numpy as np
+from linlearn.utils import check_X_y, _check_sample_weight
 from numba import njit
 
 
@@ -89,11 +90,25 @@ class Model(object):
         self.fit_intercept = fit_intercept
 
     def set(self, X, y, sample_weight=None):
-        # TODO: here all the checks about X and y : C-order and contiguous, etc.
+        estimator = self.__class__.__name__
+
+        X, y = check_X_y(
+            X, y, accept_sparse=False, accept_large_sparse=True,
+            dtype=['float64'], order='C', copy=False, force_all_finite=True,
+            ensure_2d=True, allow_nd=False, multi_output=False,
+            ensure_min_samples=1, ensure_min_features=1, y_numeric=True,
+            estimator=estimator)
+
+        # For now, we must ensure that dtype of labels if float64
+        if y.dtype != 'float64':
+            y = y.astype(np.float64)
+
         if sample_weight is None:
-            sample_weight = np.empty(0)
+            # Use an empty np.array if no sample_weight is used
+            sample_weight = np.empty(0, dtype=np.float64)
         else:
-            # TODO: all checks for sample_weight
+            sample_weight = _check_sample_weight(sample_weight, X,
+                                                 dtype=np.float64)
             pass
         self.no_python.set(X, y, sample_weight)
         return self
