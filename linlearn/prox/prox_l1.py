@@ -1,7 +1,8 @@
 from math import fabs
 from numba import jitclass
 from numba.types import int64, float64, boolean
-from linlearn.prox.prox import Prox, call_with_single, value_with_single
+from linlearn.prox.prox import Prox
+from linlearn.prox.utils import call_with_single, value_with_single
 
 
 specs = [
