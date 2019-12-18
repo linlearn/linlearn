@@ -75,9 +75,10 @@ class SVRG(object):
         # labels = self.labels
         # loss = self.loss
         step = self.step
-        #   history.update(obj, 0.)
 
-        for epoch in range(self.max_iter):
+        history.update(epoch=0, obj=obj, step=step, tol=0., update_bar=False)
+
+        for epoch in range(1, self.max_iter + 1):
             # At the beginning of each epoch we compute the full gradient
             # TODO: veriifer que c'est bien le cas... qu'il ne faut pas le
             #  faire a la fin de l'epoque
@@ -94,8 +95,10 @@ class SVRG(object):
             svrg_epoch(model, prox, w, w_old, gradient_memory, step, indices)
 
             obj = model.loss_batch(w) + prox.value(w)
-            history.update(obj, 0.)
+            history.update(epoch=epoch, obj=obj, step=step, tol=0.,
+                           update_bar=True)
 
+        history.close_bar()
         return w
 
     # @property
