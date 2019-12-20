@@ -39,6 +39,8 @@ class History(object):
                          "/ {total_fmt} , elapsed: {elapsed_s:3.1f}s {postfix}"
             self.bar = trange(max_iter, desc=title, unit=' epoch ',
                               leave=True, bar_format=bar_format)
+        else:
+            self.bar = None
 
     def update(self, update_bar=True, **kwargs):
         # Total number of calls to update must be smaller than max_iter + 1
@@ -77,7 +79,8 @@ class History(object):
             self.bar.update(1)
 
     def close_bar(self):
-        self.bar.close()
+        if self.bar is not None:
+            self.bar.close()
 
     def clear(self):
         """Reset history values"""
