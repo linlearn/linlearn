@@ -17,10 +17,7 @@ from time import sleep
 
 np.set_printoptions(precision=2)
 
-
-
-
-n_samples = 1_000
+n_samples = 10_000
 epoch_size = n_samples
 n_features = 50
 fit_intercept = True
@@ -63,18 +60,15 @@ svrg = SVRG(step=step, verbose=True).set(model=model, prox=prox)
 
 svrg.solve(w)
 
-print(svrg.history.values)
 
-sleep(1)
-
-svrg.history.print()
-
-if fit_intercept:
-    print(intercept0, coef0)
-    print(w)
-else:
-    print(coef0)
-    print(w)
+# svrg.history.print()
+#
+# if fit_intercept:
+#     print(intercept0, coef0)
+#     print(w)
+# else:
+#     print(coef0)
+#     print(w)
 
 
 
