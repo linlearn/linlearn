@@ -13,11 +13,13 @@ from linlearn.model import LeastSquares
 from linlearn.prox import ProxL2Sq
 from linlearn.solver import SVRG, History
 
+from linlearn.plot import plot_history
+
 from time import sleep
 
 np.set_printoptions(precision=2)
 
-n_samples = 10_000
+n_samples = 1_000
 epoch_size = n_samples
 n_features = 50
 fit_intercept = True
@@ -34,9 +36,9 @@ if fit_intercept:
     y += intercept0
 
 if fit_intercept:
-    w = np.zeros(n_features + 1)
+    w_start = np.zeros(n_features + 1)
 else:
-    w = np.zeros(n_features)
+    w_start = np.zeros(n_features)
 
 if fit_intercept:
     lip_max = (X ** 2).sum(axis=1).max() + 1
@@ -45,21 +47,39 @@ else:
 
 # print("shape: ", (X ** 2).sum(axis=1).shape)
 
-step = 1 / lip_max
-
-print("step: ", step)
-
+steps = [0.5 / lip_max, 1. / lip_max, 2. / lip_max]
 
 model = LeastSquares(fit_intercept).set(X, y)
-
 prox = ProxL2Sq(strength=0.)
-
 max_epochs = 10
 
-svrg = SVRG(step=step, verbose=True).set(model=model, prox=prox)
+solver = SVRG(step=steps[1], verbose=False, max_iter=200)\
+    .set(model=model, prox=prox)
+w = w_start.copy()
+w = solver.solve(w)
+obj_opt = model.loss(w) + prox.value(w)
 
-svrg.solve(w)
 
+solvers = [
+    SVRG(step=step, verbose=False).set(model=model, prox=prox)
+    for step in steps
+]
+
+for solver in solvers:
+    w = w_start.copy()
+    solver.solve(w)
+
+labels = ['SVRG(0.5/Lmax)', 'SVRG(1/Lmax)', 'SVRG(2/Lmax)']
+
+plot_history(solvers, x='epoch', y='obj', labels=labels, rendering='bokeh',
+             log_scale=True, dist_min=obj_opt)
+
+
+
+# print(svrg.history.values)
+#
+# sleep(1)
+#
 
 # svrg.history.print()
 #

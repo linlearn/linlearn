@@ -32,6 +32,9 @@ class Model(object):
         self.no_python.set(X, y, sample_weight)
         return self
 
+    def loss(self, w):
+        return self.no_python.loss_batch(w)
+
     @property
     def is_set(self):
         return self.no_python.is_set
