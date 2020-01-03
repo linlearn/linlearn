@@ -3,7 +3,7 @@ from numba import njit, jitclass, vectorize
 from numba.types import int64, float64, boolean
 from linlearn.model.model import Model
 from linlearn.model.utils import loss_batch, grad_batch, grad_sample_coef, \
-    row_norm
+    row_squared_norm
 
 
 @njit(fastmath=True)
@@ -83,7 +83,7 @@ class Logistic(Model):
 
     def _compute_lips(self):
         if self.sample_weight is None:
-            self._lips = row_norm(self)
+            self._lips = row_squared_norm(self)
         else:
-            self._lips = self.sample_weight * row_norm(self)
+            self._lips = self.sample_weight * row_squared_norm(self)
         self._lips /= 4

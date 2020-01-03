@@ -68,6 +68,27 @@ def grad_sample(model, i, w, out):
 
 
 @njit
+def grad_coordinate(model, j, inner_products):
+    grad = 0.
+    # TODO: parallel ?
+    if model.fit_intercept:
+        if j == 0:
+            # In this case it's the derivative w.r.t the intercept
+            for i in range(model.n_samples):
+                grad += model.derivative(model.y[i], inner_products[i])
+        else:
+            for i in range(model.n_samples):
+                grad += model.X[i, j - 1] * model.derivative(model.y[i],
+                                                             inner_products[i])
+    else:
+        # There is no intercept
+        for i in range(model.n_samples):
+            grad += model.X[i, j] * model.derivative(model.y[i],
+                                                     inner_products[i])
+    return grad / model.n_samples
+
+
+@njit
 def grad_batch(model, w, out):
     out.fill(0)
     if model.fit_intercept:
@@ -95,6 +116,29 @@ def row_squared_norm_dense(model):
     return norms_squared
 
 
-def row_norm(model):
+def row_squared_norm(model):
     # TODO: for C and F order with aliasing
     return row_squared_norm_dense(model.no_python)
+
+
+@njit(parallel=True)
+def col_squared_norm_dense(model):
+    n_samples, n_features = model.X.shape
+    if model.fit_intercept:
+        norms_squared = np.zeros(n_features + 1, dtype=model.X.dtype)
+        # First squared norm is n_samples
+        norms_squared[0] = n_samples
+        for j in prange(1, n_features + 1):
+            for i in range(n_samples):
+                norms_squared[j] += model.X[i, j - 1] * model.X[i, j - 1]
+    else:
+        norms_squared = np.zeros(n_features, dtype=model.X.dtype)
+        for j in prange(n_features):
+            for i in range(n_samples):
+                norms_squared[j] += model.X[i, j] * model.X[i, j]
+    return norms_squared
+
+
+def col_squared_norm(model):
+    # TODO: for C and F order with aliasing
+    return col_squared_norm_dense(model.no_python)
