@@ -9,10 +9,89 @@ from linlearn.model import LeastSquares, Logistic
 from linlearn.model.logistic import sigmoid
 
 
+# TODO: test stuff for lip lip_max lip_mean
+
+
+def approx(v, abs=1e-15):
+    return pytest.approx(v, abs)
+
+
+def get_coef_intercept(n_features, fit_intercept):
+    coef = np.random.randn(n_features)
+    if fit_intercept:
+        intercept = np.random.randn(1)
+    else:
+        intercept = None
+    return coef, intercept
+
+
+def get_weights(n_features, fit_intercept):
+    if fit_intercept:
+        return np.random.randn(n_features + 1)
+    else:
+        return np.random.randn(n_features)
+
+
+def simulate_log_reg(n_samples, coef0, intercept0=None):
+    n_features = coef0.shape[0]
+    cov = toeplitz(0.5 ** np.arange(0, n_features))
+    X = multivariate_normal(np.zeros(n_features), cov, size=n_samples)
+    logits = X.dot(coef0)
+    if intercept0 is not None:
+        logits += intercept0
+    p = sigmoid(logits)
+    y = np.random.binomial(1, p, size=n_samples).astype('float64')
+    y[:] = 2 * y - 1
+    return X, y
+
+
+def simulate_lin_reg(n_samples, coef0, intercept0=None):
+    n_features = coef0.shape[0]
+    cov = toeplitz(0.5 ** np.arange(0, n_features))
+    X = multivariate_normal(np.zeros(n_features), cov, size=n_samples)
+    y = X.dot(coef0) + 0.1 * np.random.randn(n_samples)
+    if intercept0 is not None:
+        y += intercept0
+    return X, y
+
+
+def lips_lin_reg(X, fit_intercept, sample_weight=None):
+    if fit_intercept:
+        lips = (X ** 2).sum(axis=1) + 1
+    else:
+        lips = (X ** 2).sum(axis=1)
+    if sample_weight is None:
+        return lips
+    else:
+        return sample_weight * lips
+
+
+def lips_log_reg(X, fit_intercept, sample_weight=None):
+    if fit_intercept:
+        lips = ((X ** 2).sum(axis=1) + 1) / 4
+    else:
+        lips = (X ** 2).sum(axis=1) / 4
+    if sample_weight is None:
+        return lips
+    else:
+        return sample_weight * lips
+
+
 class TestModel(object):
 
     model_classes = [
-        LeastSquares, Logistic
+        LeastSquares,
+        Logistic
+    ]
+
+    simulation_methods = [
+        simulate_lin_reg,
+        simulate_log_reg
+    ]
+
+    lips_methods = [
+        lips_lin_reg,
+        lips_log_reg
     ]
 
     w = np.array([
@@ -32,44 +111,16 @@ class TestModel(object):
         for Model in self.model_classes:
             TestModel.set(Model)
 
-    @staticmethod
-    def get_coef_intercept(n_features, fit_intercept):
-        coef = np.random.randn(n_features)
-        if fit_intercept:
-            intercept = np.random.randn(1)
-        else:
-            intercept = None
-        return coef, intercept
+    def test_loss_and_grad_match(self):
+        for Model, simulation_method in zip(self.model_classes,
+                                            self.simulation_methods):
+            TestModel.loss_and_grad_match(Model, simulation_method)
 
-    @staticmethod
-    def simulate_log_reg(n_samples, coef0, intercept0=None):
-        n_features = coef0.shape[0]
-        cov = toeplitz(0.5 ** np.arange(0, n_features))
-        X = multivariate_normal(np.zeros(n_features), cov, size=n_samples)
-        logits = X.dot(coef0)
-        if intercept0 is not None:
-            logits += intercept0
-        p = sigmoid(logits)
-        y = np.random.binomial(1, p, size=n_samples).astype('float64')
-        y[:] = 2 * y - 1
-        return X, y
-
-    @staticmethod
-    def simulate_lin_reg(n_samples, coef0, intercept0=None):
-        n_features = coef0.shape[0]
-        cov = toeplitz(0.5 ** np.arange(0, n_features))
-        X = multivariate_normal(np.zeros(n_features), cov, size=n_samples)
-        y = X.dot(coef0) + 0.1 * np.random.randn(n_samples)
-        if intercept0 is not None:
-            y += intercept0
-        return X, y
-
-    @staticmethod
-    def get_weights(n_features, fit_intercept):
-        if fit_intercept:
-            return np.random.randn(n_features + 1)
-        else:
-            return np.random.randn(n_features)
+    def test_lips(self):
+        for Model, simulation_method, lips_method in \
+                zip(self.model_classes, self.simulation_methods,
+                    self.lips_methods):
+            TestModel.lips(Model, simulation_method, lips_method)
 
     @staticmethod
     def loss_and_grad_match(Model, simulation_method):
@@ -85,10 +136,9 @@ class TestModel(object):
         # Test that for any combinations loss and grad match
         for fit_intercept, sample_weight in product([False, True],
                                                     sample_weights):
-            coef, intercept = TestModel.get_coef_intercept(n_features,
-                                                           fit_intercept)
+            coef, intercept = get_coef_intercept(n_features, fit_intercept)
             X, y = simulation_method(n_samples, coef, intercept)
-            w = TestModel.get_weights(n_features, fit_intercept)
+            w = get_weights(n_features, fit_intercept)
             model = Model(fit_intercept=fit_intercept).set(X, y)
 
             def f(w):
@@ -101,20 +151,16 @@ class TestModel(object):
 
             assert check_grad(f, f_prime, w) < 1e-6
 
-        def approx(v):
-            return pytest.approx(v, abs=1e-15)
-
         # Test that loss and grad match for no weights given and weights equal
         # to one
         for fit_intercept in [False, True]:
-            coef, intercept = TestModel.get_coef_intercept(n_features,
-                                                           fit_intercept)
+            coef, intercept = get_coef_intercept(n_features, fit_intercept)
             X, y = simulation_method(n_samples, coef, intercept)
-            w = TestModel.get_weights(n_features, fit_intercept)
+            w = get_weights(n_features, fit_intercept)
             model1 = Model(fit_intercept=fit_intercept).set(X, y)
             sample_weight = np.ones(n_samples, dtype=np.float64)
             model2 = Model(fit_intercept=fit_intercept).set(X, y, sample_weight)
-            w = TestModel.get_weights(n_features, fit_intercept)
+            w = get_weights(n_features, fit_intercept)
 
             assert model1.no_python.loss_batch(w) == \
                    approx(model2.no_python.loss_batch(w))
@@ -124,12 +170,6 @@ class TestModel(object):
             model1.no_python.grad_batch(w, out1)
             model2.no_python.grad_batch(w, out2)
             assert out1 == approx(out2)
-
-    def test_least_squares_loss_and_grad_match(self):
-        TestModel.loss_and_grad_match(LeastSquares, TestModel.simulate_lin_reg)
-
-    def test_logistic_loss_and_grad_match(self):
-        TestModel.loss_and_grad_match(Logistic, TestModel.simulate_log_reg)
 
     @staticmethod
     def fit_intercept(Model):
@@ -272,3 +312,64 @@ class TestModel(object):
         y = np.zeros((42, 1))
         model = Model().set(X, y)
         assert model.y.shape == (42,)
+
+    @staticmethod
+    def lips(Model, simulation_method, lips_method):
+        model = Model()
+        assert model._lips is None
+        assert model._lip_max is None
+        assert model._lip_mean is None
+
+        with pytest.raises(RuntimeError) as exc_info:
+            model.lips
+        assert exc_info.type is RuntimeError
+        assert exc_info.value.args[0] == "You must use 'set' before using " \
+                                         "'lips'"
+
+        with pytest.raises(RuntimeError) as exc_info:
+            model.lip_max
+        assert exc_info.type is RuntimeError
+        assert exc_info.value.args[0] == "You must use 'set' before using " \
+                                         "'lip_max'"
+
+        with pytest.raises(RuntimeError) as exc_info:
+            model.lip_mean
+        assert exc_info.type is RuntimeError
+        assert exc_info.value.args[0] == "You must use 'set' before using " \
+                                         "'lip_mean'"
+
+        np.random.seed(42)
+        n_samples = 200
+        n_features = 5
+        sample_weights = [
+            None,
+            np.linspace(0, n_samples-1, num=n_samples, dtype=np.float64)
+        ]
+
+        for fit_intercept, sample_weight in \
+                product([False, True], sample_weights):
+            coef, intercept = get_coef_intercept(n_features, fit_intercept)
+            X, y = simulation_method(n_samples, coef, intercept)
+            model = Model(fit_intercept=fit_intercept)
+            assert model._lips is None
+            assert model._lip_max is None
+            assert model._lip_mean is None
+
+            model = model.set(X, y, sample_weight)
+            assert model.lips == approx(lips_method(X, fit_intercept,
+                                                    sample_weight))
+            # Next line checks that model.lips is not recomputed
+            # (numpy array is the same instance)
+            lips1 = model.lips
+            assert model.lips is lips1
+
+            X, y = simulation_method(n_samples, coef, intercept)
+            model.set(X, y, sample_weight)
+            # Check that lipschitz constants are recomputed after calling set
+            # again
+            assert model._lips is None
+            assert model._lip_max is None
+            assert model._lip_mean is None
+            assert model.lips is not lips1
+            assert model.lips == approx(lips_method(X, fit_intercept,
+                                                    sample_weight))

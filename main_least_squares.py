@@ -47,23 +47,23 @@ else:
 
 # print("shape: ", (X ** 2).sum(axis=1).shape)
 
-steps = [0.5 / lip_max, 1. / lip_max, 2. / lip_max]
+print('lip_max: ', lip_max)
+
+step = 1 / lip_max
 
 model = LeastSquares(fit_intercept).set(X, y)
 prox = ProxL2Sq(strength=0.)
 max_epochs = 10
 
-solver = SVRG(step=steps[1], verbose=False, max_iter=200)\
-    .set(model=model, prox=prox)
-w = w_start.copy()
-w = solver.solve(w)
-obj_opt = model.loss(w) + prox.value(w)
+model = LeastSquares(fit_intercept).set(X, y)
+
+print('lip_max: ', model.lip_max)
 
 
-solvers = [
-    SVRG(step=step, verbose=False).set(model=model, prox=prox)
-    for step in steps
-]
+exit(0)
+
+
+prox = ProxL2Sq(strength=0.)
 
 for solver in solvers:
     w = w_start.copy()

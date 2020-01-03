@@ -1,5 +1,5 @@
 import numpy as np
-from numba import njit
+from numba import njit, prange
 
 
 @njit
@@ -80,3 +80,21 @@ def grad_batch(model, w, out):
             c = grad_sample_coef(model, i, w) / model.n_samples
             out[:] += c * model.X[i]
     return out
+
+
+@njit(parallel=True)
+def row_squared_norm_dense(model):
+    n_samples, n_features = model.X.shape
+    if model.fit_intercept:
+        norms_squared = np.ones(n_samples, dtype=model.X.dtype)
+    else:
+        norms_squared = np.zeros(n_samples, dtype=model.X.dtype)
+    for i in prange(n_samples):
+        for j in range(n_features):
+            norms_squared[i] += model.X[i, j] * model.X[i, j]
+    return norms_squared
+
+
+def row_norm(model):
+    # TODO: for C and F order with aliasing
+    return row_squared_norm_dense(model.no_python)
