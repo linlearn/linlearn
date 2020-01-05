@@ -1,6 +1,6 @@
 import numpy as np
 from linlearn.utils import check_X_y, _check_sample_weight
-from .utils import row_norm
+from .utils import row_squared_norm
 
 
 class Model(object):
