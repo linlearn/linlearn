@@ -1,4 +1,3 @@
-
 import numpy as np
 
 from numpy.random.mtrand import multivariate_normal
@@ -10,8 +9,8 @@ from scipy.optimize import check_grad
 
 from linlearn.model import LeastSquares
 
-from linlearn.prox import ProxL2Sq
-from linlearn.solver import SVRG, History
+from linlearn.prox_old import ProxL2Sq
+from linlearn.solver_old import SVRG, History
 
 from linlearn.plot import plot_history
 
@@ -25,7 +24,7 @@ n_features = 50
 fit_intercept = True
 
 coef0 = np.random.randn(n_features)
-intercept0 = -2.
+intercept0 = -2.0
 
 cov = toeplitz(0.5 ** np.arange(0, n_features))
 X = multivariate_normal(np.zeros(n_features), cov, size=n_samples)
@@ -47,33 +46,39 @@ else:
 
 # print("shape: ", (X ** 2).sum(axis=1).shape)
 
-print('lip_max: ', lip_max)
+print("lip_max: ", lip_max)
 
 step = 1 / lip_max
 
 model = LeastSquares(fit_intercept).set(X, y)
-prox = ProxL2Sq(strength=0.)
+prox = ProxL2Sq(strength=0.0)
 max_epochs = 10
 
 model = LeastSquares(fit_intercept).set(X, y)
 
-print('lip_max: ', model.lip_max)
+print("lip_max: ", model.lip_max)
 
 
 exit(0)
 
 
-prox = ProxL2Sq(strength=0.)
+prox = ProxL2Sq(strength=0.0)
 
 for solver in solvers:
     w = w_start.copy()
     solver.solve(w)
 
-labels = ['SVRG(0.5/Lmax)', 'SVRG(1/Lmax)', 'SVRG(2/Lmax)']
+labels = ["SVRG(0.5/Lmax)", "SVRG(1/Lmax)", "SVRG(2/Lmax)"]
 
-plot_history(solvers, x='epoch', y='obj', labels=labels, rendering='bokeh',
-             log_scale=True, dist_min=obj_opt)
-
+plot_history(
+    solvers,
+    x="epoch",
+    y="obj",
+    labels=labels,
+    rendering="bokeh",
+    log_scale=True,
+    dist_min=obj_opt,
+)
 
 
 # print(svrg.history.values)
@@ -89,7 +94,6 @@ plot_history(solvers, x='epoch', y='obj', labels=labels, rendering='bokeh',
 # else:
 #     print(coef0)
 #     print(w)
-
 
 
 # @njit

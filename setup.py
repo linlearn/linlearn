@@ -2,6 +2,10 @@ from distutils.core import setup
 import io
 import setuptools
 
+
+# look at https://www.youtube.com/watch?v=GIF3LaRqgXo
+
+
 CLASSIFIERS = """\
 Development Status :: 1 - Planning
 Intended Audience :: Science/Research

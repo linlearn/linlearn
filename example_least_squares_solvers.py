@@ -1,4 +1,3 @@
-
 import numpy as np
 
 from numpy.random.mtrand import multivariate_normal
@@ -6,8 +5,8 @@ from scipy.linalg import toeplitz
 
 from linlearn.model import LeastSquares
 from linlearn.model.utils import inner_prods
-from linlearn.prox import ProxL2Sq, ProxL1
-from linlearn.solver import SVRG, CGD, History
+from linlearn.prox_old import ProxL2Sq, ProxL1
+from linlearn.solver_old import SVRG, CGD, History
 
 from linlearn.plot import plot_history
 
@@ -20,7 +19,7 @@ n_samples = 100_000
 n_features = 200
 
 coef0 = 2 * np.random.randn(n_features)
-intercept0 = -2.
+intercept0 = -2.0
 # intercept0 = None
 
 fit_intercept = intercept0 is not None
@@ -54,8 +53,8 @@ model = LeastSquares(fit_intercept).set(X, y)
 #
 # # exit(0)
 
-# prox = ProxL2Sq(strength=1e-4)
-# prox = ProxL2Sq(strength=1e-2)
+# prox_old = ProxL2Sq(strength=1e-4)
+# prox_old = ProxL2Sq(strength=1e-2)
 
 prox = ProxL1(strength=1e-2)
 
@@ -73,15 +72,22 @@ obj_opt = model.loss(w) + prox.value(w)
 
 solvers = [
     CGD(steps=steps, max_iter=max_iter).set(model, prox),
-    SVRG(step=step, max_iter=max_iter).set(model, prox)
+    SVRG(step=step, max_iter=max_iter).set(model, prox),
 ]
 
 for solver in solvers:
     w = w_start.copy()
     solver.solve(w)
 
-labels = ['CGD', 'SVRG']
+labels = ["CGD", "SVRG"]
 
 
-plot_history(solvers, x='epoch', y='obj', labels=labels, rendering='bokeh',
-             log_scale=True, dist_min=obj_opt)
+plot_history(
+    solvers,
+    x="epoch",
+    y="obj",
+    labels=labels,
+    rendering="bokeh",
+    log_scale=True,
+    dist_min=obj_opt,
+)

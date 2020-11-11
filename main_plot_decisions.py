@@ -1,12 +1,11 @@
-
-
 from numpy.random.mtrand import multivariate_normal
 from scipy.linalg import toeplitz
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression as LRScikit
-from linlearn.learner import LogisticRegression as LRLinLearn
+from linlearn.learner_old import LogisticRegression as LRLinLearn
 import numpy as np
 from matplotlib.colors import ListedColormap
+
 # from tick.linear_model import LogisticRegression as TickLogisticRegression
 # from smp import LogisticRegression
 # from tick.linear_model import SimuLogReg
@@ -24,9 +23,9 @@ import matplotlib.pyplot as plt
 
 # from tick.plot import stems
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+)
 
 # np.set_printoptions(precision=2)
 
@@ -34,7 +33,7 @@ logging.basicConfig(level=logging.INFO,
 def plot_decision_classification(classifiers, datasets):
     n_classifiers = len(classifiers)
     n_datasets = len(datasets)
-    h = .2
+    h = 0.2
     fig = plt.figure(figsize=(2 * (n_classifiers + 1), 2 * n_datasets))
     i = 1
     # iterate over datasets
@@ -42,23 +41,22 @@ def plot_decision_classification(classifiers, datasets):
         # print('=' * 64)
         # preprocess dataset, split into training and test part
         X, y = ds
-        X_train, X_test, y_train, y_test = \
-            train_test_split(X, y, test_size=.4, random_state=42)
-        x_min, x_max = X[:, 0].min() - .5, X[:, 0].max() + .5
-        y_min, y_max = X[:, 1].min() - .5, X[:, 1].max() + .5
-        xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
-                             np.arange(y_min, y_max, h))
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.4, random_state=42
+        )
+        x_min, x_max = X[:, 0].min() - 0.5, X[:, 0].max() + 0.5
+        y_min, y_max = X[:, 1].min() - 0.5, X[:, 1].max() + 0.5
+        xx, yy = np.meshgrid(np.arange(x_min, x_max, h), np.arange(y_min, y_max, h))
         # just plot the dataset first
         cm = plt.cm.RdBu
-        cm_bright = ListedColormap(['#FF0000', '#0000FF'])
+        cm_bright = ListedColormap(["#FF0000", "#0000FF"])
         ax = plt.subplot(n_datasets, n_classifiers + 1, i)
         if ds_cnt == 0:
             ax.set_title("Input data")
         # Plot the training points
         ax.scatter(X_train[:, 0], X_train[:, 1], c=y_train, s=10, cmap=cm)
         # and testing points
-        ax.scatter(X_test[:, 0], X_test[:, 1], c=y_test, cmap=cm, s=10,
-                   alpha=0.6)
+        ax.scatter(X_test[:, 0], X_test[:, 1], c=y_test, cmap=cm, s=10, alpha=0.6)
         ax.set_xlim(xx.min(), xx.max())
         ax.set_ylim(yy.min(), yy.max())
         ax.set_xticks(())
@@ -78,7 +76,7 @@ def plot_decision_classification(classifiers, datasets):
             # score = roc_auc_score(y_test, clf.predict_proba(X_test)[:, 1])
             # Put the result into a color plot
             Z = Z.reshape(xx.shape)
-            ax.contourf(xx, yy, Z, cmap=cm, alpha=.8)
+            ax.contourf(xx, yy, Z, cmap=cm, alpha=0.8)
             ax.set_xlim(xx.min(), xx.max())
             ax.set_ylim(yy.min(), yy.max())
             ax.set_xticks(())
@@ -101,8 +99,8 @@ random_state = 42
 
 X = 0.5 * np.random.randn(n_samples, n_features)
 
-X[:n_samples_half] += np.array([1., 2.])
-X[n_samples_half:] += np.array([-2., -1.])
+X[:n_samples_half] += np.array([1.0, 2.0])
+X[n_samples_half:] += np.array([-2.0, -1.0])
 
 y = np.zeros(n_samples)
 y[n_samples_half:] = 1
@@ -162,23 +160,24 @@ x0 = np.random.randn(n_features + 1)
 
 
 classifiers = [
-    # ('LR tick', TickLogisticRegression(penalty='none', tol=0, solver='bfgs', max_iter=100)),
-    ('LR scikit', LRScikit(C=1e6, solver='lbfgs', max_iter=100)),
-    ('LR linlearn', LRLinLearn(C=1e4, max_iter=100, step=1e-2)),
-    ('LR linlearn', LRLinLearn(C=1e4, max_iter=100, step=1e-2, smp=True)),
+    # ('LR tick', TickLogisticRegression(penalty='none', tol=0, solver_old='bfgs', max_iter=100)),
+    ("LR scikit", LRScikit(C=1e6, solver="lbfgs", max_iter=100)),
+    ("LR linlearn", LRLinLearn(C=1e4, max_iter=100, step=1e-2)),
+    ("LR linlearn", LRLinLearn(C=1e4, max_iter=100, step=1e-2, smp=True)),
     # ('LR SMP', LogisticRegression(penalty='none', tol=0, max_iter=100, smp=True)),
-    # ('LR SMP', LogisticRegression(random_state=123, penalty='none', tol=0, solver='svrg', smp=True)),
+    # ('LR SMP', LogisticRegression(random_state=123, penalty='none', tol=0, solver_old='svrg', smp=True)),
     # ('MF', MondrianForestClassifier(n_estimators=n_trees)),
     # ('RF', RandomForestClassifier(n_estimators=n_trees)),
     # ('ET', ExtraTreesClassifier(n_estimators=n_trees))
 ]
 
-X_train, X_test, y_train, y_test = \
-    train_test_split(X, y, test_size=.4, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.4, random_state=42
+)
 
 plot_decision_classification(classifiers, datasets)
 
-plt.savefig('decisions.pdf')
+plt.savefig("decisions.pdf")
 logging.info("Saved the decision functions in 'decision.pdf")
 
 
@@ -215,7 +214,7 @@ logging.info("Saved the decision functions in 'decision.pdf")
 #     print(LogisticRegression._loss(ww, X_train, y_train))
 #     print('----')
 #     logreg_tick = TickLogisticRegression(tol=0, max_iter=100, fit_intercept=True,
-#                                          verbose=0, solver='bfgs', penalty='none')
+#                                          verbose=0, solver_old='bfgs', penalty='none')
 #     logreg_tick.fit(X_train, y_train)
 #     logreg_smp = LogisticRegression(tol=0, max_iter=100, fit_intercept=True)
 #     logreg_smp.fit(X_train, y_train)
