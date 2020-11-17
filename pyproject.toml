@@ -1,0 +1,47 @@
+[tool.poetry]
+name = "linlearn"
+version = "0.1"
+description = "linlear is a python package for machine learning with linear methods, including robust methods"
+readme = "README.md"
+authors = ["Stéphane Gaïffas <stephane.gaiffas@gmail.com>"]
+homepage = "https://linlearn.readthedocs.io"
+documentation = "https://linlearn.readthedocs.io"
+keywords = [
+    "python",
+    "machine-learning",
+    "classification",
+    "regression",
+    "linear-methods",
+    "robust-methods"
+]
+repository = "https://github.com/linlearn/linlearn"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX",
+    "Operating System :: Unix"
+]
+
+[tool.poetry.dependencies]
+# bokeh = "^1.3.4"
+# colorcet = "^2.0.2"
+matplotlib = "^3.1"
+numba = "^0.48"
+numpy = "^1.17.4"
+python = "^3.6"
+# seaborn = "^0.9"
+scikit-learn = "^0.22"
+scipy = "^1.3.2"
+# streamlit = "^0.49.0"
+tqdm = "^4.36"
+
+[tool.poetry.dev-dependencies]
+coverage = "^4.5"
+pytest = "^5.3"
+pytest-cov = "^2.8"
+python-coveralls = "^2.9"

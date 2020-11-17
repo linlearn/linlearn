@@ -1,8 +1,8 @@
 [run]
 branch = True
 source = linlearn
-include = */linlearn/*
+include = */onelearn/*
 
 [report]
-exclude_lines =
-    if verbose
+omit =
+    examples/*
