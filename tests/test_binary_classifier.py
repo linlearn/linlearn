@@ -27,255 +27,251 @@ import pytest
 # TODO: test the __repr__ (even if it's the one from sklearn
 
 
-class TestBinaryClassifierProperties(object):
-    def test_keyword_args_only(self):
-        with pytest.raises(TypeError) as exc_info:
-            _ = BinaryClassifier("l2")
-        assert exc_info.type is TypeError
-        match = "__init__() takes 1 positional argument but 2 were given"
+# class TestBinaryClassifierProperties(object):
+def test_keyword_args_only():
+    with pytest.raises(TypeError) as exc_info:
+        _ = BinaryClassifier("l2")
+    assert exc_info.type is TypeError
+    match = "__init__() takes 1 positional argument but 2 were given"
+    assert exc_info.value.args[0] == match
+
+
+def test_penalty():
+    clf = BinaryClassifier()
+    assert clf.penalty == "l2"
+
+    for penalty in BinaryClassifier._penalties:
+        clf.penalty = penalty
+        assert clf.penalty == penalty
+
+    penalty = "stuff"
+    with pytest.raises(ValueError) as exc_info:
+        clf.penalty = penalty
+    assert exc_info.type is ValueError
+    match = "penalty must be one of %r; got (penalty=%r)" % (
+        BinaryClassifier._penalties,
+        penalty,
+    )
+    assert exc_info.value.args[0] == match
+
+    penalty = "stuff"
+    with pytest.raises(ValueError) as exc_info:
+        _ = BinaryClassifier(penalty=penalty)
+    assert exc_info.type is ValueError
+    match = "penalty must be one of %r; got (penalty=%r)" % (
+        BinaryClassifier._penalties,
+        penalty,
+    )
+    assert exc_info.value.args[0] == match
+
+    setattr(clf, "penalty", "l1")
+    assert getattr(clf, "penalty") == "l1"
+
+
+def test_C():
+    clf = BinaryClassifier()
+    assert isinstance(clf.C, float)
+    assert clf.C == 1.0
+
+    clf.C = 42e1
+    assert isinstance(clf.C, float)
+    assert clf.C == 420.0
+
+    clf.C = 0
+    assert isinstance(clf.C, float)
+    assert clf.C == 0.0
+
+    for C in [-1, complex(1.0, 1.0), "1.0"]:
+        with pytest.raises(ValueError) as exc_info:
+            clf.C = C
+        assert exc_info.type is ValueError
+        match = "C must be a positive number; got (C=%r)" % C
         assert exc_info.value.args[0] == match
 
-    def test_penalty(self):
-        clf = BinaryClassifier()
-        assert clf.penalty == "l2"
-
-        for penalty in BinaryClassifier._penalties:
-            clf.penalty = penalty
-            assert clf.penalty == penalty
-
-        penalty = "stuff"
+    for C in [-1, complex(1.0, 1.0), "1.0"]:
         with pytest.raises(ValueError) as exc_info:
-            clf.penalty = penalty
+            BinaryClassifier(C=C)
         assert exc_info.type is ValueError
-        match = "penalty must be one of %r; got (penalty=%r)" % (
-            BinaryClassifier._penalties,
-            penalty,
+        match = "C must be a positive number; got (C=%r)" % C
+        assert exc_info.value.args[0] == match
+
+    setattr(clf, "C", 3.140)
+    assert getattr(clf, "C") == 3.14
+
+
+def test_loss():
+    clf = BinaryClassifier()
+    assert clf.loss == "logistic"
+
+    for loss in BinaryClassifier._losses:
+        clf.loss = loss
+        assert clf.loss == loss
+
+    loss = "stuff"
+    with pytest.raises(ValueError) as exc_info:
+        clf.loss = loss
+    assert exc_info.type is ValueError
+    match = "loss must be one of %r; got (loss=%r)" % (BinaryClassifier._losses, loss,)
+    assert exc_info.value.args[0] == match
+
+    loss = "stuff"
+    with pytest.raises(ValueError) as exc_info:
+        _ = BinaryClassifier(loss=loss)
+    assert exc_info.type is ValueError
+    match = "loss must be one of %r; got (loss=%r)" % (BinaryClassifier._losses, loss,)
+    assert exc_info.value.args[0] == match
+
+    setattr(clf, "loss", "logistic")
+    assert getattr(clf, "loss") == "logistic"
+
+
+def test_fit_intercept():
+    clf = BinaryClassifier()
+    assert isinstance(clf.fit_intercept, bool)
+    assert clf.fit_intercept is True
+
+    clf.fit_intercept = False
+    assert isinstance(clf.fit_intercept, bool)
+    assert clf.fit_intercept is False
+
+    for fit_intercept in [0, 1, -1, complex(1.0, 1.0), "1.0", "true"]:
+        with pytest.raises(ValueError) as exc_info:
+            clf.fit_intercept = fit_intercept
+        assert exc_info.type is ValueError
+        match = "fit_intercept must be True or False; got (C=%r)" % fit_intercept
+        assert exc_info.value.args[0] == match
+
+    for fit_intercept in [0, 1, -1, complex(1.0, 1.0), "1.0", "true"]:
+        with pytest.raises(ValueError) as exc_info:
+            BinaryClassifier(fit_intercept=fit_intercept)
+        assert exc_info.type is ValueError
+        match = "fit_intercept must be True or False; got (C=%r)" % fit_intercept
+        assert exc_info.value.args[0] == match
+
+    setattr(clf, "fit_intercept", True)
+    assert getattr(clf, "fit_intercept") is True
+
+
+def test_strategy():
+    clf = BinaryClassifier()
+    assert clf.strategy == "erm"
+
+    for strategy in BinaryClassifier._strategies:
+        clf.strategy = strategy
+        assert clf.strategy == strategy
+
+    strategy = "stuff"
+    with pytest.raises(ValueError) as exc_info:
+        clf.strategy = strategy
+    assert exc_info.type is ValueError
+    match = "strategy must be one of %r; got (strategy=%r)" % (
+        BinaryClassifier._strategies,
+        strategy,
+    )
+    assert exc_info.value.args[0] == match
+
+    strategy = "stuff"
+    with pytest.raises(ValueError) as exc_info:
+        _ = BinaryClassifier(strategy=strategy)
+    assert exc_info.type is ValueError
+    match = "strategy must be one of %r; got (strategy=%r)" % (
+        BinaryClassifier._strategies,
+        strategy,
+    )
+    assert exc_info.value.args[0] == match
+
+    setattr(clf, "strategy", "mom")
+    assert getattr(clf, "strategy") == "mom"
+
+
+def test_solver():
+    clf = BinaryClassifier()
+    assert clf.solver == "cgd"
+
+    for solver in BinaryClassifier._solvers:
+        clf.solver = solver
+        assert clf.solver == solver
+
+    solver = "stuff"
+    with pytest.raises(ValueError) as exc_info:
+        clf.solver = solver
+    assert exc_info.type is ValueError
+    match = "solver must be one of %r; got (solver=%r)" % (
+        BinaryClassifier._solvers,
+        solver,
+    )
+    assert exc_info.value.args[0] == match
+
+    solver = "stuff"
+    with pytest.raises(ValueError) as exc_info:
+        _ = BinaryClassifier(solver=solver)
+    assert exc_info.type is ValueError
+    match = "solver must be one of %r; got (solver=%r)" % (
+        BinaryClassifier._solvers,
+        solver,
+    )
+    assert exc_info.value.args[0] == match
+
+    setattr(clf, "solver", "cgd")
+    assert getattr(clf, "solver") == "cgd"
+
+
+def test_tol():
+    clf = BinaryClassifier()
+    assert isinstance(clf.tol, float)
+    assert clf.tol == 1e-4
+
+    clf.tol = 3.14e-3
+    assert isinstance(clf.tol, float)
+    assert clf.tol == 3.14e-3
+
+    for tol in [-1, 0.0, complex(1.0, 1.0), "1.0"]:
+        with pytest.raises(ValueError) as exc_info:
+            clf.tol = tol
+        assert exc_info.type is ValueError
+        match = "Tolerance for stopping criteria must be positive; got (tol=%r)" % tol
+        assert exc_info.value.args[0] == match
+
+    for tol in [-1, 0.0, complex(1.0, 1.0), "1.0"]:
+        with pytest.raises(ValueError) as exc_info:
+            BinaryClassifier(tol=tol)
+        assert exc_info.type is ValueError
+        match = "Tolerance for stopping criteria must be positive; got (tol=%r)" % tol
+        assert exc_info.value.args[0] == match
+
+    setattr(clf, "tol", 3.14)
+    assert getattr(clf, "tol") == 3.14
+
+
+def test_max_iter():
+    clf = BinaryClassifier()
+    assert isinstance(clf.max_iter, int)
+    assert clf.max_iter == 100
+
+    clf.max_iter = 42.0
+    assert isinstance(clf.max_iter, int)
+    assert clf.max_iter == 42
+
+    for max_iter in [-1, 0, complex(1.0, 1.0), "1.0"]:
+        with pytest.raises(ValueError) as exc_info:
+            clf.max_iter = max_iter
+        assert exc_info.type is ValueError
+        match = (
+            "Maximum number of iteration must be positive; got (max_iter=%r)" % max_iter
         )
         assert exc_info.value.args[0] == match
 
-        penalty = "stuff"
+    for max_iter in [-1, 0.0, complex(1.0, 1.0), "1.0"]:
         with pytest.raises(ValueError) as exc_info:
-            _ = BinaryClassifier(penalty=penalty)
+            BinaryClassifier(max_iter=max_iter)
         assert exc_info.type is ValueError
-        match = "penalty must be one of %r; got (penalty=%r)" % (
-            BinaryClassifier._penalties,
-            penalty,
+        match = (
+            "Maximum number of iteration must be positive; got (max_iter=%r)" % max_iter
         )
         assert exc_info.value.args[0] == match
 
-        setattr(clf, "penalty", "l1")
-        assert getattr(clf, "penalty") == "l1"
-
-    def test_C(self):
-        clf = BinaryClassifier()
-        assert isinstance(clf.C, float)
-        assert clf.C == 1.0
-
-        clf.C = 42e1
-        assert isinstance(clf.C, float)
-        assert clf.C == 420.0
-
-        clf.C = 0
-        assert isinstance(clf.C, float)
-        assert clf.C == 0.0
-
-        for C in [-1, complex(1.0, 1.0), "1.0"]:
-            with pytest.raises(ValueError) as exc_info:
-                clf.C = C
-            assert exc_info.type is ValueError
-            match = "C must be a positive number; got (C=%r)" % C
-            assert exc_info.value.args[0] == match
-
-        for C in [-1, complex(1.0, 1.0), "1.0"]:
-            with pytest.raises(ValueError) as exc_info:
-                BinaryClassifier(C=C)
-            assert exc_info.type is ValueError
-            match = "C must be a positive number; got (C=%r)" % C
-            assert exc_info.value.args[0] == match
-
-        setattr(clf, "C", 3.140)
-        assert getattr(clf, "C") == 3.14
-
-    def test_loss(self):
-        clf = BinaryClassifier()
-        assert clf.loss == "logistic"
-
-        for loss in BinaryClassifier._losses:
-            clf.loss = loss
-            assert clf.loss == loss
-
-        loss = "stuff"
-        with pytest.raises(ValueError) as exc_info:
-            clf.loss = loss
-        assert exc_info.type is ValueError
-        match = "loss must be one of %r; got (loss=%r)" % (
-            BinaryClassifier._losses,
-            loss,
-        )
-        assert exc_info.value.args[0] == match
-
-        loss = "stuff"
-        with pytest.raises(ValueError) as exc_info:
-            _ = BinaryClassifier(loss=loss)
-        assert exc_info.type is ValueError
-        match = "loss must be one of %r; got (loss=%r)" % (
-            BinaryClassifier._losses,
-            loss,
-        )
-        assert exc_info.value.args[0] == match
-
-        setattr(clf, "loss", "logistic")
-        assert getattr(clf, "loss") == "logistic"
-
-    def test_fit_intercept(self):
-        clf = BinaryClassifier()
-        assert isinstance(clf.fit_intercept, bool)
-        assert clf.fit_intercept is True
-
-        clf.fit_intercept = False
-        assert isinstance(clf.fit_intercept, bool)
-        assert clf.fit_intercept is False
-
-        for fit_intercept in [0, 1, -1, complex(1.0, 1.0), "1.0", "true"]:
-            with pytest.raises(ValueError) as exc_info:
-                clf.fit_intercept = fit_intercept
-            assert exc_info.type is ValueError
-            match = "fit_intercept must be True or False; got (C=%r)" % fit_intercept
-            assert exc_info.value.args[0] == match
-
-        for fit_intercept in [0, 1, -1, complex(1.0, 1.0), "1.0", "true"]:
-            with pytest.raises(ValueError) as exc_info:
-                BinaryClassifier(fit_intercept=fit_intercept)
-            assert exc_info.type is ValueError
-            match = "fit_intercept must be True or False; got (C=%r)" % fit_intercept
-            assert exc_info.value.args[0] == match
-
-        setattr(clf, "fit_intercept", True)
-        assert getattr(clf, "fit_intercept") is True
-
-    def test_strategy(self):
-        clf = BinaryClassifier()
-        assert clf.strategy == "erm"
-
-        for strategy in BinaryClassifier._strategies:
-            clf.strategy = strategy
-            assert clf.strategy == strategy
-
-        strategy = "stuff"
-        with pytest.raises(ValueError) as exc_info:
-            clf.strategy = strategy
-        assert exc_info.type is ValueError
-        match = "strategy must be one of %r; got (strategy=%r)" % (
-            BinaryClassifier._strategies,
-            strategy,
-        )
-        assert exc_info.value.args[0] == match
-
-        strategy = "stuff"
-        with pytest.raises(ValueError) as exc_info:
-            _ = BinaryClassifier(strategy=strategy)
-        assert exc_info.type is ValueError
-        match = "strategy must be one of %r; got (strategy=%r)" % (
-            BinaryClassifier._strategies,
-            strategy,
-        )
-        assert exc_info.value.args[0] == match
-
-        setattr(clf, "strategy", "mom")
-        assert getattr(clf, "strategy") == "mom"
-
-    def test_solver(self):
-        clf = BinaryClassifier()
-        assert clf.solver == "cgd"
-
-        for solver in BinaryClassifier._solvers:
-            clf.solver = solver
-            assert clf.solver == solver
-
-        solver = "stuff"
-        with pytest.raises(ValueError) as exc_info:
-            clf.solver = solver
-        assert exc_info.type is ValueError
-        match = "solver must be one of %r; got (solver=%r)" % (
-            BinaryClassifier._solvers,
-            solver,
-        )
-        assert exc_info.value.args[0] == match
-
-        solver = "stuff"
-        with pytest.raises(ValueError) as exc_info:
-            _ = BinaryClassifier(solver=solver)
-        assert exc_info.type is ValueError
-        match = "solver must be one of %r; got (solver=%r)" % (
-            BinaryClassifier._solvers,
-            solver,
-        )
-        assert exc_info.value.args[0] == match
-
-        setattr(clf, "solver", "cgd")
-        assert getattr(clf, "solver") == "cgd"
-
-    def test_tol(self):
-        clf = BinaryClassifier()
-        assert isinstance(clf.tol, float)
-        assert clf.tol == 1e-4
-
-        clf.tol = 3.14e-3
-        assert isinstance(clf.tol, float)
-        assert clf.tol == 3.14e-3
-
-        for tol in [-1, 0.0, complex(1.0, 1.0), "1.0"]:
-            with pytest.raises(ValueError) as exc_info:
-                clf.tol = tol
-            assert exc_info.type is ValueError
-            match = (
-                "Tolerance for stopping criteria must be positive; got (tol=%r)" % tol
-            )
-            assert exc_info.value.args[0] == match
-
-        for tol in [-1, 0.0, complex(1.0, 1.0), "1.0"]:
-            with pytest.raises(ValueError) as exc_info:
-                BinaryClassifier(tol=tol)
-            assert exc_info.type is ValueError
-            match = (
-                "Tolerance for stopping criteria must be positive; got (tol=%r)" % tol
-            )
-            assert exc_info.value.args[0] == match
-
-        setattr(clf, "tol", 3.14)
-        assert getattr(clf, "tol") == 3.14
-
-    def test_max_iter(self):
-        clf = BinaryClassifier()
-        assert isinstance(clf.max_iter, int)
-        assert clf.max_iter == 100
-
-        clf.max_iter = 42.0
-        assert isinstance(clf.max_iter, int)
-        assert clf.max_iter == 42
-
-        for max_iter in [-1, 0, complex(1.0, 1.0), "1.0"]:
-            with pytest.raises(ValueError) as exc_info:
-                clf.max_iter = max_iter
-            assert exc_info.type is ValueError
-            match = (
-                "Maximum number of iteration must be positive; got (max_iter=%r)"
-                % max_iter
-            )
-            assert exc_info.value.args[0] == match
-
-        for max_iter in [-1, 0.0, complex(1.0, 1.0), "1.0"]:
-            with pytest.raises(ValueError) as exc_info:
-                BinaryClassifier(max_iter=max_iter)
-            assert exc_info.type is ValueError
-            match = (
-                "Maximum number of iteration must be positive; got (max_iter=%r)"
-                % max_iter
-            )
-            assert exc_info.value.args[0] == match
-
-        setattr(clf, "max_iter", 123)
-        assert getattr(clf, "max_iter") == 123
+    setattr(clf, "max_iter", 123)
+    assert getattr(clf, "max_iter") == 123
 
 
 # ValueError()
