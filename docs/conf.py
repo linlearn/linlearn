@@ -44,7 +44,7 @@ extensions = [
     "sphinx.ext.ifconfig",
     "sphinx.ext.mathjax",
     "sphinx.ext.linkcode",
-    "sphinx_gallery.gen_gallery",
+    #    "sphinx_gallery.gen_gallery",
 ]
 
 autosummary_generate = True
