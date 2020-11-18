@@ -1,84 +1,80 @@
 
-This is ``onelearn``'s documentation
+This is ``linlearn``'s documentation
 ====================================
 
-.. image:: https://travis-ci.org/onelearn/onelearn.svg?branch=master
-   :target: https://travis-ci.org/onelearn/onelearn
-.. image:: https://readthedocs.org/projects/onelearn/badge/?version=latest
-   :target: https://onelearn.readthedocs.io/en/latest/?badge=latest
+.. image:: https://travis-ci.org/linlearn/linlearn.svg?branch=master
+   :target: https://travis-ci.org/linlearn/linlearn
+.. image:: https://readthedocs.org/projects/linlearn/badge/?version=latest
+   :target: https://linlearn.readthedocs.io/en/latest/?badge=latest
    :alt: Documentation Status
-.. image:: https://img.shields.io/pypi/pyversions/onelearn
+.. image:: https://img.shields.io/pypi/pyversions/linlearn
    :alt: PyPI - Python Version
-.. image:: https://img.shields.io/pypi/wheel/onelearn
+.. image:: https://img.shields.io/pypi/wheel/linlearn
    :alt: PyPI - Wheel
-.. image:: https://img.shields.io/github/stars/onelearn/onelearn
+.. image:: https://img.shields.io/github/stars/linlearn/linlearn
    :alt: GitHub stars
-   :target: https://github.com/onelearn/onelearn/stargazers
-.. image:: https://img.shields.io/github/issues/onelearn/onelearn
+   :target: https://github.com/linlearn/linlearn/stargazers
+.. image:: https://img.shields.io/github/issues/linlearn/linlearn
    :alt: GitHub issues
-   :target: https://github.com/onelearn/onelearn/issues
-.. image:: https://img.shields.io/github/license/onelearn/onelearn
+   :target: https://github.com/linlearn/linlearn/issues
+.. image:: https://img.shields.io/github/license/linlearn/linlearn
    :alt: GitHub license
-   :target: https://github.com/onelearn/onelearn/blob/master/LICENSE
-.. image:: https://coveralls.io/repos/github/onelearn/onelearn/badge.svg?branch=master
-   :target: https://coveralls.io/github/onelearn/onelearn?branch=master
+   :target: https://github.com/linlearn/linlearn/blob/master/LICENSE
+.. image:: https://coveralls.io/repos/github/linlearn/linlearn/badge.svg?branch=master
+   :target: https://coveralls.io/github/linlearn/linlearn?branch=master
+
+``linlearn`` simply stands for **linear learning**. It is a scikit-learn compatible python package for linear learning
+with Python. It provides :
+
+* Several strategies, including empirical risk minimization (which is the standard approach) and median-of-means for robust regression and classification
+
+* Several loss functions easily accessible from a single class (``BinaryClassifier`` for binary classification and ``Regressor`` for regression)
+
+* Several penalization functions, including standard L1, ridge and elastic-net, but also total-variation, slope, weighted L1, among many others
+
+* All algorithms can use early stopping strategies during training
+
+* Supports dense and sparse data formats, and includes fast solvers for large sparse datasets (using state-of-the-art stochastic optimization algorithms)
+
+* It is accelerated thanks to numba, leading to a very concise, small, but fast library
+
+Installation
+------------
+
+The easiest way to install linlearn is using pip
+
+.. code-block:: bash
+
+    pip install linlearn
 
 
-onelearn stands for ONE-shot LEARNning. It is a small python package for **online learning** with Python.
-It provides :
+But you can also use the latest development from github directly with
 
-   * **online** (or **one-shot**) learning algorithms: each sample is processed **once**, only a
-     single pass is performed on the data
-   * including **multi-class classification** and regression algorithms
-   * For now, only *ensemble* methods, namely **Random Forests**
+.. code-block:: bash
+
+    pip install git+https://github.com/linlearn/linlearn.git
+
+References
+----------
 
 Usage
 -----
 
-onelearn follows the scikit-learn API: you call fit instead of partial_fit each
-time a new bunch of data is available and use predict_proba or predict whenever you
-need predictions.
+``linlearn`` follows the scikit-learn API: you call fit instead of use ``predict_proba``
+or ``predict`` whenever you need predictions.
 
 .. code-block:: python
 
-   from onelearn import AMFClassifier
+   from linlearn import BinaryClassifier
 
-   amf = AMFClassifier(n_classes=2)
-   clf.partial_fit(X_train, y_train)
+   clf = BinaryClassifier()
+   clf.fit(X_train, y_train)
    y_pred = clf.predict_proba(X_test)[:, 1]
-
-Each time you call partial_fit the algorithm updates its decision function using the
-new data as illustrated in the next figure.
-
-.. image:: images/iterations.pdf
-
-Installation
-------------
-The easiest way to install onelearn is using pip :
-
-.. code-block:: bash
-
-    pip install onelearn
-
-
-But you can also use the latest development from github directly with ::
-
-    pip install git+https://github.com/onelearn/onelearn.git
 
 
 Where to go from here?
 ----------------------
 
-To know more about onelearn, check out our :ref:`example gallery <sphx_glr_auto_examples>` or
-browse through the module reference using the left navigation bar.
-
-
 .. toctree::
    :maxdepth: 2
    :hidden:
-
-   classification
-   regression
-   experiments
-   playground
-   auto_examples/index
