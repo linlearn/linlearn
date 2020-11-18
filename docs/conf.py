@@ -17,18 +17,18 @@ sys.path.insert(0, os.path.abspath("../"))
 sys.path.insert(0, os.path.abspath("../.."))
 sys.path.insert(0, os.path.abspath("sphinx_ext"))
 
-from onelearn import *
+from linlearn import *
 
 from github_link import make_linkcode_resolve
 
 # -- Project information -----------------------------------------------------
 
-project = "onelearn"
+project = "linlearn"
 copyright = "2020, Stéphane Gaïffas"
 author = "Stéphane Gaïffas"
 
 # The full version, including alpha/beta/rc tags
-release = "0.2.0"
+release = "0.0.1"
 
 # -- General configuration ---------------------------------------------------
 
@@ -51,21 +51,21 @@ autosummary_generate = True
 autodoc_default_options = {"members": None, "inherited-members": None}
 
 
-sphinx_gallery_conf = {
-    "examples_dirs": "../examples",
-    "doc_module": "onelearn",
-    "gallery_dirs": "auto_examples",
-    "ignore_pattern": "../run_*|../playground_*",
-    "backreferences_dir": os.path.join("modules", "generated"),
-    "show_memory": False,
-    "reference_url": {"onelearn": None},
-}
+# sphinx_gallery_conf = {
+#     "examples_dirs": "../examples",
+#     "doc_module": "linlearn",
+#     "gallery_dirs": "auto_examples",
+#     "ignore_pattern": "../run_*|../playground_*",
+#     "backreferences_dir": os.path.join("modules", "generated"),
+#     "show_memory": False,
+#     "reference_url": {"onelearn": None},
+# }
 
 
 linkcode_resolve = make_linkcode_resolve(
-    "onelearn",
-    u"https://github.com/onelearn/"
-    "onelearn/blob/{revision}/"
+    "linlearn",
+    u"https://github.com/linlearn/"
+    "linlearn/blob/{revision}/"
     "{package}/{path}#L{lineno}",
 )
 
@@ -97,9 +97,9 @@ html_sidebars = {
     "auto_examples": ["index.html"],
 }
 html_theme_options = {
-    "description": "Online learning in Python",
-    "github_user": "onelearn",
-    "github_repo": "onelearn",
+    "description": "Linear methods in Python",
+    "github_user": "linlearn",
+    "github_repo": "linlearn",
     "github_button": True,
     "fixed_sidebar": True,
     "travis_button": False,
@@ -119,7 +119,7 @@ from datetime import datetime
 now = datetime.now()
 html_show_copyright = copyright = (
     str(now.year)
-    + ', <a href="https://github.com/onelearn/onelearn/graphs/contributors">onelearn developers</a>. Updated on '
+    + ', <a href="https://github.com/linlearn/linlearn/graphs/contributors">linlearn developers</a>. Updated on '
     + now.strftime("%B %d, %Y")
 )
 
