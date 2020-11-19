@@ -8,8 +8,6 @@
 [![GitHub license](https://img.shields.io/github/license/linlearn/linlearn)](https://github.com/linlearn/linlearn/blob/master/LICENSE)
 [![Coverage Status](https://coveralls.io/repos/github/linlearn/linlearn/badge.svg?branch=master)](https://coveralls.io/github/linlearn/linlearn?branch=master)
 
-![linlearn](img/linlearn.png)
-
 # linlearn: linear methods in Python
 
 LinLearn is scikit-learn compatible python package for machine learning with linear methods. 
