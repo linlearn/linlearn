@@ -433,10 +433,10 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         # TODO: Not correct wih respect to what scikit returns
         if self.fit_intercept:
             self.intercept_ = np.array([w[0]])
-            self.coef_ = w[1:]
+            self.coef_ = w[np.newaxis, 1:].copy()
         else:
             self.intercept_ = np.zeros(1)
-            self.coef_ = w
+            self.coef_ = w[np.newaxis, :].copy()
 
         return self
 

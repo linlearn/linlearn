@@ -1,9 +1,7 @@
 import numbers
+import numpy as np
 
-print(isinstance(1.0, numbers.Number))
+x = np.array([-1.0, 2.0])
 
-
-print(isinstance(complex(1.0, 0.0), numbers.Real))
-
-
-print(isinstance(-1, numbers.Real))
+print(x)
+print()

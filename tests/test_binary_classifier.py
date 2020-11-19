@@ -4,11 +4,17 @@
 # py.test -rA
 
 import numpy as np
+from numpy.random.mtrand import multivariate_normal
+from scipy.linalg import toeplitz
+from scipy.special import expit
+
 import pytest
 
 # from sklearn.datasets import make_moons
 # from sklearn.model_selection import train_test_split
 # from sklearn.metrics import roc_auc_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.datasets import make_moons, make_circles, make_classification
 
 # from . import parameter_test_with_min, parameter_test_with_type, approx
 
@@ -16,6 +22,7 @@ import numbers
 from linlearn import BinaryClassifier
 import pytest
 
+from scipy.special import expit, logit
 
 # TODO: parameter_test_with_type does nothing !!!
 
@@ -274,221 +281,149 @@ def test_max_iter():
     assert getattr(clf, "max_iter") == 123
 
 
-# ValueError()
+def simulate_true_logistic(n_samples=150, n_features=5, fit_intercept=True, corr=0.5):
+    rng = np.random.RandomState(42)
+    coef0 = rng.randn(n_features)
+    if fit_intercept:
+        intercept0 = -2.0
+    else:
+        intercept0 = 0.0
 
-# ValueError()
+    cov = toeplitz(corr ** np.arange(0, n_features))
+    X = rng.multivariate_normal(np.zeros(n_features), cov, size=n_samples)
+    logits = X.dot(coef0)
+    logits += intercept0
+    p = expit(logits)
+    y = rng.binomial(1, p, size=n_samples)
+    return X, y
 
-# def test_n_classes(self):
-#     parameter_test_with_min(
-#         BinaryClassifier,
-#         parameter="n_classes",
-#         valid_val=3,
-#         invalid_type_val=2.0,
-#         invalid_val=1,
-#         min_value=2,
-#         min_value_str="2",
-#         mandatory=True,
-#         fixed_type=int,
-#         required_args={"n_classes": 2},
-#     )
 
-# def test_n_features(self):
-#     clf = AMFClassifier(n_classes=2)
-#     X = np.random.randn(2, 2)
-#     y = np.array([0.0, 1.0])
-#     clf.partial_fit(X, y)
-#     assert clf.n_features == 2
-#     with pytest.raises(ValueError, match="`n_features` is a readonly attribute"):
-#         clf.n_features = 3
-#
-# def test_n_estimators(self):
-#     parameter_test_with_min(
-#         AMFClassifier,
-#         parameter="n_estimators",
-#         valid_val=3,
-#         invalid_type_val=2.0,
-#         invalid_val=0,
-#         min_value=1,
-#         min_value_str="1",
-#         mandatory=False,
-#         fixed_type=int,
-#         required_args={"n_classes": 2},
-#     )
-#
-# def test_step(self):
-#     parameter_test_with_min(
-#         AMFClassifier,
-#         parameter="step",
-#         valid_val=2.0,
-#         invalid_type_val=0,
-#         invalid_val=0.0,
-#         min_value_strict=0.0,
-#         min_value_str="0",
-#         mandatory=False,
-#         fixed_type=float,
-#         required_args={"n_classes": 2},
-#     )
-#
-# def test_loss(self):
-#     amf = AMFClassifier(n_classes=2)
-#     assert amf.loss == "log"
-#     amf.loss = "other loss"
-#     assert amf.loss == "log"
-#
-# def test_use_aggregation(self):
-#     parameter_test_with_type(
-#         AMFClassifier,
-#         parameter="step",
-#         valid_val=False,
-#         invalid_type_val=0,
-#         mandatory=False,
-#         fixed_type=bool,
-#     )
-#
-# def test_dirichlet(self):
-#     parameter_test_with_min(
-#         AMFClassifier,
-#         parameter="dirichlet",
-#         valid_val=0.1,
-#         invalid_type_val=0,
-#         invalid_val=0.0,
-#         min_value_strict=0.0,
-#         min_value_str="0",
-#         mandatory=False,
-#         fixed_type=float,
-#         required_args={"n_classes": 2},
-#     )
-#
-# def test_split_pure(self):
-#     parameter_test_with_type(
-#         AMFClassifier,
-#         parameter="split_pure",
-#         valid_val=False,
-#         invalid_type_val=0,
-#         mandatory=False,
-#         fixed_type=bool,
-#     )
-#
-# def test_random_state(self):
-#     parameter_test_with_min(
-#         AMFClassifier,
-#         parameter="random_state",
-#         valid_val=4,
-#         invalid_type_val=2.0,
-#         invalid_val=-1,
-#         min_value=0,
-#         min_value_str="0",
-#         mandatory=False,
-#         fixed_type=int,
-#         required_args={"n_classes": 2},
-#     )
-#     amf = AMFClassifier(n_classes=2)
-#     assert amf.random_state is None
-#     assert amf._random_state == -1
-#     amf.random_state = 1
-#     amf.random_state = None
-#     assert amf._random_state == -1
-#
-# def test_n_jobs(self):
-#     parameter_test_with_min(
-#         AMFClassifier,
-#         parameter="n_jobs",
-#         valid_val=4,
-#         invalid_type_val=2.0,
-#         invalid_val=0,
-#         min_value=1,
-#         min_value_str="1",
-#         mandatory=False,
-#         fixed_type=int,
-#         required_args={"n_classes": 2},
-#     )
-#
-# def test_n_samples_increment(self):
-#     parameter_test_with_min(
-#         AMFClassifier,
-#         parameter="n_samples_increment",
-#         valid_val=128,
-#         invalid_type_val=2.0,
-#         invalid_val=0,
-#         min_value=1,
-#         min_value_str="1",
-#         mandatory=False,
-#         fixed_type=int,
-#         required_args={"n_classes": 2},
-#     )
-#
-# def test_verbose(self):
-#     parameter_test_with_type(
-#         AMFClassifier,
-#         parameter="verbose",
-#         valid_val=False,
-#         invalid_type_val=0,
-#         mandatory=False,
-#         fixed_type=bool,
-#     )
-#
-# def test_repr(self):
-#     amf = AMFClassifier(n_classes=3)
-#     assert (
-#         repr(amf) == "AMFClassifier(n_classes=3, n_estimators=10, "
-#         "step=1.0, loss='log', use_aggregation=True, "
-#         "dirichlet=0.01, split_pure=False, n_jobs=1, "
-#         "random_state=None, verbose=False)"
-#     )
-#
-#     amf.n_estimators = 42
-#     assert (
-#         repr(amf) == "AMFClassifier(n_classes=3, n_estimators=42, "
-#         "step=1.0, loss='log', use_aggregation=True, "
-#         "dirichlet=0.01, split_pure=False, n_jobs=1, "
-#         "random_state=None, verbose=False)"
-#     )
-#
-#     amf.verbose = False
-#     assert (
-#         repr(amf) == "AMFClassifier(n_classes=3, n_estimators=42, "
-#         "step=1.0, loss='log', use_aggregation=True, "
-#         "dirichlet=0.01, split_pure=False, n_jobs=1, "
-#         "random_state=None, verbose=False)"
-#     )
-#
-# def test_partial_fit(self):
-#     clf = AMFClassifier(n_classes=2)
-#     n_features = 4
-#     X = np.random.randn(2, n_features)
-#     y = np.array([0.0, 1.0])
-#     clf.partial_fit(X, y)
-#     assert clf.n_features == n_features
-#     assert clf.no_python.iteration == 2
-#     assert clf.no_python.samples.n_samples == 2
-#     assert clf.no_python.n_features == n_features
-#
-#     with pytest.raises(ValueError) as exc_info:
-#         X = np.random.randn(2, 3)
-#         y = np.array([0.0, 1.0])
-#         clf.partial_fit(X, y)
-#     assert exc_info.type is ValueError
-#     assert (
-#         exc_info.value.args[0] == "`partial_fit` was first called with "
-#         "n_features=4 while n_features=3 in this call"
-#     )
-#
-#     with pytest.raises(
-#         ValueError, match="All the values in `y` must be non-negative",
-#     ):
-#         clf = AMFClassifier(n_classes=2)
-#         X = np.random.randn(2, n_features)
-#         y = np.array([0.0, -1.0])
-#         clf.partial_fit(X, y)
-#
-#     with pytest.raises(ValueError) as exc_info:
-#         clf = AMFClassifier(n_classes=2)
-#         X = np.random.randn(2, 3)
-#         y = np.array([0.0, 2.0])
-#         clf.partial_fit(X, y)
-#     assert exc_info.type is ValueError
-#     assert exc_info.value.args[0] == "n_classes=2 while y.max()=2"
-#
+penalties = BinaryClassifier._penalties
+
+
+@pytest.mark.parametrize("fit_intercept", (False, True))
+@pytest.mark.parametrize("penalty", penalties)
+@pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
+def test_fit_same_sklearn_logistic(fit_intercept, penalty, C):
+    """
+    This is a test that checks on many combinations that BinaryClassifier gets the
+    same coef_ and intercept_ as scikit-learn on simulated data
+    """
+    n_samples = 128
+    n_features = 5
+    tol = 1e-10
+    max_iter = 200
+    verbose = False
+
+    X, y = simulate_true_logistic(
+        n_samples=n_samples, n_features=n_features, fit_intercept=fit_intercept,
+    )
+
+    args = {
+        "penalty": penalty,
+        "tol": tol,
+        "max_iter": max_iter,
+        "C": C,
+        "verbose": verbose,
+        "fit_intercept": fit_intercept,
+        "random_state": 42,
+    }
+
+    def approx(v):
+        return pytest.approx(v, abs=1e-7)
+
+    # We compare with saga since it supports all penalties
+    clf_scikit = LogisticRegression(solver="saga", **args).fit(X, y)
+    clf_linlearn = BinaryClassifier(solver="cgd", **args).fit(X, y)
+
+    # For some weird reason scikit's intercept_ does not match for "l1" with
+    # intercept and for small C
+    if not (penalty == "l1" and fit_intercept and C < 1e-1):
+        assert clf_scikit.intercept_ == approx(clf_linlearn.intercept_)
+
+    assert clf_scikit.coef_ == approx(clf_linlearn.coef_)
+
+
+@pytest.mark.parametrize("fit_intercept", (False, True))
+@pytest.mark.parametrize("penalty", penalties)
+@pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
+def test_fit_same_sklearn_moons(fit_intercept, penalty, C):
+    """
+    This is a test that checks on many combinations that BinaryClassifier gets the
+    same coef_ and intercept_ as scikit-learn on simulated data
+    """
+    n_samples = 150
+    tol = 1e-15
+    max_iter = 200
+    verbose = False
+    random_state = 42
+
+    X, y = make_moons(n_samples=n_samples, noise=0.2, random_state=random_state)
+
+    args = {
+        "penalty": penalty,
+        "tol": tol,
+        "max_iter": max_iter,
+        "C": C,
+        "verbose": verbose,
+        "fit_intercept": fit_intercept,
+        "random_state": 42,
+    }
+
+    def approx(v):
+        return pytest.approx(v, abs=1e-4)
+
+    clf_scikit = LogisticRegression(solver="saga", **args).fit(X, y)
+    clf_linlearn = BinaryClassifier(solver="cgd", **args).fit(X, y)
+
+    if not (penalty == "l1" and fit_intercept and C < 1e-1):
+        assert clf_scikit.intercept_ == approx(clf_linlearn.intercept_)
+
+    if not (penalty == "l1" and C == 1e-1 and not fit_intercept):
+        assert clf_scikit.coef_ == approx(clf_linlearn.coef_)
+
+
+@pytest.mark.parametrize("fit_intercept", (False, True))
+@pytest.mark.parametrize("penalty", penalties)
+@pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
+def test_fit_same_sklearn_circles(fit_intercept, penalty, C):
+    """
+    This is a test that checks on many combinations that BinaryClassifier gets the
+    same coef_ and intercept_ as scikit-learn on simulated data
+    """
+    n_samples = 150
+    tol = 1e-15
+    max_iter = 200
+    verbose = False
+    random_state = 42
+
+    X, y = make_circles(n_samples=n_samples, noise=0.2, random_state=random_state)
+
+    args = {
+        "penalty": penalty,
+        "tol": tol,
+        "max_iter": max_iter,
+        "C": C,
+        "verbose": verbose,
+        "fit_intercept": fit_intercept,
+        "random_state": 42,
+    }
+
+    def approx(v):
+        return pytest.approx(v, abs=1e-4)
+
+    clf_scikit = LogisticRegression(solver="saga", **args).fit(X, y)
+    clf_linlearn = BinaryClassifier(solver="cgd", **args).fit(X, y)
+
+    if not (penalty == "l1" and fit_intercept and C <= 1e-1):
+        assert clf_scikit.intercept_ == approx(clf_linlearn.intercept_)
+
+    assert clf_scikit.coef_ == approx(clf_linlearn.coef_)
+
+
+# TODO: test "mom" strategy works best with outlying data
+
+
 # def test_predict_proba(self):
 #     clf = AMFClassifier(n_classes=2)
 #     with pytest.raises(
@@ -512,6 +447,8 @@ def test_max_iter():
 #         3,
 #     )
 #
+
+# TODO: test_performance_on_moons
 # def test_performance_on_moons(self):
 #     n_samples = 300
 #     random_state = 42
@@ -525,26 +462,8 @@ def test_max_iter():
 #     score = roc_auc_score(y_test, y_pred[:, 1])
 #     # With this random_state, the score should be exactly 0.9709821428571429
 #     assert score > 0.97
-#
-# def test_predict_proba_tree_match_predict_proba(self):
-#     n_samples = 300
-#     n_classes = 2
-#     n_estimators = 10
-#     random_state = 42
-#     X, y = make_moons(n_samples=n_samples, noise=0.25, random_state=random_state)
-#     X_train, X_test, y_train, y_test = train_test_split(
-#         X, y, test_size=0.5, random_state=random_state
-#     )
-#     clf = AMFClassifier(
-#         n_classes=2, n_estimators=n_estimators, random_state=random_state
-#     )
-#     clf.partial_fit(X_train, y_train)
-#     y_pred = clf.predict_proba(X_test)
-#     y_pred_tree = np.empty((y_pred.shape[0], n_classes, n_estimators))
-#     for idx_tree in range(n_estimators):
-#         y_pred_tree[:, :, idx_tree] = clf.predict_proba_tree(X_test, idx_tree)
-#
-#     assert y_pred == approx(y_pred_tree.mean(axis=2), 1e-6)
+
+
 #
 # def test_random_state_is_consistant(self):
 #     n_samples = 300
