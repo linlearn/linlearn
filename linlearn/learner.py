@@ -80,6 +80,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         loss="logistic",
         fit_intercept=True,
         strategy="erm",
+        block_size=0.07,
         solver="cgd",
         tol=1e-4,
         max_iter=100,
@@ -95,6 +96,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         self.C = C
         self.loss = loss
         self.strategy = strategy
+        self.block_size = block_size
         self.tol = tol
         self.fit_intercept = fit_intercept
         self.solver = solver
@@ -176,6 +178,16 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             self._strategy = val
 
     @property
+    def block_size(self):
+        return self._block_size
+
+    @block_size.setter
+    def block_size(self, val):
+        if not isinstance(val, numbers.Real) or val <= 0.0 or val > 1:
+            raise ValueError("block_size must be in (0, 1]; got (block_size=%r)" % val)
+        self._block_size = val
+
+    @property
     def solver(self):
         return self._solver
 
@@ -252,7 +264,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
     #     )
 
     def _get_solver(self, X, y):
-        # TODO: X, y must have been checked at this point
         n_samples, n_features = X.shape
 
         # Get the loss object
@@ -265,12 +276,13 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         strength = 1 / (self.C * n_samples)
         penalty = penalty_factory(strength)
 
-        # TODO: clean this
-        self.block_size = 42
+        # Number of sample in the blocks (only for strategy="mom")
+        n_samples_in_block = int(n_samples * self.block_size)
+
         # Get the strategy
         strategy_factory = strategies_factory[self.strategy]
         strategy = strategy_factory(
-            loss, X, y, self.fit_intercept, block_size=self.block_size
+            loss, X, y, self.fit_intercept, n_samples_in_block=n_samples_in_block
         )
 
         if self.solver == "cgd":
@@ -382,7 +394,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         # # If class_weights is a dict (provided by the user), the weights
         # # are assigned to the original labels. If it is "balanced", then
         # # the class_weights are assigned after masking the labels with a OvR.
-
         # if isinstance(class_weight, dict) or multi_class == "multinomial":
         #     class_weight_ = compute_class_weight(class_weight, classes=classes, y=y)
         #     sample_weight *= class_weight_[le.fit_transform(y)]
@@ -392,7 +403,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         # if multi_class == "ovr":
         #     w0 = np.zeros(n_features + int(fit_intercept), dtype=X.dtype)
         # mask_classes = np.array([-1, 1])
-
         #     # for compute_class_weight
         #
         #     if class_weight == "balanced":

@@ -12,7 +12,7 @@ from collections import namedtuple
 
 # TODO: definir ici une strategy
 
-Strategy = namedtuple("Strategy", ["grad_coordinate", "block_size"])
+Strategy = namedtuple("Strategy", ["grad_coordinate", "n_samples_in_block"])
 
 
 @njit
@@ -162,7 +162,7 @@ def erm_strategy_factory(loss, X, y, fit_intercept, **kwargs):
             loss.derivative, j, X, y, inner_products, fit_intercept
         )
 
-    return Strategy(grad_coordinate=grad_coordinate, block_size=None)
+    return Strategy(grad_coordinate=grad_coordinate, n_samples_in_block=None)
 
 
 # TODO: overlapping blocks in MOM ???
@@ -176,7 +176,7 @@ def grad_coordinate_mom(
     y,
     inner_products,
     fit_intercept,
-    block_size,
+    n_samples_in_block,
     # grad_means_in_blocks,
 ):
     """Computation of the derivative of the loss with respect to a coordinate using the
@@ -185,10 +185,10 @@ def grad_coordinate_mom(
     # TODO: parallel ?
     # TODO: sparse matrix ?
     n_samples = inner_products.shape[0]
-    n_blocks = n_samples // block_size
-    last_block_size = n_samples % block_size
+    n_blocks = n_samples // n_samples_in_block
+    last_block_size = n_samples % n_samples_in_block
 
-    if n_samples % block_size == 0:
+    if n_samples % n_samples_in_block == 0:
         grad_means_in_blocks = np.empty(n_blocks, dtype=X.dtype)
     else:
         grad_means_in_blocks = np.empty(n_blocks + 1, dtype=X.dtype)
@@ -212,10 +212,10 @@ def grad_coordinate_mom(
                 # print(sum_block, "+=", x[i])
                 grad_block += loss_derivative(y[i], inner_products[i])
                 # sum_block += x[i]
-                if (i != 0) and ((i + 1) % block_size == 0):
+                if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                     # It's the end of the block, we need to save its mean
                     # print("sum_block: ", sum_block)
-                    grad_means_in_blocks[n_block] = grad_block / block_size
+                    grad_means_in_blocks[n_block] = grad_block / n_samples_in_block
                     n_block += 1
                     grad_block = 0.0
 
@@ -231,10 +231,10 @@ def grad_coordinate_mom(
                 # print(sum_block, "+=", x[i])
                 grad_block += loss_derivative(y[i], inner_products[i]) * X[i, j - 1]
                 # sum_block += x[i]
-                if (i != 0) and ((i + 1) % block_size == 0):
+                if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                     # It's the end of the block, we need to save its mean
                     # print("sum_block: ", sum_block)
-                    grad_means_in_blocks[n_block] = grad_block / block_size
+                    grad_means_in_blocks[n_block] = grad_block / n_samples_in_block
                     n_block += 1
                     grad_block = 0.0
 
@@ -251,10 +251,10 @@ def grad_coordinate_mom(
             # print(sum_block, "+=", x[i])
             grad_block += loss_derivative(y[i], inner_products[i]) * X[i, j]
             # sum_block += x[i]
-            if (i != 0) and ((i + 1) % block_size == 0):
+            if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                 # It's the end of the block, we need to save its mean
                 # print("sum_block: ", sum_block)
-                grad_means_in_blocks[n_block] = grad_block / block_size
+                grad_means_in_blocks[n_block] = grad_block / n_samples_in_block
                 n_block += 1
                 grad_block = 0.0
 
@@ -275,14 +275,16 @@ def grad_coordinate_mom(
 #     return Strategy(grad_coordinate=grad_coordinate)
 
 
-def mom_strategy_factory(loss, X, y, fit_intercept, block_size, **kwargs):
+def mom_strategy_factory(loss, X, y, fit_intercept, n_samples_in_block, **kwargs):
     @njit
     def grad_coordinate(j, inner_products):
         return grad_coordinate_mom(
-            loss.derivative, j, X, y, inner_products, fit_intercept, block_size
+            loss.derivative, j, X, y, inner_products, fit_intercept, n_samples_in_block
         )
 
-    return Strategy(grad_coordinate=grad_coordinate, block_size=block_size)
+    return Strategy(
+        grad_coordinate=grad_coordinate, n_samples_in_block=n_samples_in_block
+    )
 
 
 strategies_factory = {"erm": erm_strategy_factory, "mom": mom_strategy_factory}

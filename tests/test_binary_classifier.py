@@ -191,6 +191,33 @@ def test_strategy():
     assert getattr(clf, "strategy") == "mom"
 
 
+def test_block_size():
+    clf = BinaryClassifier()
+    assert isinstance(clf.block_size, float)
+    assert clf.block_size == 0.07
+
+    clf.block_size = 0.123
+    assert isinstance(clf.block_size, float)
+    assert clf.block_size == 0.123
+
+    for block_size in [-1, complex(1.0, 1.0), "1.0", 0.0, -1.0, 1.1]:
+        with pytest.raises(ValueError) as exc_info:
+            clf.block_size = block_size
+        assert exc_info.type is ValueError
+        match = "block_size must be in (0, 1]; got (block_size=%r)" % block_size
+        assert exc_info.value.args[0] == match
+
+    for block_size in [-1, complex(1.0, 1.0), "1.0", 0.0, -1.0, 1.1]:
+        with pytest.raises(ValueError) as exc_info:
+            _ = BinaryClassifier(block_size=block_size)
+        assert exc_info.type is ValueError
+        match = "block_size must be in (0, 1]; got (block_size=%r)" % block_size
+        assert exc_info.value.args[0] == match
+
+    setattr(clf, "block_size", 0.42)
+    assert getattr(clf, "block_size") == 0.42
+
+
 def test_solver():
     clf = BinaryClassifier()
     assert clf.solver == "cgd"
