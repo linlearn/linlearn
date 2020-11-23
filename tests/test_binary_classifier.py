@@ -359,6 +359,22 @@ def simulate_true_logistic(n_samples=150, n_features=5, fit_intercept=True, corr
     return X, y
 
 
+# Turns out that random_state=1 is linearly separable while it is not for
+# random_state=2
+def simulate_linear(n_samples, random_state=2):
+    X, y = make_classification(
+        n_samples=n_samples,
+        n_features=2,
+        n_redundant=0,
+        n_informative=2,
+        random_state=random_state,
+        n_clusters_per_class=1,
+    )
+    rng = np.random.RandomState(2)
+    X += 2 * rng.uniform(size=X.shape)
+    return X, y
+
+
 penalties = BinaryClassifier._penalties
 
 
@@ -592,6 +608,29 @@ def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C):
     assert clf_elasticnet.coef_ == approx(clf_l1.coef_)
 
 
+def test_that_array_conversion_is_ok():
+    import pandas as pd
+
+    n_samples = 20
+    X, y = simulate_linear(n_samples)
+    X_df = pd.DataFrame(X)
+
+    weird = {0: "neg", 1: "pos"}
+    y_weird = [weird[yi] for yi in y]
+
+    def approx(v):
+        return pytest.approx(v, abs=1e-4)
+
+    br = BinaryClassifier(tol=1e-17, max_iter=200).fit(X_df, y_weird)
+    lr = LogisticRegression(tol=1e-17, max_iter=200).fit(X_df, y_weird)
+
+    assert br.intercept_ == approx(lr.intercept_)
+    assert br.coef_ == approx(lr.coef_)
+
+
+# TODO: test predict
+# TODO: test predict_proba
+# TODO: test predict_log_proba
 # TODO: test "mom" strategy works best with outlying data
 
 

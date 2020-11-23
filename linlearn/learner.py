@@ -4,7 +4,7 @@ from scipy.special import expit, logsumexp
 
 from sklearn.base import ClassifierMixin, BaseEstimator
 from sklearn.preprocessing import LabelEncoder
-from sklearn.utils import check_array
+from sklearn.utils import check_array, check_consistent_length
 from sklearn.utils.multiclass import check_classification_targets
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import log_logistic, safe_sparse_dot, softmax, squared_norm
@@ -362,27 +362,27 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         if self.solver == "cgd":
             accept_sparse = "csc"
             order = "F"
-            accept_large_sparse = True
+            accept_large_sparse = False
         else:
             accept_sparse = "csr"
             order = "C"
-            accept_large_sparse = True
+            accept_large_sparse = False
 
         # TODO: y'a une verif dans le fit et puis aussi dans le compute path
-        X, y = self._validate_data(
+
+        X = check_array(
             X,
-            y,
-            accept_sparse=accept_sparse,
             order=order,
+            accept_sparse=accept_sparse,
+            dtype="numeric",
             accept_large_sparse=accept_large_sparse,
             estimator="BinaryClassifier",
         )
-
-        # TODO: random_state = check_random_state(random_state)
-
-        # TODO: non c'est pas bon du tout, faut que tout soit dans -1, 1
+        y = check_array(y, ensure_2d=False, dtype=None, estimator="BinaryClassifier")
+        check_consistent_length(X, y)
         check_classification_targets(y)
 
+        # TODO: random_state = check_random_state(random_state)
         le = LabelEncoder()
         # This replaces the modalities by elements in {0, 1}
         y_encoded = le.fit_transform(y)
@@ -448,8 +448,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         self.optimization_result_ = optimization_result
         self.n_iter_ = np.asarray([optimization_result.n_iter], dtype=np.int32)
 
-        # print(optimization_result)
-
         w = optimization_result.w
 
         # TODO: Not correct wih respect to what scikit returns
@@ -481,20 +479,20 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             case, confidence score for self.classes_[1] where >0 means this
             class would be predicted.
         """
+        # TODO: this is from scikit-learn, cite and put authors
         check_is_fitted(self)
 
-        # Which sparse array do we accept ?
         X = check_array(X, accept_sparse="csr")
 
-        n_features = self.coef_.shape[0]
+        n_features = self.coef_.shape[1]
         if X.shape[1] != n_features:
             raise ValueError(
                 "X has %d features per sample; expecting %d" % (X.shape[1], n_features)
             )
 
         scores = safe_sparse_dot(X, self.coef_.T, dense_output=True) + self.intercept_
-        return scores
-        # return scores.ravel() if scores.shape[1] == 1 else scores
+        # This differs from scikit: we only handle binary classification here
+        return scores.ravel()
 
     def predict_proba(self, X):
         """
