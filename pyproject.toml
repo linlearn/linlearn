@@ -28,16 +28,17 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-matplotlib = "^3.1"
 numba = "^0.48"
 numpy = "^1.17.4"
 python = "^3.6"
-scikit-learn = "^0.23"
+scikit-learn = "^0.22"
 scipy = "^1.3.2"
 tqdm = "^4.36"
 
 [tool.poetry.dev-dependencies]
 coverage = "^4.5"
+matplotlib = "^3.1"
+pandas = "^0.25"
 pytest = "^5.3"
 pytest-cov = "^2.8"
 python-coveralls = "^2.9"

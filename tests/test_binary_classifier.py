@@ -24,12 +24,8 @@ import pytest
 
 from scipy.special import expit, logit
 
-# TODO: parameter_test_with_type does nothing !!!
-
 # TODO: va falloir furieusement tester plein de types de données d'entrée, avec labels
 #  non-contigus, et avec labels strings par exemple.
-
-# TODO: verifier que fit avec strategy="erm" amène exactement au meme coef_ et intercept_ que sklearn
 
 # TODO: test the __repr__ (even if it's the one from sklearn
 
@@ -359,6 +355,22 @@ def simulate_true_logistic(n_samples=150, n_features=5, fit_intercept=True, corr
     return X, y
 
 
+# Turns out that random_state=1 is linearly separable while it is not for
+# random_state=2
+def simulate_linear(n_samples, random_state=2):
+    X, y = make_classification(
+        n_samples=n_samples,
+        n_features=2,
+        n_redundant=0,
+        n_informative=2,
+        random_state=random_state,
+        n_clusters_per_class=1,
+    )
+    rng = np.random.RandomState(2)
+    X += 2 * rng.uniform(size=X.shape)
+    return X, y
+
+
 penalties = BinaryClassifier._penalties
 
 
@@ -592,50 +604,32 @@ def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C):
     assert clf_elasticnet.coef_ == approx(clf_l1.coef_)
 
 
+def test_that_array_conversion_is_ok():
+    import pandas as pd
+
+    n_samples = 20
+    X, y = simulate_linear(n_samples)
+    X_df = pd.DataFrame(X)
+
+    weird = {0: "neg", 1: "pos"}
+    y_weird = [weird[yi] for yi in y]
+
+    def approx(v):
+        return pytest.approx(v, abs=1e-4)
+
+    br = BinaryClassifier(tol=1e-17, max_iter=200).fit(X_df, y_weird)
+    lr = LogisticRegression(tol=1e-17, max_iter=200).fit(X_df, y_weird)
+
+    assert br.intercept_ == approx(lr.intercept_)
+    assert br.coef_ == approx(lr.coef_)
+
+
+# TODO: test predict
+# TODO: test predict_proba
+# TODO: test predict_log_proba
 # TODO: test "mom" strategy works best with outlying data
 
 
-# def test_predict_proba(self):
-#     clf = AMFClassifier(n_classes=2)
-#     with pytest.raises(
-#         RuntimeError,
-#         match="You must call `partial_fit` before asking for predictions",
-#     ):
-#         X_test = np.random.randn(2, 3)
-#         clf.predict_proba(X_test)
-#
-#     with pytest.raises(ValueError) as exc_info:
-#         X = np.random.randn(2, 2)
-#         y = np.array([0.0, 1.0])
-#         clf.partial_fit(X, y)
-#         X_test = np.random.randn(2, 3)
-#         clf.predict_proba(X_test)
-#     assert exc_info.type is ValueError
-#     assert exc_info.value.args[
-#         0
-#     ] == "`partial_fit` was called with n_features=%d while predictions are asked with n_features=%d" % (
-#         clf.n_features,
-#         3,
-#     )
-#
-
-# TODO: test_performance_on_moons
-# def test_performance_on_moons(self):
-#     n_samples = 300
-#     random_state = 42
-#     X, y = make_moons(n_samples=n_samples, noise=0.25, random_state=random_state)
-#     X_train, X_test, y_train, y_test = train_test_split(
-#         X, y, test_size=0.5, random_state=random_state
-#     )
-#     clf = AMFClassifier(n_classes=2, random_state=random_state)
-#     clf.partial_fit(X_train, y_train)
-#     y_pred = clf.predict_proba(X_test)
-#     score = roc_auc_score(y_test, y_pred[:, 1])
-#     # With this random_state, the score should be exactly 0.9709821428571429
-#     assert score > 0.97
-
-
-#
 # def test_random_state_is_consistant(self):
 #     n_samples = 300
 #     random_state = 42
