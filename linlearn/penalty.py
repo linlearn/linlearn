@@ -14,45 +14,55 @@ from collections import namedtuple
 # Functions associated to a penalty
 Penalty = namedtuple("Penalty", ["value_single", "value", "apply", "apply_single"])
 
-
-# # Prototype for penalty value functions
-# specs_value = [
-#     "float32(float32)",
-#     "float64(float64)"
-# ]
-#
-# # Prototype for penalty apply functions
-# specs_apply = [
-#     "float32(float32, float32)",
-#     "float64(float64, float64)"
-# ]
-
-
 #
 # Let us first start with general purpose functions
 #
 
 
-def penalty_value_factory():
-    pass
+# def penalty_value_factory():
+#     pass
 
 
-@njit
-def penalty_value(penalty_value_single, x, strength):
-    val = 0.0
-    for j in range(x.shape[0]):
-        val += penalty_value_single(x[j])
-    return strength * val
+# @njit
+# def penalty_value(penalty_value_single, x, strength):
+#     val = 0.0
+#     for j in range(x.shape[0]):
+#         val += penalty_value_single(x[j])
+#     return strength * val
 
 
-# NB: we could use @vectorize from numba, but it would break everything for code
-# coverage when using NUMBA_DISABLE_JIT=1
+# We could use @vectorize from numba, but it would break everything for code
+# coverage when using NUMBA_DISABLE_JIT=1. So for now, a good old loop will do
+# @njit
+# def penalty_apply(penalty_apply_single, x, t, out):
+#     for j in range(x.shape[0]):
+#         out[j] = penalty_apply_single(x[j], t)
 
 
-@njit
-def penalty_apply(penalty_apply_single, x, t, out):
-    for j in range(x.shape[0]):
-        out[j] = penalty_apply_single(x[j], t)
+#
+# none penalization function
+#
+def none_penalty_factory(*, strength, **kwargs):
+    @njit
+    def value_single(x):
+        return 0.0
+
+    @njit
+    def value(x):
+        return 0.0
+
+    @njit
+    def apply_single(x, t):
+        return x
+
+    @njit
+    def apply(x, t, out):
+        # TODO: always need need a copy ? inplace option ?
+        out[:] = x
+
+    return Penalty(
+        value_single=value_single, value=value, apply_single=apply_single, apply=apply,
+    )
 
 
 #
@@ -70,15 +80,19 @@ def l2sq_apply_single(x, t):
 
 @njit
 def l2sq_value(x, strength):
-    return penalty_value(l2sq_value_single, x, strength)
+    l2sq = 0.0
+    for j in range(x.shape[0]):
+        l2sq += x[j] * x[j]
+    return strength * l2sq
 
 
 @njit
 def l2sq_apply(x, t, out):
-    penalty_apply(l2sq_apply_single, x, t, out)
+    for j in range(x.shape[0]):
+        out[j] = x[j] / (1 + t)
 
 
-def l2sq_penalty_factory(strength):
+def l2sq_penalty_factory(*, strength, **kwargs):
     @njit
     def value_single(x):
         return strength * l2sq_value_single(x)
@@ -92,8 +106,9 @@ def l2sq_penalty_factory(strength):
         return l2sq_apply_single(x, strength * t)
 
     @njit
-    def apply(x, t):
-        return l2sq_apply(x, strength * t)
+    def apply(x, t, out):
+        # TODO: faut pas return mais appliquer inplace ou a out ?
+        l2sq_apply(x, strength * t, out)
 
     return Penalty(
         value_single=value_single, value=value, apply_single=apply_single, apply=apply,
@@ -120,15 +135,20 @@ def l1_apply_single(x, t):
 
 @njit
 def l1_value(x, strength):
-    return penalty_value(l1_value_single, x, strength)
+    l1 = 0.0
+    for j in range(x.shape[0]):
+        l1 += fabs(x[j])
+
+    return strength * l1
 
 
 @njit
 def l1_apply(x, t, out):
-    penalty_apply(l1_apply_single, x, t, out)
+    for j in range(x.shape[0]):
+        out[j] = l1_apply_single(x[j], t)
 
 
-def l1_penalty_factory(strength):
+def l1_penalty_factory(*, strength, **kwargs):
     @njit
     def value_single(x):
         return strength * l1_value_single(x)
@@ -142,23 +162,78 @@ def l1_penalty_factory(strength):
         return l1_apply_single(x, strength * t)
 
     @njit
-    def apply(x, t):
-        return l1_apply(x, strength * t)
+    def apply(x, t, out):
+        return l1_apply(x, strength * t, out)
 
     return Penalty(
         value_single=value_single, value=value, apply_single=apply_single, apply=apply,
     )
 
 
-# l1_penalty = Penalty(
-#     value_single=l1_value_single,
-#     value=l1_value,
-#     apply_single=l1_apply_single,
-#     apply=l1_apply,
-# )
+#
+# elasticnet penalization
+#
+@njit
+def elasticnet_value_single(x, l1_ratio):
+    return l1_ratio * fabs(x) + (1 - l1_ratio) * x * x / 2
 
 
-penalties_factory = {"l1": l1_penalty_factory, "l2": l2sq_penalty_factory}
+@njit
+def elasticnet_apply_single(x, t, l1_ratio):
+    # Here t contains learning_rate * strength
+    thresh = t * l1_ratio
+    if x > thresh:
+        return (x - thresh) / (1 + t * (1 - l1_ratio))
+    elif x < -thresh:
+        return (x + thresh) / (1 + t * (1 - l1_ratio))
+    else:
+        return 0.0
+
+
+@njit
+def elasticnet_value(x, strength, l1_ratio):
+    l1, l2sq = 0.0, 0.0
+    for j in range(x.shape[0]):
+        l1 += fabs(x[j])
+        l2sq += x[j] * x[j]
+
+    return strength * (l1_ratio * l1 + (1 - l1_ratio) * l2sq / 2)
+
+
+@njit
+def elasticnet_apply(x, t, l1_ratio, out):
+    for j in range(x.shape[0]):
+        out[j] = elasticnet_apply_single(x[j], t, l1_ratio)
+
+
+def elasticnet_penalty_factory(*, strength, l1_ratio, **kwargs):
+    @njit
+    def value_single(x):
+        return strength * elasticnet_value_single(x, l1_ratio)
+
+    @njit
+    def value(x):
+        return elasticnet_value(x, strength, l1_ratio)
+
+    @njit
+    def apply_single(x, t):
+        return elasticnet_apply_single(x, strength * t, l1_ratio)
+
+    @njit
+    def apply(x, t, out):
+        elasticnet_apply(x, strength * t, l1_ratio, out)
+
+    return Penalty(
+        value_single=value_single, value=value, apply_single=apply_single, apply=apply,
+    )
+
+
+penalties_factory = {
+    "none": none_penalty_factory,
+    "l1": l1_penalty_factory,
+    "l2": l2sq_penalty_factory,
+    "elasticnet": elasticnet_penalty_factory,
+}
 
 
 @njit
