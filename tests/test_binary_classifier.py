@@ -619,7 +619,7 @@ def test_that_array_conversion_is_ok():
     y_weird = [weird[yi] for yi in y]
 
     def approx(v):
-        return pytest.approx(v, abs=1e-5)
+        return pytest.approx(v, abs=1e-4)
 
     br = BinaryClassifier(tol=1e-17, max_iter=200).fit(X_df, y_weird)
     lr = LogisticRegression(tol=1e-17, max_iter=200).fit(X_df, y_weird)
@@ -631,7 +631,6 @@ def test_that_array_conversion_is_ok():
 # TODO: test predict
 # TODO: test predict_proba
 # TODO: test predict_log_proba
-
 # TODO: test "mom" strategy works best with outlying data
 
 
