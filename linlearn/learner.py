@@ -4,7 +4,7 @@ from scipy.special import expit, logsumexp
 
 from sklearn.base import ClassifierMixin, BaseEstimator
 from sklearn.preprocessing import LabelEncoder
-from sklearn.utils import check_array
+from sklearn.utils import check_array, check_consistent_length
 from sklearn.utils.multiclass import check_classification_targets
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import log_logistic, safe_sparse_dot, softmax, squared_norm
@@ -362,27 +362,27 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         if self.solver == "cgd":
             accept_sparse = "csc"
             order = "F"
-            accept_large_sparse = True
+            accept_large_sparse = False
         else:
             accept_sparse = "csr"
             order = "C"
-            accept_large_sparse = True
+            accept_large_sparse = False
 
         # TODO: y'a une verif dans le fit et puis aussi dans le compute path
-        X, y = self._validate_data(
+
+        X = check_array(
             X,
-            y,
-            accept_sparse=accept_sparse,
             order=order,
+            accept_sparse=accept_sparse,
+            dtype="numeric",
             accept_large_sparse=accept_large_sparse,
             estimator="BinaryClassifier",
         )
-
-        # TODO: random_state = check_random_state(random_state)
-
-        # TODO: non c'est pas bon du tout, faut que tout soit dans -1, 1
+        y = check_array(y, ensure_2d=False, dtype=None, estimator="BinaryClassifier")
+        check_consistent_length(X, y)
         check_classification_targets(y)
 
+        # TODO: random_state = check_random_state(random_state)
         le = LabelEncoder()
         # This replaces the modalities by elements in {0, 1}
         y_encoded = le.fit_transform(y)
@@ -447,8 +447,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
         self.optimization_result_ = optimization_result
         self.n_iter_ = np.asarray([optimization_result.n_iter], dtype=np.int32)
-
-        # print(optimization_result)
 
         w = optimization_result.w
 
