@@ -479,20 +479,20 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             case, confidence score for self.classes_[1] where >0 means this
             class would be predicted.
         """
+        # TODO: this is from scikit-learn, cite and put authors
         check_is_fitted(self)
 
-        # Which sparse array do we accept ?
         X = check_array(X, accept_sparse="csr")
 
-        n_features = self.coef_.shape[0]
+        n_features = self.coef_.shape[1]
         if X.shape[1] != n_features:
             raise ValueError(
                 "X has %d features per sample; expecting %d" % (X.shape[1], n_features)
             )
 
         scores = safe_sparse_dot(X, self.coef_.T, dense_output=True) + self.intercept_
-        return scores
-        # return scores.ravel() if scores.shape[1] == 1 else scores
+        # This differs from scikit: we only handle binary classification here
+        return scores.ravel()
 
     def predict_proba(self, X):
         """
