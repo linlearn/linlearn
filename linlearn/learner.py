@@ -89,7 +89,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         verbose=0,
         warm_start=False,
         n_jobs=None,
-        l1_ratio=None
+        l1_ratio=0.5
     ):
         # The order is important here: this calls the properties defined below
         self.penalty = penalty
@@ -185,7 +185,8 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
     def block_size(self, val):
         if not isinstance(val, numbers.Real) or val <= 0.0 or val > 1:
             raise ValueError("block_size must be in (0, 1]; got (block_size=%r)" % val)
-        self._block_size = val
+        else:
+            self._block_size = val
 
     @property
     def solver(self):
@@ -227,6 +228,17 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             )
         else:
             self._max_iter = int(val)
+
+    @property
+    def l1_ratio(self):
+        return self._l1_ratio
+
+    @l1_ratio.setter
+    def l1_ratio(self, val):
+        if not isinstance(val, numbers.Real) or val < 0.0 or val > 1.0:
+            raise ValueError("l1_ratio must be in (0, 1]; got (l1_ratio=%r)" % val)
+        else:
+            self._l1_ratio = val
 
     # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None, l1_ratio=None
     # if self.penalty == "elasticnet":
@@ -274,7 +286,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         penalty_factory = penalties_factory[self.penalty]
         # The strength is scaled using following scikit-learn's scaling
         strength = 1 / (self.C * n_samples)
-        penalty = penalty_factory(strength)
+        penalty = penalty_factory(strength=strength, l1_ratio=self.l1_ratio)
 
         # Number of sample in the blocks (only for strategy="mom")
         n_samples_in_block = int(n_samples * self.block_size)
