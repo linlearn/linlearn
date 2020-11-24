@@ -5,7 +5,7 @@ from scipy.special import expit, logsumexp
 from sklearn.base import ClassifierMixin, BaseEstimator
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils import check_array, check_consistent_length
-from sklearn.utils.multiclass import check_classification_targets
+from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import log_logistic, safe_sparse_dot, softmax, squared_norm
 
@@ -48,29 +48,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
     #     "quadratic hinge",
     #     "modified huber",
     # ]
-    #
-    # __penalties = ["l2", "l1", "none", "elasticnet"]
-
-    # w = coordinate_gradient_descent(
-    #     # loss_value_batch,
-    #     logistic_value_batch,
-    #     # loss_derivative,
-    #     logistic_derivative,
-    #     # penalty_apply_single,
-    #     # l2sq_apply_single,
-    #     l1_apply_single,
-    #     # penalty_value,
-    #     # l2sq_value,
-    #     l1_value,
-    #     penalty_strength / n_samples,
-    #     w,
-    #     X,
-    #     y,
-    #     fit_intercept,
-    #     steps,
-    #     max_iter,
-    #     history,
-    # )
 
     def __init__(
         self,
@@ -359,6 +336,9 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         sample_weight is not suported yet
         """
         # TODO: sample_weight support
+
+        # Ideal data ordering depends on the solver
+        # TODO: raise a warning if a copy is made ?
         if self.solver == "cgd":
             accept_sparse = "csc"
             order = "F"
@@ -367,8 +347,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             accept_sparse = "csr"
             order = "C"
             accept_large_sparse = False
-
-        # TODO: y'a une verif dans le fit et puis aussi dans le compute path
 
         X = check_array(
             X,
@@ -380,22 +358,19 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         )
         y = check_array(y, ensure_2d=False, dtype=None, estimator="BinaryClassifier")
         check_consistent_length(X, y)
-        check_classification_targets(y)
+        # Ensure that the label type is binary
+        y_type = type_of_target(y)
+        if y_type != "binary":
+            raise ValueError("Unknown label type: %r" % y_type)
 
         # TODO: random_state = check_random_state(random_state)
+        # This replaces the target modalities by elements in {0, 1}
         le = LabelEncoder()
-        # This replaces the modalities by elements in {0, 1}
         y_encoded = le.fit_transform(y)
-        if le.classes_.size != 2:
-            # TODO: try out with sklearn to get correct error message
-            raise ValueError("We need exactly two classes to fit BinaryClassifier")
-
+        # Keep track of the classes
         self.classes_ = le.classes_
-
-        mask = y_encoded == 1
-        # But we want to ensure the same dtype as X and values in {-1, 1}
-        y_bin = np.ones(y.shape, dtype=X.dtype)
-        y_bin[~mask] = -1.0
+        # We need to put the targets in {-1, 1}
+        y_encoded[y_encoded == 0] = -1.0
 
         # TODO: sample weights stuff, later...
         # # If sample weights exist, convert them to array (support for lists)
@@ -441,8 +416,8 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         #     )
 
         #######
-        solver = self._get_solver(X, y_bin)
-        w = self._get_initial_iterate(X, y_bin)
+        solver = self._get_solver(X, y_encoded)
+        w = self._get_initial_iterate(X, y_encoded)
         optimization_result = solver(w)
 
         self.optimization_result_ = optimization_result
@@ -450,7 +425,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
         w = optimization_result.w
 
-        # TODO: Not correct wih respect to what scikit returns
         if self.fit_intercept:
             self.intercept_ = np.array([w[0]])
             self.coef_ = w[np.newaxis, 1:].copy()

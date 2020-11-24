@@ -24,12 +24,8 @@ import pytest
 
 from scipy.special import expit, logit
 
-# TODO: parameter_test_with_type does nothing !!!
-
 # TODO: va falloir furieusement tester plein de types de données d'entrée, avec labels
 #  non-contigus, et avec labels strings par exemple.
-
-# TODO: verifier que fit avec strategy="erm" amène exactement au meme coef_ et intercept_ que sklearn
 
 # TODO: test the __repr__ (even if it's the one from sklearn
 
@@ -634,47 +630,6 @@ def test_that_array_conversion_is_ok():
 # TODO: test "mom" strategy works best with outlying data
 
 
-# def test_predict_proba(self):
-#     clf = AMFClassifier(n_classes=2)
-#     with pytest.raises(
-#         RuntimeError,
-#         match="You must call `partial_fit` before asking for predictions",
-#     ):
-#         X_test = np.random.randn(2, 3)
-#         clf.predict_proba(X_test)
-#
-#     with pytest.raises(ValueError) as exc_info:
-#         X = np.random.randn(2, 2)
-#         y = np.array([0.0, 1.0])
-#         clf.partial_fit(X, y)
-#         X_test = np.random.randn(2, 3)
-#         clf.predict_proba(X_test)
-#     assert exc_info.type is ValueError
-#     assert exc_info.value.args[
-#         0
-#     ] == "`partial_fit` was called with n_features=%d while predictions are asked with n_features=%d" % (
-#         clf.n_features,
-#         3,
-#     )
-#
-
-# TODO: test_performance_on_moons
-# def test_performance_on_moons(self):
-#     n_samples = 300
-#     random_state = 42
-#     X, y = make_moons(n_samples=n_samples, noise=0.25, random_state=random_state)
-#     X_train, X_test, y_train, y_test = train_test_split(
-#         X, y, test_size=0.5, random_state=random_state
-#     )
-#     clf = AMFClassifier(n_classes=2, random_state=random_state)
-#     clf.partial_fit(X_train, y_train)
-#     y_pred = clf.predict_proba(X_test)
-#     score = roc_auc_score(y_test, y_pred[:, 1])
-#     # With this random_state, the score should be exactly 0.9709821428571429
-#     assert score > 0.97
-
-
-#
 # def test_random_state_is_consistant(self):
 #     n_samples = 300
 #     random_state = 42
