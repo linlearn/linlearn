@@ -20,8 +20,6 @@ from sklearn.datasets import make_moons, make_circles, make_classification
 
 import numbers
 from linlearn import BinaryClassifier
-import pytest
-
 from scipy.special import expit, logit
 
 # TODO: va falloir furieusement tester plein de types de données d'entrée, avec labels
@@ -401,9 +399,6 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio):
         "random_state": 42,
     }
 
-    def approx(v):
-        return pytest.approx(v, abs=1e-7)
-
     if penalty == "none":
         # A single test is required for penalty="none"
         if C != 1.0 or l1_ratio != 0.5:
@@ -432,12 +427,26 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio):
     )
     clf_linlearn.fit(X, y)
 
-    # For some weird reason scikit's intercept_ does not match for "l1" with
-    # intercept and for small C
+    # For some weird reason scikit's intercept_ does not match for "l1" and
+    # "elasticnet" with intercept and for small C
     if not (penalty in ["l1", "elasticnet"] and fit_intercept and C < 1e-1):
-        assert clf_scikit.intercept_ == approx(clf_linlearn.intercept_)
+        # Test the intercept_
+        assert clf_scikit.intercept_ == pytest.approx(clf_linlearn.intercept_, abs=1e-7)
+        # And test prediction methods
+        assert clf_scikit.decision_function(X) == pytest.approx(
+            clf_linlearn.decision_function(X), abs=1e-6
+        )
+        assert clf_scikit.predict_proba(X) == pytest.approx(
+            clf_linlearn.predict_proba(X), abs=1e-6
+        )
+        assert clf_scikit.predict_log_proba(X) == pytest.approx(
+            clf_linlearn.predict_log_proba(X), abs=1e-6
+        )
+        assert (clf_scikit.predict(X) == clf_linlearn.predict(X)).any()
+        assert clf_scikit.score(X, y) == clf_linlearn.score(X, y)
 
-    assert clf_scikit.coef_ == approx(clf_linlearn.coef_)
+    # And always test the coef_
+    assert clf_scikit.coef_ == pytest.approx(clf_linlearn.coef_, abs=1e-7)
 
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
@@ -456,9 +465,6 @@ def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio):
     random_state = 42
 
     X, y = make_moons(n_samples=n_samples, noise=0.2, random_state=random_state)
-
-    def approx(v):
-        return pytest.approx(v, abs=1e-4)
 
     args = {
         "tol": tol,
@@ -494,10 +500,10 @@ def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio):
     clf_linlearn.fit(X, y)
 
     if not (penalty in ["l1", "elasticnet"] and fit_intercept and C < 1e-1):
-        assert clf_scikit.intercept_ == approx(clf_linlearn.intercept_)
+        assert clf_scikit.intercept_ == pytest.approx(clf_linlearn.intercept_, abs=1e-4)
 
     if not (penalty in ["l1", "elasticnet"] and C == 1e-1 and not fit_intercept):
-        assert clf_scikit.coef_ == approx(clf_linlearn.coef_)
+        assert clf_scikit.coef_ == pytest.approx(clf_linlearn.coef_, abs=1e-4)
 
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
@@ -614,19 +620,19 @@ def test_that_array_conversion_is_ok():
     weird = {0: "neg", 1: "pos"}
     y_weird = [weird[yi] for yi in y]
 
-    def approx(v):
-        return pytest.approx(v, abs=1e-4)
-
     br = BinaryClassifier(tol=1e-17, max_iter=200).fit(X_df, y_weird)
     lr = LogisticRegression(tol=1e-17, max_iter=200).fit(X_df, y_weird)
 
-    assert br.intercept_ == approx(lr.intercept_)
-    assert br.coef_ == approx(lr.coef_)
+    assert br.intercept_ == pytest.approx(lr.intercept_, abs=1e-4)
+    assert br.coef_ == pytest.approx(lr.coef_, abs=1e-4)
+
+    # And test prediction methods
+    assert lr.decision_function(X) == pytest.approx(br.decision_function(X), abs=1e-4)
+    assert lr.predict_proba(X) == pytest.approx(br.predict_proba(X), abs=1e-4)
+    assert lr.predict_log_proba(X) == pytest.approx(br.predict_log_proba(X), abs=1e-4)
+    assert (lr.predict(X) == br.predict(X)).any()
 
 
-# TODO: test predict
-# TODO: test predict_proba
-# TODO: test predict_log_proba
 # TODO: test "mom" strategy works best with outlying data
 
 

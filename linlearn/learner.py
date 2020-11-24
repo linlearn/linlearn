@@ -1,35 +1,28 @@
-import numpy as np
+"""
+Binary Classifier
+"""
+
+# Author: Stephane Gaiffas <stephane.gaiffas@gmail.com>
+
+# Parts of the code below are directly from scikit-learn, in particular from
+# https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/linear_model/_logistic.py
+
 import numbers
-from scipy.special import expit, logsumexp
+import numpy as np
+from scipy.special import expit
 
 from sklearn.base import ClassifierMixin, BaseEstimator
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils import check_array, check_consistent_length
 from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
-from sklearn.utils.extmath import log_logistic, safe_sparse_dot, softmax, squared_norm
+from sklearn.utils.extmath import safe_sparse_dot
 
 from .loss import losses_factory, steps_coordinate_descent
 from .penalty import penalties_factory
 from .solver import coordinate_gradient_descent, History, solvers_factory
-from .strategy import (
-    decision_function,
-    decision_function_coef_intercept,
-    strategies_factory,
-)
+from .strategy import strategies_factory
 
-# __losses = [
-#     "hinge",
-#     "smoothed hinge",
-#     "logistic",
-#     "quadratic hinge",
-#     "modified huber",
-# ]
-
-# TODO: support for penalty = "none" and "elasticnet"
-# class LogisticRegression(LinearClassifierMixin,
-#                          SparseCoefMixin,
-#                          BaseEstimator):
 
 # TODO: serialization
 
@@ -40,14 +33,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
     _penalties = list(penalties_factory.keys())
     _strategies = list(strategies_factory.keys())
     _solvers = list(solvers_factory.keys())
-
-    # __losses = [
-    #     "hinge",
-    #     "smoothed hinge",
-    #     "logistic",
-    #     "quadratic hinge",
-    #     "modified huber",
-    # ]
 
     def __init__(
         self,
@@ -68,7 +53,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         n_jobs=None,
         l1_ratio=0.5
     ):
-        # The order is important here: this calls the properties defined below
         self.penalty = penalty
         self.C = C
         self.loss = loss
@@ -217,40 +201,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         else:
             self._l1_ratio = val
 
-    # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None, l1_ratio=None
-    # if self.penalty == "elasticnet":
-    #     if (
-    #         not isinstance(self.l1_ratio, numbers.Number)
-    #         or self.l1_ratio < 0
-    #         or self.l1_ratio > 1
-    #     ):
-    #         raise ValueError(
-    #             "l1_ratio must be between 0 and 1;"
-    #             " got (l1_ratio=%r)" % self.l1_ratio
-    #         )
-    # elif self.l1_ratio is not None:
-    #     warnings.warn(
-    #         "l1_ratio parameter is only used when penalty is "
-    #         "'elasticnet'. Got "
-    #         "(penalty={})".format(self.penalty)
-    #     )
-    # if self.penalty == "none":
-    #     if self.C != 1.0:  # default values
-    #         warnings.warn(
-    #             "Setting penalty='none' will ignore the C and l1_ratio "
-    #             "parameters"
-    #         )
-    #         # Note that check for l1_ratio is done right above
-    #     C_ = np.inf
-    #     penalty = "l2"
-    # else:
-    #     C_ = self.C
-    #     penalty = self.penalty
-    # if not isinstance(self.max_iter, numbers.Number) or self.max_iter < 0:
-    #     raise ValueError(
-    #         "Maximum number of iteration must be positive;"
-    #         " got (max_iter=%r)" % self.max_iter
-    #     )
+    # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None
 
     def _get_solver(self, X, y):
         n_samples, n_features = X.shape
@@ -278,8 +229,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             # Get the gradient descent steps for each coordinate
             steps = steps_coordinate_descent(loss.lip, X, self.fit_intercept)
             self.history_ = History("CGD", self.max_iter, self.verbose)
-            # TODO: X should be F-major or CSC. Raise a warning if not. Do the same as scikit
-            # TODO: verbose LogReg in scikit to see how it behaves
+
             def solve(w):
                 return coordinate_gradient_descent(
                     loss,
@@ -333,7 +283,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
         Notes
         -----
-        sample_weight is not suported yet
+        sample_weight is not supported yet
         """
         # TODO: sample_weight support
 
@@ -456,7 +406,9 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         # TODO: this is from scikit-learn, cite and put authors
         check_is_fitted(self)
 
-        X = check_array(X, accept_sparse="csr")
+        # For now, no sparse arrays
+        # X = check_array(X, accept_sparse="csr")
+        X = check_array(X, accept_sparse=False, estimator="BinaryClassifier")
 
         n_features = self.coef_.shape[1]
         if X.shape[1] != n_features:
@@ -465,7 +417,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             )
 
         scores = safe_sparse_dot(X, self.coef_.T, dense_output=True) + self.intercept_
-        # This differs from scikit: we only handle binary classification here
         return scores.ravel()
 
     def predict_proba(self, X):
@@ -495,59 +446,9 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             where classes are ordered as they are in ``self.classes_``.
         """
         check_is_fitted(self)
-
-        # ovr = self.multi_class in ["ovr", "warn"] or (
-        #     self.multi_class == "auto"
-        #     and (self.classes_.size <= 2 or self.solver == "liblinear")
-        # )
-        # if ovr:
-        #     return super()._predict_proba_lr(X)
-        # else:
-        decision = self.decision_function(X)
-        if decision.ndim == 1:
-            # Workaround for multi_class="multinomial" and binary outcomes
-            # which requires softmax prediction with only a 1D decision.
-            decision_2d = np.c_[-decision, decision]
-        else:
-            decision_2d = decision
-        return softmax(decision_2d, copy=False)
-
-    def predict(self, X):
-        """
-        Predict class labels for samples in X.
-
-        Parameters
-        ----------
-        X : array-like or sparse matrix, shape (n_samples, n_features)
-            Samples.
-
-        Returns
-        -------
-        C : array, shape [n_samples]
-            Predicted class label per sample.
-        """
-        scores = self.decision_function(X)
-        if len(scores.shape) == 1:
-            indices = (scores > 0).astype(int)
-        else:
-            indices = scores.argmax(axis=1)
-        return self.classes_[indices]
-
-    def _predict_proba_lr(self, X):
-        """Probability estimation for OvR logistic regression.
-
-        Positive class probabilities are computed as
-        1. / (1. + np.exp(-self.decision_function(X)));
-        multiclass is handled by normalizing that over all classes.
-        """
         prob = self.decision_function(X)
         expit(prob, out=prob)
-        if prob.ndim == 1:
-            return np.vstack([1 - prob, prob]).T
-        else:
-            # OvR normalization, like LibLinear's predict_probability
-            prob /= prob.sum(axis=1).reshape((prob.shape[0], -1))
-            return prob
+        return np.vstack([1 - prob, prob]).T
 
     def predict_log_proba(self, X):
         """
@@ -570,81 +471,52 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         """
         return np.log(self.predict_proba(X))
 
-    # def decision_function(self, X):
-    #     # TODO: test that classifier is fitted
-    #     # TODO: test X
-    #     out = np.empty(X.shape[0], dtype=X.dtype)
-    #     decision_function_coef_intercept(
-    #         X, self.fit_intercept, self.coef, self.intercept, out
-    #     )
-    #     return out
+    def predict(self, X):
+        """
+        Predict class labels for samples in X.
 
-    # if not self._fitted:
-    #     raise ValueError("You must call ``fit`` before")
-    # else:
-    #     X = self._safe_array(X, dtype=X.dtype)
-    #     z = X.dot(self.weights)
-    #     if self.intercept:
-    #         z += self.intercept
-    #     return z
-    #
-    # # TODO: add threshold in predict
-    # def predict(self, X):
-    #     """Predict class for given samples
-    #
-    #     Parameters
-    #     ----------
-    #     X : `np.ndarray` or `scipy.sparse.csr_matrix`, shape=(n_samples, n_features)
-    #         Samples.
-    #
-    #     Returns
-    #     -------
-    #     output : `np.array`, shape=(n_samples,)
-    #         Returns predicted values.
-    #     """
-    #     logits = self.decision_function(X)
-    #     indices = (logits > 0).astype(np.int)
-    #     return indices
-    #     # return self.classes[indices]
+        Parameters
+        ----------
+        X : array-like or sparse matrix, shape (n_samples, n_features)
+            Samples.
 
-    # def predict_proba(self, X):
-    #     """
-    #     Probability estimates.
-    #
-    #     The returned estimates for all classes are ordered by the
-    #     label of classes.
-    #
-    #     Parameters
-    #     ----------
-    #     X : `np.ndarray` or `scipy.sparse.csr_matrix`, shape=(n_samples, n_features)
-    #         Input features matrix
-    #
-    #     Returns
-    #     -------
-    #     output : `np.ndarray`, shape=(n_samples, 2)
-    #         Returns the probability of the sample for each class
-    #         in the model in the same order as in `self.classes`
-    #     """
-    #     # if not self._fitted:
-    #     #     raise ValueError("You must call ``fit`` before")
-    #     # else:
-    #
-    #     logits = self.decision_function(X)
-    #     n_samples = logits.shape[0]
-    #
-    #     # probs_class_1 = sigmoid(logits)
-    #     # probs = np.empty((n_samples, 2))
-    #     # probs[:, 1] = probs_class_1
-    #     # probs[:, 0] = 1.0 - probs_class_1
-    #     # return probs
+        Returns
+        -------
+        C : array, shape [n_samples]
+            Predicted class label per sample.
+        """
+        # TODO: deal with threshold for predictions
+        scores = self.decision_function(X)
+        if len(scores.shape) == 1:
+            indices = (scores > 0).astype(int)
+        else:
+            indices = scores.argmax(axis=1)
+        return self.classes_[indices]
 
-    # def __repr__(self):
-    #     r = self.__class__.__name__
-    #     r += "("
-    #     r += "C={C}".format(C=self.C)
-    #     r += ', penalty="{penalty}"'.format(penalty=self.penalty)
-    #     r += ', loss="{loss}"'.format(loss=self.loss)
-    #     r += ', solver="{solver}"'.format(solver=self.solver)
-    #     r += ', strategy="{strategy}"'.format(strategy=self.strategy)
-    #     r += ")"
-    #     return r
+    def score(self, X, y, sample_weight=None):
+        """
+        Return the mean accuracy on the given test data and labels.
+
+        In multi-label classification, this is the subset accuracy
+        which is a harsh metric since you require for each sample that
+        each label set be correctly predicted.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            Test samples.
+
+        y : array-like of shape (n_samples,) or (n_samples, n_outputs)
+            True labels for `X`.
+
+        sample_weight : array-like of shape (n_samples,), default=None
+            Sample weights.
+
+        Returns
+        -------
+        score : float
+            Mean accuracy of ``self.predict(X)`` wrt. `y`.
+        """
+        from sklearn.metrics import accuracy_score
+
+        return accuracy_score(y, self.predict(X), sample_weight=sample_weight)

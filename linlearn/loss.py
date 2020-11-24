@@ -8,6 +8,13 @@ import numpy as np
 
 Loss = namedtuple("Loss", ["value_single", "value_batch", "derivative", "lip"])
 
+# __losses = [
+#     "hinge",
+#     "smoothed hinge",
+#     "logistic",
+#     "quadratic hinge",
+#     "modified huber",
+# ]
 
 #
 # Generic functions
