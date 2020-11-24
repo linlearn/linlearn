@@ -348,7 +348,6 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             order = "C"
             accept_large_sparse = False
 
-        # Check input arrays
         X = check_array(
             X,
             order=order,
