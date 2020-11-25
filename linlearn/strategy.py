@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.random import permutation
+from scipy.sparse import issparse
 from numba import njit, prange
 from collections import namedtuple
 
@@ -15,7 +16,7 @@ from collections import namedtuple
 Strategy = namedtuple("Strategy", ["grad_coordinate", "n_samples_in_block"])
 
 
-@njit
+# TODO: fonction utilisee par CGD sur une matrice CSC..., pas terrible en terme de perf
 def decision_function(X, fit_intercept, w, out):
     if fit_intercept:
         # TODO: use out= in dot and + z[0] at the same time with parallelize ?
@@ -25,15 +26,15 @@ def decision_function(X, fit_intercept, w, out):
     return out
 
 
-@njit
-def decision_function_coef_intercept(X, fit_intercept, coef, intercept, out):
-    if fit_intercept:
-        # TODO: use out= in dot and + z[0] at the same time with parallelize ?
-        # intercept is in a (1,) ndarray, following scikit-learn
-        out[:] = X.dot(coef) + intercept[0]
-    else:
-        out[:] = X.dot(coef)
-    return out
+# @njit
+# def decision_function_coef_intercept(X, fit_intercept, coef, intercept, out):
+#     if fit_intercept:
+#         # TODO: use out= in dot and + z[0] at the same time with parallelize ?
+#         # intercept is in a (1,) ndarray, following scikit-learn
+#         out[:] = X.dot(coef) + intercept[0]
+#     else:
+#         out[:] = X.dot(coef)
+#     return out
 
 
 # @njit
@@ -133,12 +134,11 @@ from numba import njit
 
 
 @njit
-def grad_coordinate_erm(loss_derivative, j, X, y, inner_products, fit_intercept):
+def grad_coordinate_erm_dense(loss_derivative, j, X, y, inner_products, fit_intercept):
     """Computation of the derivative of the loss with respect to a coordinate using the
     empirical risk minimization (erm) stategy."""
     grad = 0.0
     # TODO: parallel ?
-    # TODO: sparse matrix ?
     n_samples = inner_products.shape[0]
     if fit_intercept:
         if j == 0:
@@ -155,14 +155,129 @@ def grad_coordinate_erm(loss_derivative, j, X, y, inner_products, fit_intercept)
     return grad / n_samples
 
 
-def erm_strategy_factory(loss, X, y, fit_intercept, **kwargs):
-    @njit
-    def grad_coordinate(j, inner_products):
-        return grad_coordinate_erm(
-            loss.derivative, j, X, y, inner_products, fit_intercept
-        )
+@njit
+def grad_coordinate_erm_sparse(
+    loss_derivative, j, X_indices, X_indptr, X_data, y, inner_products, fit_intercept
+):
+    """Computation of the derivative of the loss with respect to a coordinate using the
+    empirical risk minimization (erm) stategy."""
+    grad = 0.0
 
-    return Strategy(grad_coordinate=grad_coordinate, n_samples_in_block=None)
+    # TODO: parallel ?
+    n_samples = inner_products.shape[0]
+    # Get indexes of column j
+    if fit_intercept:
+        if j == 0:
+            # In this case it's the derivative w.r.t the intercept
+            for i in range(n_samples):
+                grad += loss_derivative(y[i], inner_products[i])
+        else:
+            # Otherwise it's the (j-1)th column of X
+            col_start = X_indptr[j - 1]
+            col_end = X_indptr[j]
+            for idx in range(col_start, col_end):
+                # The actual row index
+                i = X_indices[idx]
+                grad += loss_derivative(y[i], inner_products[i]) * X_data[idx]
+    else:
+        # There is no intercept
+        col_start = X_indptr[j]
+        col_end = X_indptr[j + 1]
+        for idx in range(col_start, col_end):
+            i = X_indices[idx]
+            grad += loss_derivative(y[i], inner_products[i]) * X_data[idx]
+    return grad / n_samples
+
+
+# @njit(parallel=True)
+@njit
+def col_squared_norm_dense(n_samples, n_features, X, fit_intercept, out):
+    if fit_intercept:
+        # First squared norm is n_samples
+        out[0] = n_samples
+        for j in range(1, n_features + 1):
+            for i in range(n_samples):
+                out[j] += X[i, j - 1] * X[i, j - 1]
+    else:
+        for j in range(n_features):
+            for i in range(n_samples):
+                out[j] += X[i, j] * X[i, j]
+
+
+# TODO: put these functions in the strategy
+
+# @njit(parallel=True)
+@njit
+def col_squared_norm_sparse(
+    n_samples, n_features, X_indptr, X_data, fit_intercept, out
+):
+    # TODO: use prange ?
+    # This assumes that the matrix is in CSC format
+    if fit_intercept:
+        # First squared norm is n_samples
+        out[0] = n_samples
+        # Flat version instead of nested loop
+        for j in range(0, n_features):
+            col_start = X_indptr[j]
+            col_end = X_indptr[j + 1]
+            for idx in range(col_start, col_end):
+                out[j + 1] += X_data[idx] * X_data[idx]
+    else:
+        for j in range(n_features):
+            col_start = X_indptr[j]
+            col_end = X_indptr[j + 1]
+            for idx in range(col_start, col_end):
+                out[j] += X_data[idx] * X_data[idx]
+
+
+def col_squared_norm(X, fit_intercept):
+    # At this point X must be dense or CSC and nothing else
+    n_samples, n_features = X.shape
+    if fit_intercept:
+        out = np.zeros(n_features + 1)
+    else:
+        out = np.zeros(n_features)
+    if issparse(X):
+        col_squared_norm_sparse(
+            n_samples, n_features, X.indptr, X.data, fit_intercept, out
+        )
+    else:
+        col_squared_norm_dense(n_samples, n_features, X, fit_intercept, out)
+    return out
+
+
+def erm_strategy_factory(loss, X, y, fit_intercept, **kwargs):
+
+    if issparse(X):
+        X_indices = X.indices
+        X_indptr = X.indptr
+        X_data = X.data
+
+        @njit
+        def grad_coordinate_sparse(j, inner_products):
+            return grad_coordinate_erm_sparse(
+                loss.derivative,
+                j,
+                X_indices,
+                X_indptr,
+                X_data,
+                y,
+                inner_products,
+                fit_intercept,
+            )
+
+        return Strategy(
+            grad_coordinate=grad_coordinate_sparse, n_samples_in_block=None,
+        )
+    else:
+
+        @njit
+        def grad_coordinate_dense(j, inner_products):
+            return grad_coordinate_erm_dense(
+                loss.derivative, j, X, y, inner_products, fit_intercept
+            )
+
+        return Strategy(grad_coordinate=grad_coordinate_dense, n_samples_in_block=None)
 
 
 # TODO: overlapping blocks in MOM ???
@@ -274,6 +389,8 @@ def grad_coordinate_mom(
 #
 #     return Strategy(grad_coordinate=grad_coordinate)
 
+# TODO: grad_coordinate_sparse for MOM
+
 
 def mom_strategy_factory(loss, X, y, fit_intercept, n_samples_in_block, **kwargs):
     @njit
@@ -289,53 +406,18 @@ def mom_strategy_factory(loss, X, y, fit_intercept, n_samples_in_block, **kwargs
 
 strategies_factory = {"erm": erm_strategy_factory, "mom": mom_strategy_factory}
 
-# erm_strategy = Strategy(grad_coordinate=grad_coordinate_erm)
 
-# mom_strategy = TrainingStrategy(grad_coordinate=grad_coordinate_mom)
-
-# erm_strategy_dense
-# erm_strategy_sparse
-
-
-@njit(parallel=True)
-def row_squared_norm_dense(model):
-    n_samples, n_features = model.X.shape
-    if model.fit_intercept:
-        norms_squared = np.ones(n_samples, dtype=model.X.dtype)
-    else:
-        norms_squared = np.zeros(n_samples, dtype=model.X.dtype)
-    for i in prange(n_samples):
-        for j in range(n_features):
-            norms_squared[i] += model.X[i, j] * model.X[i, j]
-    return norms_squared
-
-
-def row_squared_norm(model):
-    # TODO: for C and F order with aliasing
-    return row_squared_norm_dense(model.no_python)
-
-
-@njit(parallel=True)
-def col_squared_norm_dense(X, fit_intercept):
-    n_samples, n_features = X.shape
-    if fit_intercept:
-        norms_squared = np.zeros(n_features + 1, dtype=X.dtype)
-        # First squared norm is n_samples
-        norms_squared[0] = n_samples
-        for j in prange(1, n_features + 1):
-            for i in range(n_samples):
-                norms_squared[j] += X[i, j - 1] ** 2
-    else:
-        norms_squared = np.zeros(n_features, dtype=X.dtype)
-        for j in prange(n_features):
-            for i in range(n_samples):
-                norms_squared[j] += X[i, j] * X[i, j]
-    return norms_squared
-
-
-def col_squared_norm(model):
-    # TODO: for C and F order with aliasing
-    return col_squared_norm_dense(model.no_python)
+# @njit(parallel=True)
+# def row_squared_norm_dense(model):
+#     n_samples, n_features = model.X.shape
+#     if model.fit_intercept:
+#         norms_squared = np.ones(n_samples, dtype=model.X.dtype)
+#     else:
+#         norms_squared = np.zeros(n_samples, dtype=model.X.dtype)
+#     for i in prange(n_samples):
+#         for j in range(n_features):
+#             norms_squared[i] += model.X[i, j] * model.X[i, j]
+#     return norms_squared
 
 
 #

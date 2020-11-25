@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.sparse import issparse
 from math import fabs
 from numpy.random import permutation
 from numba import njit
@@ -8,7 +9,7 @@ from collections import namedtuple
 # from .history import History
 # from linlearn.model.utils import inner_prods
 
-from .strategy import grad_coordinate_erm, decision_function
+from .strategy import grad_coordinate_erm_dense, decision_function, col_squared_norm
 
 # TODO: good default for tol when using duality gap
 # TODO: step=float or {'best', 'auto'}
@@ -19,106 +20,24 @@ OptimizationResult = namedtuple(
 )
 
 
-# Attributes
-# xndarray
-# The solution of the optimization.
-# successbool
-# Whether or not the optimizer exited successfully.
-# statusint
-# Termination status of the optimizer. Its value depends on the underlying solver. Refer to message for details.
-# messagestr
-# Description of the cause of the termination.
-# fun, jac, hess: ndarray
-# Values of objective function, its Jacobian and its Hessian (if available). The Hessians may be approximations, see the documentation of the function in question.
-# hess_invobject
-# Inverse of the objective function’s Hessian; may be an approximation. Not available for all solvers. The type of this attribute may be either np.ndarray or scipy.sparse.linalg.LinearOperator.
-# nfev, njev, nhevint
-# Number of evaluations of the objective functions and of its Jacobian and Hessian.
-# nitint
-# Number of iterations performed by the optimizer.
-# maxcvfloat
-# The maximum constraint violation.
+# TODO: what is a column is all zeros ?
 
 
-# @njit
-# def coordinate_gradient_descent_cycle(
-#     # grad_coordinate,
-#     loss_derivative,
-#     penalty_apply_single,
-#     # penalty_strength,
-#     w,
-#     X,
-#     y,
-#     fit_intercept,
-#     inner_products,
-#     steps,
-#     coordinates,
-# ):
-#     """This function implements one cycle of coordinate gradient descent
-#     """
-#     # This implementation assumes dense data and a separable prox_old
-#     # TODO: F order C order
-#     n_samples, n_features = X.shape
-#     w_size = w.shape[0]
-#
-#     max_abs_delta = 0.0
-#     max_abs_weight = 0.0
-#
-#     for idx in range(w_size):
-#         j = coordinates[idx]
-#         # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
-#
-#         # grad_j = grad_coordinate(j)
-#
-#         grad_j = grad_coordinate_erm(
-#             loss_derivative, j, X, y, inner_products, fit_intercept
-#         )
-#         print("grad_j:, ", grad_j)
-#         # grad_j = grad_coordinate_erm(
-#         #     loss_derivative, j, X, y, inner_products, fit_intercept
-#         # )
-#
-#         if fit_intercept and j == 0:
-#             # It's the intercept, so we don't penalize
-#             w_j_new = w[j] - steps[j] * grad_j
-#         else:
-#             # It's not the intercept
-#             w_j_new = w[j] - steps[j] * grad_j
-#             w_j_new = penalty_apply_single(w_j_new, steps[j])
-#
-#         # print("w[j]: ", w[j], "w_j_new: ", w_j_new)
-#         # Update the inner products
-#         delta_j = w_j_new - w[j]
-#
-#         # Update the maximum update change
-#         abs_delta_j = fabs(delta_j)
-#         if abs_delta_j > max_abs_delta:
-#             max_abs_delta = abs_delta_j
-#
-#         # Update the maximum weight
-#         abs_w_j_new = fabs(w_j_new)
-#         if abs_w_j_new > max_abs_weight:
-#             max_abs_weight = abs_w_j_new
-#
-#         if fit_intercept:
-#             if j == 0:
-#                 for i in range(n_samples):
-#                     inner_products[i] += delta_j
-#             else:
-#                 for i in range(n_samples):
-#                     inner_products[i] += delta_j * X[i, j - 1]
-#         else:
-#             for i in range(n_samples):
-#                 inner_products[i] += delta_j * X[i, j]
-#         w[j] = w_j_new
-#         return max_abs_delta, max_abs_weight
+def steps_coordinate_descent(loss_lip, X, fit_intercept):
+    n_samples, n_features = X.shape
+    lip_const = loss_lip()
+    norms = col_squared_norm(X, fit_intercept)
+    return n_samples / (norms * lip_const)
 
 
-# @njit
 def coordinate_gradient_descent(
     loss, penalty, strategy, w, X, y, fit_intercept, steps, max_iter, tol, history,
 ):
     n_samples, n_features = X.shape
+
+    # X can be only dense (F-major) or CSC-sparse
+    # TODO: test that it's the case using X.flags
+    is_sparse = issparse(X)
 
     # Computation of the initial inner products
     inner_products = np.empty(n_samples, dtype=X.dtype)
@@ -139,62 +58,45 @@ def coordinate_gradient_descent(
     def objective(w):
         obj = loss_value_batch(y, inner_products)
         if fit_intercept:
-            # obj += penalty_value(w[1:], penalty_strength)
             obj += penalty_value(w[1:])
         else:
-            # obj += penalty_value(w, penalty_strength)
             obj += penalty_value(w)
         return obj
 
     grad_coordinate = strategy.grad_coordinate
 
     @njit
-    def coordinate_gradient_descent_cycle(
-        w, inner_products, coordinates,
-    ):
+    def cgd_cycle_dense(X, w, inner_products, coordinates):
         """This function implements one cycle of coordinate gradient descent
+        This implementation assumes dense data and a separable prox BLABLA
         """
-        # This implementation assumes dense data and a separable prox_old
-        # TODO: F order C order
-
+        # TODO: docstring
+        # Maximum absolute parameter update (used for the stopping criterion)
         max_abs_delta = 0.0
+        # Maximum absolute parameter value (used for the stopping criterion)
         max_abs_weight = 0.0
 
-        for idx in range(w_size):
-            j = coordinates[idx]
-            # print("j: ", j)
-            # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
-
+        for j in coordinates:
             grad_j = grad_coordinate(j, inner_products)
-            # grad_j = grad_coordinate_erm(
-            #     loss_derivative, j, X, y, inner_products, fit_intercept
-            # )
-            # print("grad_j:, ", grad_j)
-            # grad_j = grad_coordinate_erm(
-            #     loss_derivative, j, X, y, inner_products, fit_intercept
-            # )
             if fit_intercept and j == 0:
                 # It's the intercept, so we don't penalize
                 w_j_new = w[j] - steps[j] * grad_j
             else:
-                # It's not the intercept
                 w_j_new = w[j] - steps[j] * grad_j
                 w_j_new = penalty_apply_single(w_j_new, steps[j])
 
-            # print("w[j]: ", w[j], "w_j_new: ", w_j_new)
             # Update the inner products
             delta_j = w_j_new - w[j]
-
             # Update the maximum update change
             abs_delta_j = fabs(delta_j)
             if abs_delta_j > max_abs_delta:
                 max_abs_delta = abs_delta_j
-
             # Update the maximum weight
             abs_w_j_new = fabs(w_j_new)
             if abs_w_j_new > max_abs_weight:
                 max_abs_weight = abs_w_j_new
 
+            # Update the inner products when the matrix is dense F-major
             if fit_intercept:
                 if j == 0:
                     for i in range(n_samples):
@@ -205,9 +107,63 @@ def coordinate_gradient_descent(
             else:
                 for i in range(n_samples):
                     inner_products[i] += delta_j * X[i, j]
+
             w[j] = w_j_new
 
-        # print("max_abs_delta, max_abs_weight: ", max_abs_delta, max_abs_weight)
+        return max_abs_delta, max_abs_weight
+
+    @njit
+    def cgd_cycle_sparse(X_indices, X_indptr, X_data, w, inner_products, coordinates):
+        """This function implements one cycle of coordinate gradient descent
+        This implementation assumes dense data and a separable prox BLABLA
+        """
+        # TODO: docstring
+        # Maximum absolute parameter update (used for the stopping criterion)
+        max_abs_delta = 0.0
+        # Maximum absolute parameter value (used for the stopping criterion)
+        max_abs_weight = 0.0
+
+        for j in coordinates:
+            grad_j = grad_coordinate(j, inner_products)
+            if fit_intercept and j == 0:
+                # It's the intercept, so we don't penalize
+                w_j_new = w[j] - steps[j] * grad_j
+            else:
+                w_j_new = w[j] - steps[j] * grad_j
+                w_j_new = penalty_apply_single(w_j_new, steps[j])
+
+            # Update the inner products
+            delta_j = w_j_new - w[j]
+            # Update the maximum update change
+            abs_delta_j = fabs(delta_j)
+            if abs_delta_j > max_abs_delta:
+                max_abs_delta = abs_delta_j
+            # Update the maximum weight
+            abs_w_j_new = fabs(w_j_new)
+            if abs_w_j_new > max_abs_weight:
+                max_abs_weight = abs_w_j_new
+
+            # Update the inner products when the matrix is sparse CSC
+            if fit_intercept:
+                if j == 0:
+                    for i in range(n_samples):
+                        inner_products[i] += delta_j
+                else:
+                    col_start = X_indptr[j - 1]
+                    col_end = X_indptr[j]
+                    for idx in range(col_start, col_end):
+                        # The actual row index
+                        i = X_indices[idx]
+                        inner_products[i] += delta_j * X_data[idx]
+            else:
+                col_start = X_indptr[j]
+                col_end = X_indptr[j + 1]
+                for idx in range(col_start, col_end):
+                    i = X_indices[idx]
+                    inner_products[i] += delta_j * X_data[idx]
+
+            w[j] = w_j_new
+
         return max_abs_delta, max_abs_weight
 
     # Value of the objective at initialization
@@ -217,14 +173,23 @@ def coordinate_gradient_descent(
     # TODO: First value for tolerance is 1.0 or NaN
     history.update(epoch=0, obj=obj, tol=1.0, update_bar=False)
 
+    # rng = np.random.RandomState(42)
+    # coordinates = rng.permutation(w_size)
+
     for cycle in range(1, max_iter + 1):
         # Sample a permutation of the coordinates
+        # TODO: use random_state for this...
         coordinates = permutation(w_size)
-        # Launch the coordinates cycle
 
-        max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(
-            w, inner_products, coordinates
-        )
+        # Launch the coordinates cycle
+        if is_sparse:
+            max_abs_delta, max_abs_weight = cgd_cycle_sparse(
+                X.indices, X.indptr, X.data, w, inner_products, coordinates
+            )
+        else:
+            max_abs_delta, max_abs_weight = cgd_cycle_dense(
+                X, w, inner_products, coordinates
+            )
 
         # Compute the new value of objective
         obj = objective(w)
@@ -243,17 +208,6 @@ def coordinate_gradient_descent(
             current_tol = 0.0
         else:
             current_tol = max_abs_delta / max_abs_weight
-
-        # print(
-        #     "max_abs_delta: ",
-        #     max_abs_delta,
-        #     ", max_abs_weight: ",
-        #     max_abs_weight,
-        #     ", current_tol: ",
-        #     current_tol,
-        #     ", tol: ",
-        #     tol,
-        # )
 
         # TODO: tester tous les cas "max_abs_weight == 0.0" etc..
         history.update(epoch=cycle, obj=obj, tol=current_tol, update_bar=True)

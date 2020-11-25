@@ -27,6 +27,9 @@ from scipy.special import expit, logit
 
 # TODO: test the __repr__ (even if it's the one from sklearn
 
+# TODO: that sparse and dense versions perfetly match
+# TODO: test col_norm on dense and sparse matrices and cgd_steps
+
 
 def test_keyword_args_only():
     with pytest.raises(TypeError) as exc_info:
