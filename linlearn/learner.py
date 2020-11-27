@@ -18,9 +18,14 @@ from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import safe_sparse_dot
 
-from .loss import losses_factory, steps_coordinate_descent
+from .loss import losses_factory
 from .penalty import penalties_factory
-from .solver import coordinate_gradient_descent, History, solvers_factory
+from .solver import (
+    coordinate_gradient_descent,
+    History,
+    solvers_factory,
+    steps_coordinate_descent,
+)
 from .strategy import strategies_factory
 
 
@@ -251,7 +256,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             raise NotImplementedError("%s is not implemented yet" % self.solver)
 
     def _get_initial_iterate(self, X, y):
-        # Deal with warm-starting here
+        # TODO: Deal with warm-starting here
         n_samples, n_features = X.shape
         if self.fit_intercept:
             w = np.zeros(n_features + 1)
@@ -292,11 +297,11 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         if self.solver == "cgd":
             accept_sparse = "csc"
             order = "F"
-            accept_large_sparse = False
+            accept_large_sparse = True
         else:
             accept_sparse = "csr"
             order = "C"
-            accept_large_sparse = False
+            accept_large_sparse = True
 
         X = check_array(
             X,
@@ -408,7 +413,12 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
         # For now, no sparse arrays
         # X = check_array(X, accept_sparse="csr")
-        X = check_array(X, accept_sparse=False, estimator="BinaryClassifier")
+        X = check_array(
+            X,
+            accept_sparse="csr",
+            accept_large_sparse=True,
+            estimator="BinaryClassifier",
+        )
 
         n_features = self.coef_.shape[1]
         if X.shape[1] != n_features:

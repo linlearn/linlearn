@@ -29,33 +29,6 @@ def loss_value_batch(loss_value_single, y, z):
     return val / n_samples
 
 
-# @njit(parallel=True)
-@njit
-def steps_coordinate_descent(loss_lip, X, fit_intercept):
-    # def col_squared_norm_dense(X, fit_intercept):
-    n_samples, n_features = X.shape
-    lip_const = loss_lip()
-    if fit_intercept:
-        steps = np.zeros(n_features + 1, dtype=X.dtype)
-        # First squared norm is n_samples
-        steps[0] = 1 / lip_const
-        for j in prange(1, n_features + 1):
-            col_j_squared_norm = 0.0
-            for i in range(n_samples):
-                col_j_squared_norm += X[i, j - 1] ** 2
-            steps[j] = n_samples / (lip_const * col_j_squared_norm)
-    else:
-        steps = np.zeros(n_features, dtype=X.dtype)
-        for j in prange(n_features):
-            col_j_squared_norm = 0.0
-            for i in range(n_samples):
-                col_j_squared_norm += X[i, j - 1] ** 2
-            steps[j] = n_samples / (lip_const * col_j_squared_norm)
-    # print(steps)
-    # steps /= n_samples
-    return steps
-
-
 # TODO: take the losses from https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/linear_model/_sgd_fast.pyx
 
 #

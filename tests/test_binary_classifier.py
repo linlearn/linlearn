@@ -7,6 +7,7 @@ import numpy as np
 from numpy.random.mtrand import multivariate_normal
 from scipy.linalg import toeplitz
 from scipy.special import expit
+from scipy.sparse import csc_matrix, csr_matrix
 
 import pytest
 
@@ -26,6 +27,9 @@ from scipy.special import expit, logit
 #  non-contigus, et avec labels strings par exemple.
 
 # TODO: test the __repr__ (even if it's the one from sklearn
+
+# TODO: that sparse and dense versions perfetly match
+# TODO: test col_norm on dense and sparse matrices and cgd_steps
 
 
 def test_keyword_args_only():
@@ -371,12 +375,20 @@ def simulate_linear(n_samples, random_state=2):
 
 penalties = BinaryClassifier._penalties
 
+# TODO: y'a un probleme dans le cas sparse avec l'intercept j'ai l'impression que le
+#  probleme vient de scikit: regarder pour scikit si avec et sans intercept si ca matche
+#  bien
+
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
-@pytest.mark.parametrize("penalty", penalties)
-@pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
-@pytest.mark.parametrize("l1_ratio", (0.1, 0.5, 0.9))
-def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio):
+# @pytest.mark.parametrize("penalty", penalties)
+@pytest.mark.parametrize("penalty", ("l2",))
+# @pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
+@pytest.mark.parametrize("C", (1.0,))
+# @pytest.mark.parametrize("l1_ratio", (0.1, 0.5, 0.9))
+@pytest.mark.parametrize("l1_ratio", (0.5,))
+@pytest.mark.parametrize("sparse", (True, "csc"))
+def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, sparse):
     """
     This is a test that checks on many combinations that BinaryClassifier gets the
     same coef_ and intercept_ as scikit-learn on simulated data
@@ -384,12 +396,17 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio):
     n_samples = 128
     n_features = 5
     tol = 1e-10
-    max_iter = 200
+    max_iter = 500
     verbose = False
 
     X, y = simulate_true_logistic(
         n_samples=n_samples, n_features=n_features, fit_intercept=fit_intercept,
     )
+
+    if sparse == "csc":
+        X = csc_matrix(X)
+    elif sparse == "csr":
+        X = csr_matrix(X)
 
     args = {
         "tol": tol,
@@ -402,19 +419,19 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio):
     if penalty == "none":
         # A single test is required for penalty="none"
         if C != 1.0 or l1_ratio != 0.5:
-            return
-        clf_scikit = LogisticRegression(penalty=penalty, solver="saga", **args)
+            pytest.skip()
+        clf_scikit = LogisticRegression(penalty=penalty, solver="sag", **args)
     elif penalty == "l2":
         if l1_ratio != 0.5:
-            return
-        clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="saga", **args)
+            pytest.skip()
+        clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="sag", **args)
     elif penalty == "l1":
         if l1_ratio != 0.5:
-            return
-        clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="saga", **args)
+            pytest.skip()
+        clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="sag", **args)
     elif penalty == "elasticnet":
         clf_scikit = LogisticRegression(
-            penalty=penalty, C=C, solver="saga", l1_ratio=l1_ratio, **args
+            penalty=penalty, C=C, solver="sag", l1_ratio=l1_ratio, **args
         )
     else:
         raise ValueError("Weird penalty %r" % penalty)
@@ -476,15 +493,15 @@ def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio):
 
     if penalty == "none":
         if C != 1.0 or l1_ratio != 0.5:
-            return
+            pytest.skip()
         clf_scikit = LogisticRegression(penalty=penalty, solver="saga", **args)
     elif penalty == "l2":
         if l1_ratio != 0.5:
-            return
+            pytest.skip()
         clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="saga", **args)
     elif penalty == "l1":
         if l1_ratio != 0.5:
-            return
+            pytest.skip()
         clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="saga", **args)
     elif penalty == "elasticnet":
         clf_scikit = LogisticRegression(
@@ -536,15 +553,15 @@ def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio):
 
     if penalty == "none":
         if C != 1.0 or l1_ratio != 0.5:
-            return
+            pytest.skip()
         clf_scikit = LogisticRegression(penalty=penalty, solver="saga", **args)
     elif penalty == "l2":
         if l1_ratio != 0.5:
-            return
+            pytest.skip()
         clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="saga", **args)
     elif penalty == "l1":
         if l1_ratio != 0.5:
-            return
+            pytest.skip()
         clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="saga", **args)
     elif penalty == "elasticnet":
         clf_scikit = LogisticRegression(
@@ -631,6 +648,83 @@ def test_that_array_conversion_is_ok():
     assert lr.predict_proba(X) == pytest.approx(br.predict_proba(X), abs=1e-4)
     assert lr.predict_log_proba(X) == pytest.approx(br.predict_log_proba(X), abs=1e-4)
     assert (lr.predict(X) == br.predict(X)).any()
+
+
+@pytest.mark.parametrize("fit_intercept", (False, True))
+def test_sparse_and_dense_match(
+    fit_intercept, penalty="elasticnet", C=1.0, l1_ratio=0.5
+):
+    """
+    This is a test that checks on many combinations that BinaryClassifier gets the
+    same coef_ and intercept_ as scikit-learn on simulated data
+    """
+    n_samples = 128
+    n_features = 5
+    tol = 1e-10
+    max_iter = 200
+    verbose = False
+
+    X_dense, y = simulate_true_logistic(
+        n_samples=n_samples, n_features=n_features, fit_intercept=fit_intercept,
+    )
+
+    X_csc = csc_matrix(X_dense)
+    X_csr = csr_matrix(X_dense)
+
+    args = {
+        "tol": tol,
+        "max_iter": max_iter,
+        "verbose": verbose,
+        "fit_intercept": fit_intercept,
+        "random_state": 42,
+    }
+
+    clf_dense = BinaryClassifier(penalty=penalty, C=C, l1_ratio=l1_ratio, **args).fit(
+        X_dense, y
+    )
+    clf_csc = BinaryClassifier(penalty=penalty, C=C, l1_ratio=l1_ratio, **args).fit(
+        X_csc, y
+    )
+    clf_csr = BinaryClassifier(penalty=penalty, C=C, l1_ratio=l1_ratio, **args).fit(
+        X_csr, y
+    )
+
+    # Dense is same as csc
+    assert clf_dense.intercept_ == pytest.approx(clf_csc.intercept_, abs=1e-7)
+    assert clf_dense.coef_ == pytest.approx(clf_csc.coef_, abs=1e-7)
+    # Dense is same as crs
+    assert clf_dense.intercept_ == pytest.approx(clf_csr.intercept_, abs=1e-7)
+    assert clf_dense.coef_ == pytest.approx(clf_csr.coef_, abs=1e-7)
+
+    # Test prediction methods on csc
+    assert clf_dense.decision_function(X_dense) == pytest.approx(
+        clf_csc.decision_function(X_csc), abs=1e-9
+    )
+    assert clf_dense.predict_proba(X_dense) == pytest.approx(
+        clf_csc.predict_proba(X_csc), abs=1e-9
+    )
+    assert clf_dense.predict_log_proba(X_dense) == pytest.approx(
+        clf_csc.predict_log_proba(X_csc), abs=1e-9
+    )
+    assert clf_dense.predict(X_dense) == pytest.approx(clf_csc.predict(X_csc), abs=1e-9)
+    assert clf_dense.score(X_dense, y) == pytest.approx(
+        clf_csc.score(X_csc, y), abs=1e-9
+    )
+
+    # Test prediction methods on csr (only for clf_csc
+    assert clf_dense.decision_function(X_dense) == pytest.approx(
+        clf_csc.decision_function(X_csr), abs=1e-9
+    )
+    assert clf_dense.predict_proba(X_dense) == pytest.approx(
+        clf_csc.predict_proba(X_csr), abs=1e-9
+    )
+    assert clf_dense.predict_log_proba(X_dense) == pytest.approx(
+        clf_csc.predict_log_proba(X_csr), abs=1e-9
+    )
+    assert clf_dense.predict(X_dense) == pytest.approx(clf_csc.predict(X_csc), abs=1e-9)
+    assert clf_dense.score(X_dense, y) == pytest.approx(
+        clf_csc.score(X_csr, y), abs=1e-9
+    )
 
 
 # TODO: test "mom" strategy works best with outlying data
