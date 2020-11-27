@@ -375,12 +375,19 @@ def simulate_linear(n_samples, random_state=2):
 
 penalties = BinaryClassifier._penalties
 
+# TODO: y'a un probleme dans le cas sparse avec l'intercept j'ai l'impression que le
+#  probleme vient de scikit: regarder pour scikit si avec et sans intercept si ca matche
+#  bien
+
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
-@pytest.mark.parametrize("penalty", penalties)
-@pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
-@pytest.mark.parametrize("l1_ratio", (0.1, 0.5, 0.9))
-@pytest.mark.parametrize("sparse", (False, "csc", "csr"))
+# @pytest.mark.parametrize("penalty", penalties)
+@pytest.mark.parametrize("penalty", ("l2",))
+# @pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
+@pytest.mark.parametrize("C", (1.0,))
+# @pytest.mark.parametrize("l1_ratio", (0.1, 0.5, 0.9))
+@pytest.mark.parametrize("l1_ratio", (0.5,))
+@pytest.mark.parametrize("sparse", (True, "csc"))
 def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, sparse):
     """
     This is a test that checks on many combinations that BinaryClassifier gets the
@@ -389,7 +396,7 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, sparse):
     n_samples = 128
     n_features = 5
     tol = 1e-10
-    max_iter = 200
+    max_iter = 500
     verbose = False
 
     X, y = simulate_true_logistic(
@@ -413,18 +420,18 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, sparse):
         # A single test is required for penalty="none"
         if C != 1.0 or l1_ratio != 0.5:
             pytest.skip()
-        clf_scikit = LogisticRegression(penalty=penalty, solver="saga", **args)
+        clf_scikit = LogisticRegression(penalty=penalty, solver="sag", **args)
     elif penalty == "l2":
         if l1_ratio != 0.5:
             pytest.skip()
-        clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="saga", **args)
+        clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="sag", **args)
     elif penalty == "l1":
         if l1_ratio != 0.5:
             pytest.skip()
-        clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="saga", **args)
+        clf_scikit = LogisticRegression(penalty=penalty, C=C, solver="sag", **args)
     elif penalty == "elasticnet":
         clf_scikit = LogisticRegression(
-            penalty=penalty, C=C, solver="saga", l1_ratio=l1_ratio, **args
+            penalty=penalty, C=C, solver="sag", l1_ratio=l1_ratio, **args
         )
     else:
         raise ValueError("Weird penalty %r" % penalty)
