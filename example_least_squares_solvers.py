@@ -6,7 +6,8 @@ from scipy.linalg import toeplitz
 from linlearn.model import LeastSquares
 from linlearn.model.utils import inner_prods
 from linlearn.prox_old import ProxL2Sq, ProxL1
-from linlearn.solver_old import SVRG, CGD, History
+
+# from linlearn.solver_old import SVRG, CGD, History
 
 from linlearn.plot import plot_history
 

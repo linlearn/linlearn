@@ -1,5 +1,5 @@
 from math import exp, log
-from numba import njit, jitclass, vectorize, prange
+from numba import jit, njit, jitclass, vectorize, prange
 from numba.types import int64, float64, boolean
 
 from collections import namedtuple
@@ -7,6 +7,12 @@ from collections import namedtuple
 import numpy as np
 
 Loss = namedtuple("Loss", ["value_single", "value_batch", "derivative", "lip"])
+
+
+NOPYTHON = True
+NOGIL = True
+BOUNDSCHECK = False
+
 
 # __losses = [
 #     "hinge",
@@ -19,7 +25,7 @@ Loss = namedtuple("Loss", ["value_single", "value_batch", "derivative", "lip"])
 #
 # Generic functions
 #
-@njit
+@jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
 def loss_value_batch(loss_value_single, y, z):
     val = 0.0
     n_samples = y.shape[0]

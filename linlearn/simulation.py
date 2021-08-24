@@ -5,6 +5,9 @@ from scipy.linalg import toeplitz
 from linlearn.model.logistic import sigmoid
 
 
+# TODO: ajouter des modeles de corruption des donnees / queues lourdes
+
+
 def simulate_log_reg(n_samples, coef, intercept=None):
     n_features = coef.shape[0]
     cov = toeplitz(0.5 ** np.arange(0, n_features))

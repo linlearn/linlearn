@@ -7,6 +7,7 @@ from scipy.linalg import toeplitz
 # from linlearn.solver_old import SVRG
 # from linlearn.prox_old import ProxL2Sq
 
+
 np.random.seed(42)
 
 from linlearn.loss import (
@@ -78,7 +79,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
 
 
-penalty = "l2"
+penalty = "l1"
 C = 1e1
 tol = 1e-13
 max_iter = 100
