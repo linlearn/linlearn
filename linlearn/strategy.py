@@ -14,6 +14,8 @@ from collections import namedtuple
 
 Strategy = namedtuple("Strategy", ["grad_coordinate", "n_samples_in_block"])
 
+# TODO
+
 
 @njit
 def decision_function(X, fit_intercept, w, out):
