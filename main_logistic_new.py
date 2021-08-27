@@ -2,30 +2,10 @@ import numpy as np
 from numpy.random.mtrand import multivariate_normal
 from scipy.linalg import toeplitz
 
-# from linlearn.model import Logistic
-# from linlearn.model.logistic import sigmoid
-# from linlearn.solver_old import SVRG
-# from linlearn.prox_old import ProxL2Sq
+from linlearn._loss import get_loss, steps_coordinate_descent, sigmoid
+from linlearn._estimator import get_estimator
+from linlearn._solver import coordinate_gradient_descent, History
 
-
-from linlearn._estimator import StateMOM, StateERM, partial_deriv_mom, partial_deriv_erm
-
-from linlearn._solver import StateCGD
-from linlearn._loss import logistic_deriv, sigmoid
-
-np.random.seed(42)
-
-# from linlearn.loss import (
-#     logistic_value_single,
-#     logistic_value_batch,
-#     sigmoid,
-#     logistic_derivative,
-#     logistic_lip,
-#     steps_coordinate_descent,
-# )
-# from linlearn.penalty import l2sq_apply_single, l2sq_value, l1_apply_single, l1_value
-# from linlearn.solver import coordinate_gradient_descent
-# from linlearn.solver import History
 
 from sklearn.preprocessing import StandardScaler
 
@@ -48,7 +28,8 @@ def simulate(n_samples, w0, b0=None):
 
 n_samples = 100_000
 # n_samples = 1_000
-n_features = 5
+# n_features = 5
+n_features = 100
 fit_intercept = True
 
 coef0 = np.random.randn(n_features)
@@ -59,91 +40,23 @@ else:
 
 X, y = simulate(n_samples, coef0, intercept0)
 
-# if fit_intercept:
-#     w = np.zeros(n_features + 1)
-# else:
-#     w = np.zeros(n_features)
-#
-# steps = steps_coordinate_descent(logistic_lip, X, fit_intercept)
-# print(steps)
-#
-# exit(0)
-# step = 1e-2
-fit_intercept = True
-block_size = 100
-
-# state_estimator = StateERM()
-state_estimator = StateMOM(n_samples, block_size)
-state_solver = StateCGD(n_samples)
-
-loss_deriv = logistic_deriv
-
-deriv = partial_deriv_mom(loss_deriv, 0, X, y, state_solver, state_estimator)
-
-
-print(deriv)
-
-exit(0)
-
-np.set_printoptions(precision=4)
-
-print("Ground truth")
 if fit_intercept:
-    print(np.array([intercept0]), coef0)
+    w = np.zeros(n_features + 1)
 else:
-    print(coef0)
-
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import log_loss
+    w = np.zeros(n_features)
 
 
-penalty = "l1"
-C = 1e1
-tol = 1e-13
-max_iter = 100
+block_size = 500
+
+loss = get_loss("logistic")
+estimator = get_estimator("mom", n_samples=n_samples, block_size=block_size)
+steps = steps_coordinate_descent(loss.state.lip, X, fit_intercept)
+max_iter = 10
+tol = 1e-7
 verbose = True
 
-args = {
-    "penalty": penalty,
-    "tol": tol,
-    "max_iter": max_iter,
-    "C": C,
-    "verbose": verbose,
-    "fit_intercept": True,
-}
+history = History("CGD", max_iter, verbose)
 
-# TODO: ca a l'air OK pour l2 mais pas pour l1 grrrrr
-
-# For l2:
-# for solver in ["saga", "sag", "lbfgs"]:
-for solver in ["saga"]:
-    clf = LogisticRegression(solver=solver, **args).fit(X, y)
-    print(clf)
-    # print("scikit-learn LogisticRegression with solver = %s" % solver)
-    print(clf.intercept_, clf.coef_.ravel())
-    # print("log-loss:", log_loss(y, clf.predict_proba(X)[:, 1]))
-    # print(clf.n_iter_)
-# TODO: check that the log-likelihood is exactly the same as scikit's
-
-
-print("clf.n_iter_: ", clf.n_iter_)
-print("clf.classes_: ", clf.classes_)
-# print("clf.n_iter_: ", clf.n_iter_)
-# print("clf.n_iter_: ", clf.n_iter_)
-
-from linlearn.learner import BinaryClassifier
-
-# TOD0: pour l1on arrete trop trop les iterations...a cause du critere d'arret
-# args["tol"] = 0.0
-clf = BinaryClassifier(**args).fit(X, y)
-print(clf)
-print(clf.intercept_, clf.coef_.ravel())
-
-args["strategy"] = "mom"
-clf = BinaryClassifier(**args).fit(X, y)
-print(clf)
-print(clf.intercept_, clf.coef_.ravel())
-
-from linlearn.solver import plot_history
-
-plot_history([clf], x="epoch", y="obj", log_scale=True)
+coordinate_gradient_descent(
+    loss, estimator, None, w, X, y, fit_intercept, steps, max_iter, tol, history,
+)

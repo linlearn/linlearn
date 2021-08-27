@@ -1,12 +1,13 @@
+# Authors: Stephane Gaiffas <stephane.gaiffas@gmail.com>
+#          Ibrahim Merad <imerad7@gmail.com>
+# License: BSD 3 clause
 from math import exp, log
-from numba import jit, njit, jitclass, vectorize, prange
+from collections import namedtuple
+import numpy as np
+from numba import jit, njit, vectorize, prange
+from numba.experimental import jitclass
 from numba.types import int64, float64, boolean
 
-from collections import namedtuple
-
-import numpy as np
-
-Loss = namedtuple("Loss", ["value_single", "value_batch", "derivative", "lip"])
 
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FLOAT, NP_FLOAT
 
@@ -19,37 +20,81 @@ from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FLOAT, NP_FLOAT
 #     "modified huber",
 # ]
 
-#
+
+Loss = namedtuple("Loss", ["state", "value", "deriv"])
+
+
+################################################################
 # Generic functions
-#
+################################################################
+
 
 @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
-def partial_deriv(loss_deriv, j, y_i, z_i, X_i, fit_intercept):
+def decision_function(X, fit_intercept, w, out):
+    if fit_intercept:
+        # TODO: use out= in dot and + z[0] at the same time with parallelize ?
+        out[:] = X.dot(w[1:]) + w[0]
+    else:
+        out[:] = X.dot(w)
+    return out
+
+
+@jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
+def partial_deriv(deriv, state, j, y_i, z_i, X_i, fit_intercept):
+    """Computes the partial derivative of a single sample loss value with respect to
+    coordinate j, given the derivative `loss_deriv` of the loss function.
+
+    Parameters
+    ----------
+    deriv : jit-function
+        Computes the derivative of the loss
+
+    state : object
+        State of the loss
+
+    j : int
+        Partial derivative is computed with respect to coordinate j
+
+    y_i : float
+        Sample label
+
+    z_i : float
+        Sample prediction
+
+    X_i : ndarray
+        Sample features of shape (n_features,)
+
+    fit_intercept : bool
+        If True, an intercept is used in the model
+
+    Returns
+    -------
+    output : float
+        Value of the partial derivative
+    """
     if fit_intercept:
         if j == 0:
-            return loss_deriv(y_i, z_i)
+            return deriv(state, y_i, z_i)
         else:
-            return loss_deriv(y_i, z_i) * X_i[j - 1]
+            return deriv(state, y_i, z_i) * X_i[j - 1]
     else:
-        return loss_deriv(y_i, z_i) * X_i[j]
+        return deriv(state, y_i, z_i) * X_i[j]
 
 
 @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
-def loss_value_batch(loss_value_single, y, z):
+def value_batch(value, state, y, z):
     val = 0.0
     n_samples = y.shape[0]
     for i in range(n_samples):
-        val += loss_value_single(y[i], z[i])
-
+        val += value(state, y[i], z[i])
     return val / n_samples
 
 
 # @njit(parallel=True)
 @njit
-def steps_coordinate_descent(loss_lip, X, fit_intercept):
+def steps_coordinate_descent(lip_const, X, fit_intercept):
     # def col_squared_norm_dense(X, fit_intercept):
     n_samples, n_features = X.shape
-    lip_const = loss_lip()
     if fit_intercept:
         steps = np.zeros(n_features + 1, dtype=X.dtype)
         # First squared norm is n_samples
@@ -74,34 +119,9 @@ def steps_coordinate_descent(loss_lip, X, fit_intercept):
 # TODO: take the losses from https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/linear_model/_sgd_fast.pyx
 
 
-#
+################################################################
 # Logistic regression loss
-#
-
-# TODO: faster sigmoid and logistic
-# cdef class Log(Classification):
-#     """Logistic regression loss for binary classification with y in {-1, 1}"""
-#
-#     cdef double loss(self, double p, double y) nogil:
-#         cdef double z = p * y
-#         # approximately equal and saves the computation of the log
-#         if z > 18:
-#             return exp(-z)
-#         if z < -18:
-#             return -z
-#         return log(1.0 + exp(-z))
-#
-#     cdef double _dloss(self, double p, double y) nogil:
-#         cdef double z = p * y
-#         # approximately equal and saves the computation of the log
-#         if z > 18.0:
-#             return exp(-z) * -y
-#         if z < -18.0:
-#             return -y
-#         return -y / (exp(z) + 1.0)
-#
-#     def __reduce__(self):
-#         return Log, ()
+################################################################
 
 
 @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK, fastmath=True)
@@ -122,40 +142,50 @@ def sigmoid(z):
         return exp_z / (1 + exp_z)
 
 
+spec_state_logistic = [("lip", FLOAT)]
+
+
+@jitclass(spec_state_logistic)
+class StateLogistic(object):
+    def __init__(self):
+        self.lip = 0.25
+
+
 @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK, fastmath=True)
-def logistic_value_single(y, z):
+def value_logistic(state, y, z):
     agreement = y * z
-    if agreement > 0:
-        return log(1 + exp(-agreement))
+    if agreement > 18.0:
+        return exp(-agreement)
+    elif agreement < -18.0:
+        return -agreement
     else:
-        return -agreement + log(1 + exp(agreement))
+        return log(1.0 + exp(-agreement))
+
+
+# @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
+# def logistic_value_batch(y, z):
+#     return loss_value_batch(logistic_value_single, y, z)
 
 
 @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
-def logistic_value_batch(y, z):
-    return loss_value_batch(logistic_value_single, y, z)
+def deriv_logistic(state, y, z):
+    agreement = y * z
+    if agreement > 18.0:
+        return exp(-agreement) * -y
+    elif agreement < -18.0:
+        return -y
+    else:
+        return -y / (exp(agreement) + 1.0)
 
 
-@jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
-def logistic_deriv(y, z):
-    return -y * sigmoid(-y * z)
+def get_loss(loss, **kwargs):
+    if loss == "logistic":
+        return Loss(
+            state=StateLogistic(**kwargs), value=value_logistic, deriv=deriv_logistic
+        )
+    else:
+        ValueError("Loss unknown")
 
-
-@jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
-def logistic_lip():
-    return 0.25
-
-
-def logisic_factory():
-    return Loss(
-        value_single=logistic_value_single,
-        value_batch=logistic_value_batch,
-        derivative=logistic_derivative,
-        lip=logistic_lip,
-    )
-
-
-losses_factory = {"logistic": logisic_factory}
 
 # y = np.random.randn(100)
 # z = np.random.randn(100)

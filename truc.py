@@ -7,6 +7,9 @@ import numpy as np
 # Estimator = namedtuple("Estimator", ["partial_deriv", "state"])
 
 
+
+
+
 spec_state_mom = [
     ("n_blocks", uint32),
     ("block_means", float64[::1]),
@@ -19,6 +22,21 @@ class StateMOM(object):
         self.n_blocks = n_blocks
         self.block_means = np.zeros((n_blocks,), dtype=np.float64)
 
+
+
+
+def get_estimator(**kwargs):
+    state = StateMOM(**kwargs)
+    print(state)
+    return state
+
+estimator = get_estimator(n_blocks=10)
+
+print(estimator.n_blocks)
+print(estimator.block_means)
+
+
+exit(0)
 
 @jitclass([])
 class StateERM(object):
