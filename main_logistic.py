@@ -10,17 +10,18 @@ from scipy.linalg import toeplitz
 
 np.random.seed(42)
 
-from linlearn.loss import (
-    logistic_value_single,
-    logistic_value_batch,
+from linlearn._loss import (
+    # logistic_value_single,
+    # logistic_value_batch,
     sigmoid,
-    logistic_derivative,
-    logistic_lip,
-    steps_coordinate_descent,
+    # logistic_derivative,
+    # logistic_lip,
+    # steps_coordinate_descent,
 )
-from linlearn.penalty import l2sq_apply_single, l2sq_value, l1_apply_single, l1_value
-from linlearn.solver import coordinate_gradient_descent
-from linlearn.solver import History
+
+# from linlearn._penalty import l2sq_apply_single, l2sq_value, l1_apply_single, l1_value
+# from linlearn.solver import coordinate_gradient_descent
+# from linlearn.solver import History
 
 from sklearn.preprocessing import StandardScaler
 
@@ -41,9 +42,10 @@ def simulate(n_samples, w0, b0=None):
     return X, y
 
 
-n_samples = 100_000
+# n_samples = 100_000
+n_samples = 1000
 # n_samples = 1_000
-n_features = 100
+n_features = 5
 fit_intercept = True
 
 coef0 = np.random.randn(n_features)
@@ -80,18 +82,27 @@ from sklearn.metrics import log_loss
 
 
 penalty = "l2"
-C = 1e1
+C = 10
 tol = 1e-13
-max_iter = 100
+max_iter = 50
 verbose = True
 
 args = {
+    "loss": "logistic",
+    # "estimator": "mom",
+    "estimator": "erm",
+    # "estimator": "tmean",
+    # "estimator": "catoni",
+    # "block_size": 0.5,
+    # "percentage": 0.01,
     "penalty": penalty,
+    "l1_ratio": 1.0,
     "tol": tol,
     "max_iter": max_iter,
     "C": C,
     "verbose": verbose,
     "fit_intercept": True,
+    "random_state": 42,
 }
 
 # TODO: ca a l'air OK pour l2 mais pas pour l1 grrrrr
@@ -105,7 +116,7 @@ args = {
 #     print(clf.intercept_, clf.coef_.ravel())
 #     # print("log-loss:", log_loss(y, clf.predict_proba(X)[:, 1]))
 #     # print(clf.n_iter_)
-# # TODO: check that the log-likelihood is exactly the same as scikit's
+# # # TODO: check that the log-likelihood is exactly the same as scikit's
 
 #
 # print("clf.n_iter_: ", clf.n_iter_)
@@ -117,15 +128,26 @@ from linlearn.learner import BinaryClassifier
 
 # TOD0: pour l1on arrete trop trop les iterations...a cause du critere d'arret
 # args["tol"] = 0.0
-clf = BinaryClassifier(**args).fit(X, y)
-print(clf)
-print(clf.intercept_, clf.coef_.ravel())
 
-# args["strategy"] = "mom"
+learners = []
+
+estimators = ["erm", "mom", "catoni", "tmean"]
+
+for estimator in estimators:
+    args["estimator"] = estimator
+    clf = BinaryClassifier(**args).fit(X, y)
+    print("estimator:", estimator)
+    print(clf.intercept_, clf.coef_.ravel())
+    learners.append(clf)
+
+
+# args["estimator"] = "mom"
 # clf = BinaryClassifier(**args).fit(X, y)
 # print(clf)
 # print(clf.intercept_, clf.coef_.ravel())
-#
-# from linlearn.solver import plot_history
-#
-# plot_history([clf], x="epoch", y="obj", log_scale=True)
+
+from linlearn._solver import plot_history
+
+plot_history(
+    learners, x="epoch", y="obj", log_scale=True, labels=estimators, dist_min=True
+)

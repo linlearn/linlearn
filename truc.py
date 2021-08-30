@@ -5,13 +5,45 @@ import numpy as np
 from linlearn._utils import get_type, NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH
 from time import time
 
-# Estimator = namedtuple("Estimator", ["partial_deriv", "state"])
 
-from linlearn._loss import decision_function_factory
+@njit
+def f(a, b):
+    return a + b
+
+f(1.0, 2.0)
+
+# f(1, 2)
+
+# print(f.extensions)
+
+# print(f.inspect_asm())
+
+print(f.inspect_llvm())
+
+exit()
+
+class C(object):
+    def __init__(self, n_samples):
+        self.inner_products = np.empty(n_samples)
+
+    def apply_factory(self):
+        inner_products = self.inner_products
+
+        @njit
+        def apply(x):
+            for i in range(inner_products.shape[0]):
+                inner_products[i] = x
+
+        return apply
 
 
-from linlearn._loss import Logistic
-from linlearn._estimator import ERM
+c = C(5)
+apply = c.apply_factory()
+apply(3.14)
+
+print(c.inner_products)
+
+exit(0)
 
 
 X = np.random.randn(3, 3)
@@ -38,6 +70,7 @@ def f():
 f()
 
 exit(0)
+
 
 def factory():
     jit_kwargs = {

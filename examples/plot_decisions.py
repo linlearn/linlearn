@@ -121,7 +121,7 @@ def get_classifiers():
     return [
         ("Logistic Regression", LogisticRegression(**kwargs)),
         ("Binary Classifier ERM", BinaryClassifier(**kwargs),),
-        ("Binary Classifier MOM", BinaryClassifier(strategy="mom", **kwargs),),
+        ("Binary Classifier MOM", BinaryClassifier(estimator="mom", **kwargs),),
     ]
 
 

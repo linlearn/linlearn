@@ -2,10 +2,10 @@ import numpy as np
 from numpy.random.mtrand import multivariate_normal
 from scipy.linalg import toeplitz
 
-from linlearn._loss import steps_coordinate_descent, sigmoid, Logistic
-from linlearn._estimator import ERM
+from linlearn._loss_old import steps_coordinate_descent, sigmoid, Logistic
+from linlearn._estimator_old import ERM
 # from linlearn._penalty import get_penalty
-from linlearn._solver import CGD, History
+from linlearn._solver_old import CGD, History
 
 
 from sklearn.preprocessing import StandardScaler

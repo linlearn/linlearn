@@ -1,17 +1,19 @@
+# Authors: Stephane Gaiffas <stephane.gaiffas@gmail.com>
+#          Ibrahim Merad <imerad7@gmail.com>
+# License: BSD 3 clause
+from abc import ABC, abstractmethod
 from math import exp, log
-from numba import jit, njit, jitclass, vectorize, prange
-from numba.types import int64, float64, boolean
-
 from collections import namedtuple
-
 import numpy as np
+from numba import njit, jit, vectorize, prange, void, float64
 
-Loss = namedtuple("Loss", ["value_single", "value_batch", "derivative", "lip"])
+import numba as nb
+from numba.experimental import jitclass
+
+# from numba.types import int64, float64, boolean
 
 
-NOPYTHON = True
-NOGIL = True
-BOUNDSCHECK = False
+from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float, np_float
 
 
 # __losses = [
@@ -22,25 +24,133 @@ BOUNDSCHECK = False
 #     "modified huber",
 # ]
 
-#
-# Generic functions
-#
-@jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
-def loss_value_batch(loss_value_single, y, z):
-    val = 0.0
-    n_samples = y.shape[0]
-    for i in range(n_samples):
-        val += loss_value_single(y[i], z[i])
 
-    return val / n_samples
+Loss = namedtuple("Loss", ["state", "value_one", "deriv_one"])
+
+
+jit_kwargs = {
+    "nopython": NOPYTHON,
+    "nogil": NOGIL,
+    "boundscheck": BOUNDSCHECK,
+    "fastmath": FASTMATH,
+}
+
+################################################################
+# Generic functions
+################################################################
+
+
+class Loss(ABC):
+    @abstractmethod
+    def value_factory(self):
+        pass
+
+    @abstractmethod
+    def deriv_factory(self):
+        pass
+
+    def value_batch_factory(self):
+        value = self.value_factory()
+
+        @jit(**jit_kwargs)
+        def value_batch(y, z):
+            val = 0.0
+            n_samples = y.shape[0]
+            for i in range(n_samples):
+                val += value(y[i], z[i])
+            return val / n_samples
+
+        return value_batch
+
+
+
+
+
+# @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
+# def decision_function(X, fit_intercept, w, out):
+#     if fit_intercept:
+#         # TODO: use out= in dot and + z[0] at the same time with parallelize ?
+#         out[:] = X.dot(w[1:]) + w[0]
+#     else:
+#         out[:] = X.dot(w)
+#     return out
+
+
+# @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
+# def partial_deriv(deriv, state, j, y_i, z_i, X_i, fit_intercept):
+#     """Computes the partial derivative of a single sample loss value with respect to
+#     coordinate j, given the derivative `loss_deriv` of the loss function.
+#
+#     Parameters
+#     ----------
+#     deriv : jit-function
+#         Computes the derivative of the loss
+#
+#     state : object
+#         State of the loss
+#
+#     j : int
+#         Partial derivative is computed with respect to coordinate j
+#
+#     y_i : float
+#         Sample label
+#
+#     z_i : float
+#         Sample prediction
+#
+#     X_i : ndarray
+#         Sample features of shape (n_features,)
+#
+#     fit_intercept : bool
+#         If True, an intercept is used in the model
+#
+#     Returns
+#     -------
+#     output : float
+#         Value of the partial derivative
+#     """
+#     if fit_intercept:
+#         if j == 0:
+#             return deriv(state, y_i, z_i)
+#         else:
+#             return deriv(state, y_i, z_i) * X_i[j - 1]
+#     else:
+#         return deriv(state, y_i, z_i) * X_i[j]
+
+
+def value_batch_loss_factory(value_one_loss, state_loss):
+    # @jit(
+    #     nb_float(nb_float[::1], nb_float[::1]),
+    #     nopython=NOPYTHON,
+    #     nogil=NOGIL,
+    #     boundscheck=BOUNDSCHECK,
+    #     fastmath=FASTMATH,
+    # )
+    @jit(**jit_kwargs)
+    def value_batch_loss(y, z):
+        val = 0.0
+        n_samples = y.shape[0]
+        for i in range(n_samples):
+            val += value_one_loss(state_loss, y[i], z[i])
+        return val / n_samples
+
+    return value_batch_loss
+
+
+# @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
+# def value_batch(value, state, y, z):
+#     val = 0.0
+#     n_samples = y.shape[0]
+#     for i in range(n_samples):
+#         val += value(state, y[i], z[i])
+#     return val / n_samples
 
 
 # @njit(parallel=True)
-@njit
-def steps_coordinate_descent(loss_lip, X, fit_intercept):
+@jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
+def steps_coordinate_descent(lip_const, X, fit_intercept):
     # def col_squared_norm_dense(X, fit_intercept):
     n_samples, n_features = X.shape
-    lip_const = loss_lip()
     if fit_intercept:
         steps = np.zeros(n_features + 1, dtype=X.dtype)
         # First squared norm is n_samples
@@ -64,39 +174,15 @@ def steps_coordinate_descent(loss_lip, X, fit_intercept):
 
 # TODO: take the losses from https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/linear_model/_sgd_fast.pyx
 
-#
-# Functions for the logistic loss
-#
+
+################################################################
+# Logistic regression loss
+################################################################
 
 
-# cdef class Log(Classification):
-#     """Logistic regression loss for binary classification with y in {-1, 1}"""
-#
-#     cdef double loss(self, double p, double y) nogil:
-#         cdef double z = p * y
-#         # approximately equal and saves the computation of the log
-#         if z > 18:
-#             return exp(-z)
-#         if z < -18:
-#             return -z
-#         return log(1.0 + exp(-z))
-#
-#     cdef double _dloss(self, double p, double y) nogil:
-#         cdef double z = p * y
-#         # approximately equal and saves the computation of the log
-#         if z > 18.0:
-#             return exp(-z) * -y
-#         if z < -18.0:
-#             return -y
-#         return -y / (exp(z) + 1.0)
-#
-#     def __reduce__(self):
-#         return Log, ()
-
-
-@njit(fastmath=True)
+# @jit(nb_float(nb_float), **jit_kwargs)
+@jit(**jit_kwargs)
 def sigmoid(z):
-    # TODO: faster sigmoid
     if z > 0:
         return 1 / (1 + exp(-z))
     else:
@@ -113,43 +199,119 @@ def sigmoid(z):
         return exp_z / (1 + exp_z)
 
 
-# TODO: faster logistic
+spec_state_logistic = [("lip", nb_float)]
 
 
-@njit(fastmath=True)
-def logistic_value_single(y, z):
-    s = y * z
-    if s > 0:
-        return log(1 + exp(-s))
-    else:
-        return -s + log(1 + exp(s))
+@jitclass(spec_state_logistic)
+class StateLogistic(object):
+    def __init__(self):
+        self.lip = 0.25
 
 
-@njit
-def logistic_value_batch(y, z):
-    return loss_value_batch(logistic_value_single, y, z)
+class Logistic(Loss):
+    def __init__(self):
+        self.lip = 0.25
+
+    def value_factory(self):
+
+        @jit(**jit_kwargs)
+        def value(y, z):
+            agreement = y * z
+            if agreement > 0:
+                return log(1 + exp(-agreement))
+            else:
+                return -agreement + log(1 + exp(agreement))
+            # if agreement > 18.0:
+            #     return exp(-agreement)
+            # elif agreement < -18.0:
+            #     return -agreement
+            # else:
+            #     return log(1.0 + exp(-agreement))
+
+        return value
+
+    def deriv_factory(self):
+
+        @jit(**jit_kwargs)
+        def deriv(y, z):
+            return -y * sigmoid(-y * z)
+            # agreement = y * z
+            # if agreement > 18.0:
+            #     return exp(-agreement) * -y
+            # elif agreement < -18.0:
+            #     return -y
+            # else:
+            #     return -y / (exp(agreement) + 1.0)
+
+        return deriv
 
 
-@njit
-def logistic_derivative(y, z):
-    return -y * sigmoid(-y * z)
+#
+# def value_one_logistic_factory(state):
+#     @jit(
+#         nb_float(nb_float),
+#         nopython=NOPYTHON,
+#         nogil=NOGIL,
+#         boundscheck=BOUNDSCHECK,
+#         fastmath=FASTMATH,
+#     )
+#     def value_one_logistic(y, z):
+#         agreement = y * z
+#         if agreement > 18.0:
+#             return exp(-agreement)
+#         elif agreement < -18.0:
+#             return -agreement
+#         else:
+#             return log(1.0 + exp(-agreement))
+#
+#     @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
+#     def deriv_one_logistic(state, y, z):
+#         agreement = y * z
+#         if agreement > 18.0:
+#             return exp(-agreement) * -y
+#         elif agreement < -18.0:
+#             return -y
+#         else:
+#             return -y / (exp(agreement) + 1.0)
+#
+#     # return value_one_logistic
 
 
-@njit
-def logistic_lip():
-    return 0.25
+# @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK, fastmath=FASTMATH)
+# def value_one_logistic(state, y, z):
+#     agreement = y * z
+#     if agreement > 18.0:
+#         return exp(-agreement)
+#     elif agreement < -18.0:
+#         return -agreement
+#     else:
+#         return log(1.0 + exp(-agreement))
 
 
-def logisic_factory():
-    return Loss(
-        value_single=logistic_value_single,
-        value_batch=logistic_value_batch,
-        derivative=logistic_derivative,
-        lip=logistic_lip,
-    )
+# @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
+# def logistic_value_batch(y, z):
+#     return loss_value_batch(logistic_value_single, y, z)
+#
+#
+# @jit(nopython=NOPYTHON, nogil=NOGIL, boundscheck=BOUNDSCHECK)
+# def deriv_one_logistic(state, y, z):
+#     agreement = y * z
+#     if agreement > 18.0:
+#         return exp(-agreement) * -y
+#     elif agreement < -18.0:
+#         return -y
+#     else:
+#         return -y / (exp(agreement) + 1.0)
 
 
-losses_factory = {"logistic": logisic_factory}
+# def get_loss(loss, **kwargs):
+#     if loss == "logistic":
+#         return Loss(
+#             state=StateLogistic(**kwargs), value=value_logistic, deriv=deriv_logistic
+#         )
+#     else:
+#         ValueError("Loss unknown")
+
 
 # y = np.random.randn(100)
 # z = np.random.randn(100)
