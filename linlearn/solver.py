@@ -166,6 +166,7 @@ def coordinate_gradient_descent(
             # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
 
             grad_j = grad_coordinate(j, inner_products)
+
             # grad_j = grad_coordinate_erm(
             #     loss_derivative, j, X, y, inner_products, fit_intercept
             # )

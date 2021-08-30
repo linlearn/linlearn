@@ -43,7 +43,7 @@ def simulate(n_samples, w0, b0=None):
 
 n_samples = 100_000
 # n_samples = 1_000
-n_features = 5
+n_features = 100
 fit_intercept = True
 
 coef0 = np.random.randn(n_features)
@@ -79,7 +79,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss
 
 
-penalty = "l1"
+penalty = "l2"
 C = 1e1
 tol = 1e-13
 max_iter = 100
@@ -97,19 +97,19 @@ args = {
 # TODO: ca a l'air OK pour l2 mais pas pour l1 grrrrr
 
 # For l2:
-# for solver in ["saga", "sag", "lbfgs"]:
-for solver in ["saga"]:
-    clf = LogisticRegression(solver=solver, **args).fit(X, y)
-    print(clf)
-    # print("scikit-learn LogisticRegression with solver = %s" % solver)
-    print(clf.intercept_, clf.coef_.ravel())
-    # print("log-loss:", log_loss(y, clf.predict_proba(X)[:, 1]))
-    # print(clf.n_iter_)
-# TODO: check that the log-likelihood is exactly the same as scikit's
+# # for solver in ["saga", "sag", "lbfgs"]:
+# for solver in ["saga"]:
+#     clf = LogisticRegression(solver=solver, **args).fit(X, y)
+#     print(clf)
+#     # print("scikit-learn LogisticRegression with solver = %s" % solver)
+#     print(clf.intercept_, clf.coef_.ravel())
+#     # print("log-loss:", log_loss(y, clf.predict_proba(X)[:, 1]))
+#     # print(clf.n_iter_)
+# # TODO: check that the log-likelihood is exactly the same as scikit's
 
-
-print("clf.n_iter_: ", clf.n_iter_)
-print("clf.classes_: ", clf.classes_)
+#
+# print("clf.n_iter_: ", clf.n_iter_)
+# print("clf.classes_: ", clf.classes_)
 # print("clf.n_iter_: ", clf.n_iter_)
 # print("clf.n_iter_: ", clf.n_iter_)
 
@@ -121,11 +121,11 @@ clf = BinaryClassifier(**args).fit(X, y)
 print(clf)
 print(clf.intercept_, clf.coef_.ravel())
 
-args["strategy"] = "mom"
-clf = BinaryClassifier(**args).fit(X, y)
-print(clf)
-print(clf.intercept_, clf.coef_.ravel())
-
-from linlearn.solver import plot_history
-
-plot_history([clf], x="epoch", y="obj", log_scale=True)
+# args["strategy"] = "mom"
+# clf = BinaryClassifier(**args).fit(X, y)
+# print(clf)
+# print(clf.intercept_, clf.coef_.ravel())
+#
+# from linlearn.solver import plot_history
+#
+# plot_history([clf], x="epoch", y="obj", log_scale=True)

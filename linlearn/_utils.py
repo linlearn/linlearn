@@ -2,11 +2,17 @@ from numba import jit, void, uintp, float64
 import numpy as np
 from numpy.random import randint
 
+import numba as nb
+
+# Numba flags applied to all jit decorators
 NOPYTHON = True
 NOGIL = True
 BOUNDSCHECK = False
-FLOAT = float64
-NP_FLOAT = np.float64
+FASTMATH = True
+
+
+nb_float = nb.float64
+np_float = np.float64
 
 
 def get_type(class_):

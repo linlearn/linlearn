@@ -116,7 +116,7 @@ def sigmoid(z):
 # TODO: faster logistic
 
 
-@njit(fastmath=True, inline="always")
+@njit(fastmath=True)
 def logistic_value_single(y, z):
     s = y * z
     if s > 0:
