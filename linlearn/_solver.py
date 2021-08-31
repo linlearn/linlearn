@@ -1,14 +1,18 @@
 import numpy as np
 from math import fabs
 from numpy.random import permutation
-from numba import njit
+from numba import jit
 import matplotlib.pyplot as plt
 from collections import namedtuple
 
 # from .history import History
 # from linlearn.model.utils import inner_prods
 
-from .strategy import grad_coordinate_erm, decision_function
+# from .strategy import grad_coordinate_erm, decision_function, strategy_classes
+from ._estimator import decision_function
+from ._loss import decision_function_factory
+from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float, np_float
+
 
 # TODO: good default for tol when using duality gap
 # TODO: step=float or {'best', 'auto'}
@@ -17,6 +21,14 @@ from .strategy import grad_coordinate_erm, decision_function
 OptimizationResult = namedtuple(
     "OptimizationResult", ["n_iter", "tol", "success", "w", "message"]
 )
+
+
+jit_kwargs = {
+    "nopython": NOPYTHON,
+    "nogil": NOGIL,
+    "boundscheck": BOUNDSCHECK,
+    "fastmath": FASTMATH,
+}
 
 
 # Attributes
@@ -40,235 +52,224 @@ OptimizationResult = namedtuple(
 # The maximum constraint violation.
 
 
-# @njit
-# def coordinate_gradient_descent_cycle(
-#     # grad_coordinate,
-#     loss_derivative,
-#     penalty_apply_single,
-#     # penalty_strength,
-#     w,
-#     X,
-#     y,
-#     fit_intercept,
-#     inner_products,
-#     steps,
-#     coordinates,
-# ):
-#     """This function implements one cycle of coordinate gradient descent
-#     """
-#     # This implementation assumes dense data and a separable prox_old
-#     # TODO: F order C order
-#     n_samples, n_features = X.shape
-#     w_size = w.shape[0]
-#
-#     max_abs_delta = 0.0
-#     max_abs_weight = 0.0
-#
-#     for idx in range(w_size):
-#         j = coordinates[idx]
-#         # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
-#
-#         # grad_j = grad_coordinate(j)
-#
-#         grad_j = grad_coordinate_erm(
-#             loss_derivative, j, X, y, inner_products, fit_intercept
-#         )
-#         print("grad_j:, ", grad_j)
-#         # grad_j = grad_coordinate_erm(
-#         #     loss_derivative, j, X, y, inner_products, fit_intercept
-#         # )
-#
-#         if fit_intercept and j == 0:
-#             # It's the intercept, so we don't penalize
-#             w_j_new = w[j] - steps[j] * grad_j
-#         else:
-#             # It's not the intercept
-#             w_j_new = w[j] - steps[j] * grad_j
-#             w_j_new = penalty_apply_single(w_j_new, steps[j])
-#
-#         # print("w[j]: ", w[j], "w_j_new: ", w_j_new)
-#         # Update the inner products
-#         delta_j = w_j_new - w[j]
-#
-#         # Update the maximum update change
-#         abs_delta_j = fabs(delta_j)
-#         if abs_delta_j > max_abs_delta:
-#             max_abs_delta = abs_delta_j
-#
-#         # Update the maximum weight
-#         abs_w_j_new = fabs(w_j_new)
-#         if abs_w_j_new > max_abs_weight:
-#             max_abs_weight = abs_w_j_new
-#
-#         if fit_intercept:
-#             if j == 0:
-#                 for i in range(n_samples):
-#                     inner_products[i] += delta_j
-#             else:
-#                 for i in range(n_samples):
-#                     inner_products[i] += delta_j * X[i, j - 1]
-#         else:
-#             for i in range(n_samples):
-#                 inner_products[i] += delta_j * X[i, j]
-#         w[j] = w_j_new
-#         return max_abs_delta, max_abs_weight
-
-
-# @njit
-def coordinate_gradient_descent(
-    loss, penalty, strategy, w, X, y, fit_intercept, steps, max_iter, tol, history,
-):
-    n_samples, n_features = X.shape
-
-    # Computation of the initial inner products
-    inner_products = np.empty(n_samples, dtype=X.dtype)
-    # Compute the inner products X . w + b
-    # TODO: decision function should be given by the strategy
-    decision_function(X, fit_intercept, w, out=inner_products)
-
-    loss_value_batch = loss.value_batch
-    loss_derivative = loss.derivative
-
-    penalty_value = penalty.value
-    penalty_apply_single = penalty.apply_single
-
-    w_size = w.shape[0]
-
-    # Objective function
-    # TODO: can be njitted right ?
-    def objective(w):
-        obj = loss_value_batch(y, inner_products)
-        if fit_intercept:
-            # obj += penalty_value(w[1:], penalty_strength)
-            obj += penalty_value(w[1:])
-        else:
-            # obj += penalty_value(w, penalty_strength)
-            obj += penalty_value(w)
-        return obj
-
-    grad_coordinate = strategy.grad_coordinate
-
-    @njit
-    def coordinate_gradient_descent_cycle(
-        w, inner_products, coordinates,
+class CGD(object):
+    def __init__(
+        self,
+        X,
+        y,
+        loss,
+        fit_intercept,
+        estimator,
+        penalty,
+        max_iter,
+        tol,
+        random_state,
+        steps,
+        history,
     ):
-        """This function implements one cycle of coordinate gradient descent
-        """
-        # This implementation assumes dense data and a separable prox_old
-        # TODO: F order C order
-
-        max_abs_delta = 0.0
-        max_abs_weight = 0.0
-
-        for idx in range(w_size):
-            j = coordinates[idx]
-            # print("j: ", j)
-            # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
-
-            grad_j = grad_coordinate(j, inner_products)
-            # grad_j = grad_coordinate_erm(
-            #     loss_derivative, j, X, y, inner_products, fit_intercept
-            # )
-            # print("grad_j:, ", grad_j)
-            # grad_j = grad_coordinate_erm(
-            #     loss_derivative, j, X, y, inner_products, fit_intercept
-            # )
-            if fit_intercept and j == 0:
-                # It's the intercept, so we don't penalize
-                w_j_new = w[j] - steps[j] * grad_j
-            else:
-                # It's not the intercept
-                w_j_new = w[j] - steps[j] * grad_j
-                w_j_new = penalty_apply_single(w_j_new, steps[j])
-
-            # print("w[j]: ", w[j], "w_j_new: ", w_j_new)
-            # Update the inner products
-            delta_j = w_j_new - w[j]
-
-            # Update the maximum update change
-            abs_delta_j = fabs(delta_j)
-            if abs_delta_j > max_abs_delta:
-                max_abs_delta = abs_delta_j
-
-            # Update the maximum weight
-            abs_w_j_new = fabs(w_j_new)
-            if abs_w_j_new > max_abs_weight:
-                max_abs_weight = abs_w_j_new
-
-            if fit_intercept:
-                if j == 0:
-                    for i in range(n_samples):
-                        inner_products[i] += delta_j
-                else:
-                    for i in range(n_samples):
-                        inner_products[i] += delta_j * X[i, j - 1]
-            else:
-                for i in range(n_samples):
-                    inner_products[i] += delta_j * X[i, j]
-            w[j] = w_j_new
-
-        # print("max_abs_delta, max_abs_weight: ", max_abs_delta, max_abs_weight)
-        return max_abs_delta, max_abs_weight
-
-    # Value of the objective at initialization
-    obj = objective(w)
-    w_size = w.shape[0]
-
-    # TODO: First value for tolerance is 1.0 or NaN
-    history.update(epoch=0, obj=obj, tol=1.0, update_bar=False)
-
-    for cycle in range(1, max_iter + 1):
-        # Sample a permutation of the coordinates
-        coordinates = permutation(w_size)
-        # Launch the coordinates cycle
-
-        max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(
-            w, inner_products, coordinates
-        )
-
-        # Compute the new value of objective
-        obj = objective(w)
-
-        # Did we reached the required tolerance within the max_iter number of cycles ?
-        # if (
-        #     max_abs_weight == 0.0 or max_abs_delta / max_abs_weight < tol
-        # ) and cycle <= max_iter:
-        #     success = True
-        # else:
-        #     success = False
-
-        if max_abs_weight == 0.0:
-            print("cycle: ", cycle)
-            print("max_abs_weight == 0.0")
-            current_tol = 0.0
+        self.X = X
+        self.y = y
+        self.loss = loss
+        self.fit_intercept = fit_intercept
+        self.estimator = estimator
+        self.penalty = penalty
+        self.max_iter = max_iter
+        self.tol = tol
+        self.random_state = random_state
+        self.n_samples, self.n_features = self.X.shape
+        if self.fit_intercept:
+            self.n_weights = self.n_features + 1
         else:
-            current_tol = max_abs_delta / max_abs_weight
+            self.n_weights = self.n_features
 
-        # print(
-        #     "max_abs_delta: ",
-        #     max_abs_delta,
-        #     ", max_abs_weight: ",
-        #     max_abs_weight,
-        #     ", current_tol: ",
-        #     current_tol,
-        #     ", tol: ",
-        #     tol,
-        # )
+        # Automatic steps
+        self.steps = steps
+        self.history = history
 
-        # TODO: tester tous les cas "max_abs_weight == 0.0" etc..
-        history.update(epoch=cycle, obj=obj, tol=current_tol, update_bar=True)
+    def objective_factory(self):
 
-        # Decide if we stop or not
-        if current_tol < tol:
-            history.close_bar()
-            return OptimizationResult(
-                w=w, n_iter=cycle, success=True, tol=tol, message=None
+        value_loss = self.loss.value_batch_factory()
+        value_penalty = self.penalty.value_factory()
+        y = self.y
+        if self.fit_intercept:
+
+            @jit(**jit_kwargs)
+            def objective(weights, inner_products):
+                obj = value_loss(y, inner_products)
+                obj += value_penalty(weights[1:])
+                return obj
+
+            return objective
+        else:
+
+            @jit(**jit_kwargs)
+            def objective(weights, inner_products):
+                obj = value_loss(y, inner_products)
+                obj += value_penalty(weights)
+                return obj
+
+            return objective
+
+    def cycle_factory(self):
+
+        X = self.X
+        fit_intercept = self.fit_intercept
+        n_samples = self.estimator.n_samples
+        n_weights = self.n_weights
+        partial_deriv_estimator = self.estimator.partial_deriv_factory()
+        penalize = self.penalty.apply_one_unscaled_factory()
+        steps = self.steps
+
+        # The learning rates scaled by the strength of the penalization (we use the
+        # apply_one_unscaled penalization function)
+        scaled_steps = self.steps.copy()
+        scaled_steps *= self.penalty.strength
+
+        if fit_intercept:
+
+            @jit(**jit_kwargs)
+            def cycle(coordinates, weights, inner_products, state_estimator):
+                max_abs_delta = 0.0
+                max_abs_weight = 0.0
+                # weights = state_cgd.weights
+                # inner_products = state_cgd.inner_products
+                for idx in range(n_weights):
+                    coordinates[idx] = idx
+                np.random.shuffle(coordinates)
+
+                for j in coordinates:
+                    partial_deriv_j = partial_deriv_estimator(
+                        j, inner_products, state_estimator
+                    )
+                    if j == 0:
+                        # It's the intercept, so we don't penalize
+                        w_j_new = weights[j] - steps[j] * partial_deriv_j
+                    else:
+                        # It's not the intercept
+                        w_j_new = weights[j] - steps[j] * partial_deriv_j
+                        # TODO: compute the
+                        w_j_new = penalize(w_j_new, scaled_steps[j])
+                    # Update the inner products
+                    delta_j = w_j_new - weights[j]
+                    # Update the maximum update change
+                    abs_delta_j = fabs(delta_j)
+                    if abs_delta_j > max_abs_delta:
+                        max_abs_delta = abs_delta_j
+                    # Update the maximum weight
+                    abs_w_j_new = fabs(w_j_new)
+                    if abs_w_j_new > max_abs_weight:
+                        max_abs_weight = abs_w_j_new
+                    if j == 0:
+                        for i in range(n_samples):
+                            inner_products[i] += delta_j
+                    else:
+                        for i in range(n_samples):
+                            inner_products[i] += delta_j * X[i, j - 1]
+                    weights[j] = w_j_new
+
+                return max_abs_delta, max_abs_weight
+
+            return cycle
+
+        else:
+            # There is no intercept, so the code changes slightly
+            @jit(**jit_kwargs)
+            def cycle(coordinates, weights, inner_products, state_estimator):
+                max_abs_delta = 0.0
+                max_abs_weight = 0.0
+                for idx in range(n_weights):
+                    coordinates[idx] = idx
+                np.random.shuffle(coordinates)
+
+                for j in coordinates:
+                    partial_deriv_j = partial_deriv_estimator(
+                        j, inner_products, state_estimator
+                    )
+                    w_j_new = weights[j] - steps[j] * partial_deriv_j
+                    w_j_new = penalize(w_j_new, scaled_steps[j])
+                    # Update the inner products
+                    delta_j = w_j_new - weights[j]
+                    # Update the maximum update change
+                    abs_delta_j = fabs(delta_j)
+                    if abs_delta_j > max_abs_delta:
+                        max_abs_delta = abs_delta_j
+                    # Update the maximum weight
+                    abs_w_j_new = fabs(w_j_new)
+                    if abs_w_j_new > max_abs_weight:
+                        max_abs_weight = abs_w_j_new
+
+                    for i in range(n_samples):
+                        inner_products[i] += delta_j * X[i, j]
+
+                    weights[j] = w_j_new
+                return max_abs_delta, max_abs_weight
+
+            return cycle
+
+    def solve(self, w0=None):
+        X = self.X
+        fit_intercept = self.fit_intercept
+        inner_products = np.empty(self.n_samples, dtype=np_float)
+        weights = np.empty(self.n_weights, dtype=np_float)
+        coordinates = np.empty(self.n_weights, dtype=np.uintp)
+        tol = self.tol
+        max_iter = self.max_iter
+        history = self.history
+        if w0 is not None:
+            weights[:] = w0
+        else:
+            weights.fill(0.0)
+
+        # Computation of the initial inner products
+        decision_function = decision_function_factory(X, fit_intercept)
+        decision_function(weights, inner_products)
+
+        random_state = self.random_state
+        if random_state is not None:
+
+            @jit(**jit_kwargs)
+            def numba_seed_numpy(rnd_state):
+                np.random.seed(rnd_state)
+
+            numba_seed_numpy(random_state)
+
+        # Get the cycle function
+        cycle = self.cycle_factory()
+        # Get the objective function
+        objective = self.objective_factory()
+        # Compute the first value of the objective
+        obj = objective(weights, inner_products)
+        # Get the estimator state (a place-holder for the estimator's internal
+        # computations)
+        state_estimator = self.estimator.get_state()
+
+        # TODO: First value for tolerance is 1.0 or NaN
+        history.update(epoch=0, obj=obj, tol=1.0, update_bar=True)
+
+        for n_iter in range(1, max_iter + 1):
+            max_abs_delta, max_abs_weight = cycle(
+                coordinates, weights, inner_products, state_estimator
             )
+            # Compute the new value of objective
+            obj = objective(weights, inner_products)
+            if max_abs_weight == 0.0:
+                current_tol = 0.0
+            else:
+                current_tol = max_abs_delta / max_abs_weight
 
-    history.close_bar()
-    return OptimizationResult(
-        w=w, n_iter=max_iter + 1, success=False, tol=tol, message=None
-    )
+            # TODO: tester tous les cas "max_abs_weight == 0.0" etc..
+            history.update(epoch=n_iter, obj=obj, tol=current_tol, update_bar=True)
+
+            if current_tol < tol:
+                history.close_bar()
+                return OptimizationResult(
+                    w=weights, n_iter=n_iter, success=True, tol=tol, message=None
+                )
+
+        history.close_bar()
+        return OptimizationResult(
+            w=weights, n_iter=max_iter + 1, success=False, tol=tol, message=None
+        )
 
     # TODO: stopping criterion max(weigth difference) / max(weight) + duality gap
     # TODO: and then use
@@ -329,13 +330,6 @@ def coordinate_gradient_descent(
 
     # TODO: return more than just this... return an object that include for things than
     #  this
-
-
-def coordinate_gradient_descent_factory():
-    pass
-
-
-solvers_factory = {"cgd": coordinate_gradient_descent_factory}
 
 
 # Dans SAG critere d'arret :

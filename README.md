@@ -36,4 +36,9 @@ But you can also use the latest development from github directly with
 
     pip install git+https://github.com/linlearn/linlearn.git
 
+## Performance
+
+For some weird reasons, it's better performing with numba=0.51.2 and slows down by a 
+lot (almost 3X for erm) with number>=0.52 
+
 ## References

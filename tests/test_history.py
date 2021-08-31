@@ -1,4 +1,4 @@
-from linlearn.solver import History
+from linlearn._solver import History
 import pytest
 
 

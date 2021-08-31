@@ -154,28 +154,28 @@ def test_fit_intercept():
 
 def test_strategy():
     clf = BinaryClassifier()
-    assert clf.strategy == "erm"
+    assert clf.estimator == "erm"
 
-    for strategy in BinaryClassifier._strategies:
-        clf.strategy = strategy
-        assert clf.strategy == strategy
+    for strategy in BinaryClassifier._estimators:
+        clf.estimator = strategy
+        assert clf.estimator == strategy
 
     strategy = "stuff"
     with pytest.raises(ValueError) as exc_info:
-        clf.strategy = strategy
+        clf.estimator = strategy
     assert exc_info.type is ValueError
     match = "strategy must be one of %r; got (strategy=%r)" % (
-        BinaryClassifier._strategies,
+        BinaryClassifier._estimators,
         strategy,
     )
     assert exc_info.value.args[0] == match
 
     strategy = "stuff"
     with pytest.raises(ValueError) as exc_info:
-        _ = BinaryClassifier(strategy=strategy)
+        _ = BinaryClassifier(estimator=strategy)
     assert exc_info.type is ValueError
     match = "strategy must be one of %r; got (strategy=%r)" % (
-        BinaryClassifier._strategies,
+        BinaryClassifier._estimators,
         strategy,
     )
     assert exc_info.value.args[0] == match

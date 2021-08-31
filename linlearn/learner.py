@@ -18,10 +18,10 @@ from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import safe_sparse_dot
 
-from .loss import losses_factory, steps_coordinate_descent
-from .penalty import penalties_factory
-from .solver import coordinate_gradient_descent, History, solvers_factory
-from .strategy import strategies_factory
+from ._loss import steps_coordinate_descent, Logistic
+from ._penalty import NoPen, L2Sq, L1, ElasticNet
+from ._solver import CGD, History
+from ._estimator import ERM, MOM, TMean, Catoni
 
 
 # TODO: serialization
@@ -29,10 +29,10 @@ from .strategy import strategies_factory
 
 class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
-    _losses = list(losses_factory.keys())
-    _penalties = list(penalties_factory.keys())
-    _strategies = list(strategies_factory.keys())
-    _solvers = list(solvers_factory.keys())
+    _losses = ["logistic"]
+    _penalties = ["none", "l2", "l1", "elasticnet"]
+    _estimators = ["erm", "mom", "tmean", "catoni"]
+    _solvers = ["cgd"]
 
     def __init__(
         self,
@@ -41,8 +41,10 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         C=1.0,
         loss="logistic",
         fit_intercept=True,
-        strategy="erm",
+        estimator="erm",
         block_size=0.07,
+        percentage=0.05,
+        eps=0.001,
         solver="cgd",
         tol=1e-4,
         max_iter=100,
@@ -56,8 +58,10 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         self.penalty = penalty
         self.C = C
         self.loss = loss
-        self.strategy = strategy
+        self.estimator = estimator
         self.block_size = block_size
+        self.percentage = percentage
+        self.eps = eps
         self.tol = tol
         self.fit_intercept = fit_intercept
         self.solver = solver
@@ -125,18 +129,18 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             self._fit_intercept = val
 
     @property
-    def strategy(self):
-        return self._strategy
+    def estimator(self):
+        return self._estimator
 
-    @strategy.setter
-    def strategy(self, val):
-        if val not in BinaryClassifier._strategies:
+    @estimator.setter
+    def estimator(self, val):
+        if val not in BinaryClassifier._estimators:
             raise ValueError(
-                "strategy must be one of %r; got (strategy=%r)"
-                % (self._strategies, val)
+                "estimator must be one of %r; got (estimator=%r)"
+                % (self._estimators, val)
             )
         else:
-            self._strategy = val
+            self._estimator = val
 
     @property
     def block_size(self):
@@ -148,6 +152,28 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             raise ValueError("block_size must be in (0, 1]; got (block_size=%r)" % val)
         else:
             self._block_size = val
+
+    @property
+    def percentage(self):
+        return self._percentage
+
+    @percentage.setter
+    def percentage(self, val):
+        if not isinstance(val, numbers.Real) or val <= 0.0 or val > 1:
+            raise ValueError("percentage must be in (0, 1]; got (percentage=%r)" % val)
+        else:
+            self._percentage = val
+
+    @property
+    def eps(self):
+        return self._eps
+
+    @eps.setter
+    def eps(self, val):
+        if not isinstance(val, numbers.Real) or val <= 0.0 or val > 1:
+            raise ValueError("eps must be in (0, 1]; got (eps=%r)" % val)
+        else:
+            self._eps = val
 
     @property
     def solver(self):
@@ -203,49 +229,98 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
     # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None
 
+    def _get_loss(self):
+        if self.loss == "logistic":
+            return Logistic()
+        else:
+            raise ValueError("Loss unknown")
+
+    def _get_estimator(self, X, y, loss):
+        if self.estimator == "erm":
+            return ERM(X, y, loss, self.fit_intercept)
+        elif self.estimator == "mom":
+            n_samples = y.shape[0]
+            n_samples_in_block = int(self.block_size * n_samples)
+            return MOM(X, y, loss, self.fit_intercept, n_samples_in_block)
+        elif self.estimator == "tmean":
+            return TMean(X, y, loss, self.fit_intercept, self.percentage)
+        elif self.estimator == "catoni":
+            return Catoni(X, y, loss, self.fit_intercept, self.eps)
+        else:
+            raise ValueError("Unknown estimator")
+
+    # TODO: get penalty
+
+    def _get_penalty(self, n_samples):
+        strength = 1 / (self.C * n_samples)
+        if self.penalty == "l2":
+            return L2Sq(strength)
+        elif self.penalty == "l1":
+            return L1(strength)
+        elif self.penalty == "none":
+            return NoPen(strength)
+        elif self.penalty == "elasticnet":
+            return ElasticNet(strength, self.l1_ratio)
+        else:
+            raise ValueError("Unknown penalty")
+
     def _get_solver(self, X, y):
         n_samples, n_features = X.shape
 
+        # # Get the loss object
+        # loss_factory = losses_factory[self.loss]
+        # loss = loss_factory()
+
         # Get the loss object
-        loss_factory = losses_factory[self.loss]
-        loss = loss_factory()
-
+        loss = self._get_loss()
+        # Get the estimator object
+        estimator = self._get_estimator(X, y, loss)
         # Get the penalty object
-        penalty_factory = penalties_factory[self.penalty]
+        penalty = self._get_penalty(n_samples)
+        # penalty_factory = penalties_factory[self.penalty]
         # The strength is scaled using following scikit-learn's scaling
-        strength = 1 / (self.C * n_samples)
-        penalty = penalty_factory(strength=strength, l1_ratio=self.l1_ratio)
-
-        # Number of sample in the blocks (only for strategy="mom")
-        n_samples_in_block = int(n_samples * self.block_size)
-
-        # Get the strategy
-        strategy_factory = strategies_factory[self.strategy]
-        strategy = strategy_factory(
-            loss, X, y, self.fit_intercept, n_samples_in_block=n_samples_in_block
-        )
+        # strength = 1 / (self.C * n_samples)
+        # penalty = penalty_factory(strength=strength, l1_ratio=self.l1_ratio)
 
         if self.solver == "cgd":
             # Get the gradient descent steps for each coordinate
             steps = steps_coordinate_descent(loss.lip, X, self.fit_intercept)
-            self.history_ = History("CGD", self.max_iter, self.verbose)
+            # Create an history object for the solver
+            history = History("CGD", self.max_iter, self.verbose)
+            self.history_ = history
 
-            def solve(w):
-                return coordinate_gradient_descent(
-                    loss,
-                    penalty,
-                    strategy,
-                    w,
-                    X,
-                    y,
-                    self.fit_intercept,
-                    steps,
-                    self.max_iter,
-                    self.tol,
-                    self.history_,
-                )
+            return CGD(
+                X,
+                y,
+                loss,
+                self.fit_intercept,
+                estimator,
+                penalty,
+                self.max_iter,
+                self.tol,
+                self.random_state,
+                steps,
+                history
+            )
 
-            return solve
+
+            # def solve(w):
+            #
+            #     return coordinate_gradient_descent(
+            #         loss,
+            #         penalty,
+            #         estimator,
+            #         w,
+            #         X,
+            #         y,
+            #         self.fit_intercept,
+            #         steps,
+            #         self.max_iter,
+            #         self.tol,
+            #         self.history_,
+            #     )
+            #
+            # return solve
 
         else:
             raise NotImplementedError("%s is not implemented yet" % self.solver)
@@ -368,7 +443,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         #######
         solver = self._get_solver(X, y_encoded)
         w = self._get_initial_iterate(X, y_encoded)
-        optimization_result = solver(w)
+        optimization_result = solver.solve(w)
 
         self.optimization_result_ = optimization_result
         self.n_iter_ = np.asarray([optimization_result.n_iter], dtype=np.int32)
