@@ -182,6 +182,7 @@ class CGD(object):
                 np.random.shuffle(coordinates)
 
                 for j in coordinates:
+
                     partial_deriv_j = partial_deriv_estimator(
                         j, inner_products, state_estimator
                     )
@@ -211,7 +212,10 @@ class CGD(object):
         fit_intercept = self.fit_intercept
         inner_products = np.empty(self.n_samples, dtype=np_float)
         weights = np.empty(self.n_weights, dtype=np_float)
-        coordinates = np.empty(self.n_weights, dtype=np.uintp)
+        # We use intp and not uintp since j-1 is np.float64 when j has type np.uintp
+        # (namely np.uint64 on most machines), and this fails in nopython mode for
+        # coverage analysis
+        coordinates = np.empty(self.n_weights, dtype=np.intp)
         tol = self.tol
         max_iter = self.max_iter
         history = self.history

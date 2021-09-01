@@ -152,36 +152,36 @@ def test_fit_intercept():
     assert getattr(clf, "fit_intercept") is True
 
 
-def test_strategy():
+def test_estimator():
     clf = BinaryClassifier()
     assert clf.estimator == "erm"
 
-    for strategy in BinaryClassifier._estimators:
-        clf.estimator = strategy
-        assert clf.estimator == strategy
+    for estimator in BinaryClassifier._estimators:
+        clf.estimator = estimator
+        assert clf.estimator == estimator
 
-    strategy = "stuff"
+    estimator = "stuff"
     with pytest.raises(ValueError) as exc_info:
-        clf.estimator = strategy
+        clf.estimator = estimator
     assert exc_info.type is ValueError
-    match = "strategy must be one of %r; got (strategy=%r)" % (
+    match = "estimator must be one of %r; got (estimator=%r)" % (
         BinaryClassifier._estimators,
-        strategy,
+        estimator,
     )
     assert exc_info.value.args[0] == match
 
-    strategy = "stuff"
+    estimator = "stuff"
     with pytest.raises(ValueError) as exc_info:
-        _ = BinaryClassifier(estimator=strategy)
+        _ = BinaryClassifier(estimator=estimator)
     assert exc_info.type is ValueError
-    match = "strategy must be one of %r; got (strategy=%r)" % (
+    match = "estimator must be one of %r; got (estimator=%r)" % (
         BinaryClassifier._estimators,
-        strategy,
+        estimator,
     )
     assert exc_info.value.args[0] == match
 
-    setattr(clf, "strategy", "mom")
-    assert getattr(clf, "strategy") == "mom"
+    setattr(clf, "estimator", "mom")
+    assert getattr(clf, "estimator") == "mom"
 
 
 def test_block_size():
