@@ -19,3 +19,5 @@ def simulate_log_reg(n_samples, coef, intercept=None):
     y = np.random.binomial(1, p, size=n_samples).astype("float64")
     y[:] = 2 * y - 1
     return X, y
+
+

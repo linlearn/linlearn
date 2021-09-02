@@ -1,3 +1,6 @@
+# Authors: Stephane Gaiffas <stephane.gaiffas@gmail.com>
+#          Ibrahim Merad <imerad7@gmail.com>
+# License: BSD 3 clause
 from numba import jit, void, uintp, float64
 import numpy as np
 from numpy.random import randint

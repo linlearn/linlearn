@@ -43,9 +43,14 @@ def simulate(n_samples, w0, b0=None):
 
 
 n_samples = 100_000
+n_features = 100
+
+# n_samples = 10
+# n_features = 2
+
 # n_samples = 1000
 # n_samples = 1_000
-n_features = 100
+
 fit_intercept = True
 
 coef0 = np.random.randn(n_features)
@@ -84,16 +89,13 @@ from sklearn.metrics import log_loss
 penalty = "l2"
 C = 10
 tol = 1e-13
-max_iter = 50
+max_iter = 100
 verbose = True
 
 args = {
     "loss": "logistic",
-    # "estimator": "mom",
     "estimator": "erm",
-    # "estimator": "tmean",
-    # "estimator": "catoni",
-    # "block_size": 0.5,
+    # "n_samples_mom_blocks": 1,
     # "percentage": 0.01,
     "penalty": penalty,
     "l1_ratio": 1.0,
@@ -131,7 +133,9 @@ from linlearn.learner import BinaryClassifier
 
 learners = []
 
-estimators = ["erm", "mom", "catoni", "tmean"]
+# estimators = ["erm", "mom", "catoni", "tmean"]
+estimators = ["erm", "mom"]
+# estimators = ["mom"]
 
 for estimator in estimators:
     args["estimator"] = estimator
@@ -146,8 +150,12 @@ for estimator in estimators:
 # print(clf)
 # print(clf.intercept_, clf.coef_.ravel())
 
-from linlearn._solver import plot_history
+# for learner in learners:
+#     print(learner.intercept_, learner.coef_.ravel())
 
-plot_history(
-    learners, x="epoch", y="obj", log_scale=True, labels=estimators, dist_min=True
-)
+
+# from linlearn._solver import plot_history
+#
+# plot_history(
+#     learners, x="epoch", y="obj", log_scale=True, labels=estimators
+# )

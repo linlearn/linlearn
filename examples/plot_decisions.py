@@ -105,27 +105,74 @@ def simulate_data(dataset="moons"):
 
 # datasets = [simulate_data("moons"), simulate_data("circles"), simulate_data("linear")]
 
-datasets = [simulate_data("moons"), simulate_data("linear")]
+datasets = [
+    simulate_data("moons"),
+    simulate_data("linear")
+]
 
 # TODO: polynomial logistic regression
 # TODO: different values for the block_size
 
-n_classifiers = 3
-n_datasets = 2
-_ = plt.figure(figsize=(2 * (n_classifiers + 1), 2 * n_datasets))
-
 
 def get_classifiers():
-    # kwargs = {"tol": 1e-15, "max_iter": 1000, "fit_intercept": False}
-    kwargs = {"fit_intercept": True}
+    kwargs = {"tol": 1e-15, "max_iter": 1000, "fit_intercept": True, "verbose": False}
+    # kwargs = {"fit_intercept": True}
     return [
-        ("Logistic Regression", LogisticRegression(**kwargs)),
-        ("Binary Classifier ERM", BinaryClassifier(**kwargs),),
-        ("Binary Classifier MOM", BinaryClassifier(estimator="mom", **kwargs),),
+        ("Logistic Regression", lambda: LogisticRegression(**kwargs)),
+        ("Binary Classifier ERM", lambda: BinaryClassifier(**kwargs),),
+        # (
+        #     "Binary Classifier MOM(1000)",
+        #     lambda: BinaryClassifier(estimator="mom", n_samples_mom_blocks=1000,
+        #                              **kwargs),
+        # ),
+        # (
+        #     "Binary Classifier MOM(1)",
+        #     lambda: BinaryClassifier(estimator="mom", n_samples_mom_blocks=1, **kwargs),
+        # ),
+        (
+            "MOM(2)",
+            lambda: BinaryClassifier(estimator="mom", n_samples_mom_blocks=2,
+                                     **kwargs),
+        ),
+        (
+            "MOM(5)",
+            lambda: BinaryClassifier(estimator="mom", n_samples_mom_blocks=5,
+                                     **kwargs),
+        ),
+        (
+            "MOM(10)",
+            lambda: BinaryClassifier(estimator="mom", n_samples_mom_blocks=10,
+                                     **kwargs),
+        ),
+        (
+            "MOM(20)",
+            lambda: BinaryClassifier(estimator="mom", n_samples_mom_blocks=20,
+                                     **kwargs),
+        ),
+        (
+            "(30)",
+            lambda: BinaryClassifier(estimator="mom", n_samples_mom_blocks=30,
+                                     **kwargs),
+        ),
+
+        # (
+        #     "Binary Classifier TMean",
+        #     lambda: BinaryClassifier(estimator="tmean", **kwargs),
+        # ),
+        # (
+        #     "Binary Classifier Catoni",
+        #     lambda: BinaryClassifier(estimator="catoni", **kwargs),
+        # ),
     ]
 
-
 i = 1
+
+classifiers = get_classifiers()
+n_classifiers = len(classifiers)
+n_datasets = len(datasets)
+
+_ = plt.figure(figsize=(2 * (n_classifiers + 1), 2 * n_datasets))
+
 
 for ds_cnt, ds in enumerate(datasets):
     print("-" * 80)
@@ -141,8 +188,9 @@ for ds_cnt, ds in enumerate(datasets):
 
     plot_scatter_binary_classif(ax, xx, yy, X, y, s=20, alpha=0.7, title=title)
     i += 1
-    classifiers = get_classifiers()
-    for name, clf in classifiers:
+
+    for name, get_clf in classifiers:
+        clf = get_clf()
         ax = plt.subplot(n_datasets, n_classifiers + 1, i)
         if hasattr(clf, "clear"):
             clf.clear()

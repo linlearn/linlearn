@@ -1,13 +1,13 @@
-"""
-Binary Classifier
-"""
-
-# Author: Stephane Gaiffas <stephane.gaiffas@gmail.com>
+# Authors: Stephane Gaiffas <stephane.gaiffas@gmail.com>
+#          Ibrahim Merad <imerad7@gmail.com>
+# License: BSD 3 clause
 
 # Parts of the code below are directly from scikit-learn, in particular from
 # https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/linear_model/_logistic.py
 
 import numbers
+import warnings
+
 import numpy as np
 from scipy.special import expit
 
@@ -79,6 +79,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         self.optimization_result_ = None
         self.n_iter_ = None
         self.classes_ = None
+        self.n_samples_block_ = None
 
     @property
     def penalty(self):
@@ -148,10 +149,10 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
     @block_size.setter
     def block_size(self, val):
-        if not isinstance(val, numbers.Real) or val <= 0.0 or val > 1:
-            raise ValueError("block_size must be in (0, 1]; got (block_size=%r)" % val)
-        else:
+        if isinstance(val, numbers.Real) and 0.0 < val <= 1.0:
             self._block_size = val
+        else:
+            raise ValueError("block_size must be in (0, 1]; got (block_size=%r)" % val)
 
     @property
     def percentage(self):
@@ -240,8 +241,13 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             return ERM(X, y, loss, self.fit_intercept)
         elif self.estimator == "mom":
             n_samples = y.shape[0]
-            n_samples_in_block = int(self.block_size * n_samples)
-            return MOM(X, y, loss, self.fit_intercept, n_samples_in_block)
+            if self.block_size == 1.0:
+                warnings.warn("Since block_size=1.0, we'll use estimator='erm' instead")
+                self.estimator = "erm"
+                return ERM(X, y, loss, self.fit_intercept)
+            else:
+                self.n_samples_block_ = int(n_samples * self.block_size)
+                return MOM(X, y, loss, self.fit_intercept, self.n_samples_block_)
         elif self.estimator == "tmean":
             return TMean(X, y, loss, self.fit_intercept, self.percentage)
         elif self.estimator == "catoni":
@@ -266,21 +272,12 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
     def _get_solver(self, X, y):
         n_samples, n_features = X.shape
-
-        # # Get the loss object
-        # loss_factory = losses_factory[self.loss]
-        # loss = loss_factory()
-
         # Get the loss object
         loss = self._get_loss()
         # Get the estimator object
         estimator = self._get_estimator(X, y, loss)
         # Get the penalty object
         penalty = self._get_penalty(n_samples)
-        # penalty_factory = penalties_factory[self.penalty]
-        # The strength is scaled using following scikit-learn's scaling
-        # strength = 1 / (self.C * n_samples)
-        # penalty = penalty_factory(strength=strength, l1_ratio=self.l1_ratio)
 
         if self.solver == "cgd":
             # Get the gradient descent steps for each coordinate
@@ -300,28 +297,8 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
                 self.tol,
                 self.random_state,
                 steps,
-                history
+                history,
             )
-
-
-            # def solve(w):
-            #
-            #     return coordinate_gradient_descent(
-            #         loss,
-            #         penalty,
-            #         estimator,
-            #         w,
-            #         X,
-            #         y,
-            #         self.fit_intercept,
-            #         steps,
-            #         self.max_iter,
-            #         self.tol,
-            #         self.history_,
-            #     )
-            #
-            # return solve
-
         else:
             raise NotImplementedError("%s is not implemented yet" % self.solver)
 

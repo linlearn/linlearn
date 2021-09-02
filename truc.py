@@ -6,6 +6,25 @@ from linlearn._utils import get_type, NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH
 from time import time
 
 
+
+def factory(n):
+
+    @njit
+    def f(x):
+        return x + n
+
+    return f
+
+
+f1 = factory(2)
+print(f1(1))
+
+f1 = factory(3)
+print(f1(1))
+
+
+exit(0)
+
 j = np.intp(2)
 print("j:", j)
 print("type(j):", type(j))

@@ -2,11 +2,11 @@
 #          Ibrahim Merad <imerad7@gmail.com>
 # License: BSD 3 clause
 from abc import ABC, abstractmethod
-from math import exp, log
+from math import exp
 import numpy as np
-from numba import jit, njit, vectorize, void, prange
+from numba import jit, vectorize, prange
 
-from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float, np_float
+from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH
 
 
 jit_kwargs = {
@@ -16,45 +16,28 @@ jit_kwargs = {
     "fastmath": FASTMATH,
 }
 
-# __losses = [
-#     "hinge",
-#     "smoothed hinge",
-#     "logistic",
-#     "quadratic hinge",
-#     "modified huber",
-# ]
-
-#
-# Generic functions
-#
-
 
 def decision_function_factory(X, fit_intercept):
 
     if fit_intercept:
 
-        @jit(void(nb_float[::1], nb_float[::1]), **jit_kwargs)
-        # @njit
+        @jit(**jit_kwargs)
         def decision_function(w, out):
             out[:] = X.dot(w[1:])
             out += w[0]
 
     else:
 
-        @jit(void(nb_float[::1], nb_float[::1]), **jit_kwargs)
-        # @njit
+        @jit(**jit_kwargs)
         def decision_function(w, out):
             out[:] = X.dot(w)
 
     return decision_function
 
 
-# @njit(parallel=True)
-@njit
+@jit(**jit_kwargs)
 def steps_coordinate_descent(lip_const, X, fit_intercept):
-    # def col_squared_norm_dense(X, fit_intercept):
     n_samples, n_features = X.shape
-    # lip_const = loss_lip()
     if fit_intercept:
         steps = np.zeros(n_features + 1, dtype=X.dtype)
         # First squared norm is n_samples
@@ -71,8 +54,6 @@ def steps_coordinate_descent(lip_const, X, fit_intercept):
             for i in range(n_samples):
                 col_j_squared_norm += X[i, j - 1] ** 2
             steps[j] = n_samples / (lip_const * col_j_squared_norm)
-    # print(steps)
-    # steps /= n_samples
     return steps
 
 
@@ -104,9 +85,6 @@ class Loss(ABC):
         return value_batch
 
 
-# TODO: take the losses from https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/linear_model/_sgd_fast.pyx
-
-
 ################################################################
 # Logistic regression loss
 ################################################################
@@ -131,9 +109,6 @@ def sigmoid(z):
         return exp_z / (1 + exp_z)
 
 
-# TODO: faster logistic
-
-
 class Logistic(Loss):
     def __init__(self):
         self.lip = 0.25
@@ -143,15 +118,9 @@ class Logistic(Loss):
         def value(y, z):
             agreement = y * z
             if agreement > 0:
-                return log(1 + exp(-agreement))
+                return np.log1p(exp(-agreement))
             else:
-                return -agreement + log(1 + exp(agreement))
-            # if agreement > 18.0:
-            #     return exp(-agreement)
-            # elif agreement < -18.0:
-            #     return -agreement
-            # else:
-            #     return log(1.0 + exp(-agreement))
+                return -agreement + np.log1p(exp(agreement))
 
         return value
 
@@ -159,13 +128,6 @@ class Logistic(Loss):
         @jit(**jit_kwargs)
         def deriv(y, z):
             return -y * sigmoid(-y * z)
-            # agreement = y * z
-            # if agreement > 18.0:
-            #     return exp(-agreement) * -y
-            # elif agreement < -18.0:
-            #     return -y
-            # else:
-            #     return -y / (exp(agreement) + 1.0)
 
         return deriv
 
@@ -194,17 +156,10 @@ class LeastSquares(Loss):
         return deriv
 
 
-# @njit
-# def hinge_value(x):
-#     if x > 1.0:
-#         return 1.0 - x
-#     else:
-#         return 0.0
-#
-#
-# @njit
-# def hinge_derivative(x):
-#     if x > 1.0
+# TODO: add some losses using
+# - https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/linear_model/_sgd_fast.pyx
+# - tick
+# - some of the code below
 
 # @njit
 # def smoothed_hinge_value(x, smoothness=1.0):

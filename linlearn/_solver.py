@@ -1,17 +1,15 @@
-import numpy as np
+# Authors: Stephane Gaiffas <stephane.gaiffas@gmail.com>
+#          Ibrahim Merad <imerad7@gmail.com>
+# License: BSD 3 clause
 from math import fabs
+import numpy as np
 from numpy.random import permutation
 from numba import jit
 import matplotlib.pyplot as plt
 from collections import namedtuple
 
-# from .history import History
-# from linlearn.model.utils import inner_prods
-
-# from .strategy import grad_coordinate_erm, decision_function, strategy_classes
-from ._estimator import decision_function
 from ._loss import decision_function_factory
-from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float, np_float
+from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float
 
 
 # TODO: good default for tol when using duality gap
