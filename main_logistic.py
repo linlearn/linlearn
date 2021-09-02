@@ -42,10 +42,10 @@ def simulate(n_samples, w0, b0=None):
     return X, y
 
 
-# n_samples = 100_000
-n_samples = 1000
+n_samples = 100_000
+# n_samples = 1000
 # n_samples = 1_000
-n_features = 5
+n_features = 100
 fit_intercept = True
 
 coef0 = np.random.randn(n_features)

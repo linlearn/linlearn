@@ -6,6 +6,17 @@ from linlearn._utils import get_type, NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH
 from time import time
 
 
+j = np.intp(2)
+print("j:", j)
+print("type(j):", type(j))
+print("j-1:", j - 1)
+print("type(j-1):", type(j - 1))
+
+exit(0)
+
+
+
+
 @njit
 def f(a, b):
     return a + b
