@@ -4,7 +4,7 @@
 from abc import ABC, abstractmethod
 from collections import namedtuple
 import numpy as np
-from numba import njit, jit, vectorize, prange, uintp
+from numba import njit, jit, vectorize, prange
 
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float, np_float
 
@@ -187,7 +187,7 @@ class MOM(Estimator):
     def get_state(self):
         return StateMOM(
             block_means=np.empty(self.n_blocks, dtype=np_float),
-            sample_indices=np.empty(self.n_samples, dtype=np.uintp),
+            sample_indices=np.empty(self.n_samples, dtype=np.intp),
         )
 
     def partial_deriv_factory(self):
@@ -385,6 +385,7 @@ def holland_catoni_estimator(x, eps=0.001):
         diff = np.abs(tmp - m)
         m = tmp
     return m
+
 
 
 from scipy.optimize import brentq

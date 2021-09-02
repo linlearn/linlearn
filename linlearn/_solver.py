@@ -115,6 +115,9 @@ class Solver(ABC):
         X = self.X
         fit_intercept = self.fit_intercept
         inner_products = np.empty(self.n_samples, dtype=np_float)
+        # We use intp and not uintp since j-1 is np.float64 when j has type np.uintp
+        # (namely np.uint64 on most machines), and this fails in nopython mode for
+        # coverage analysis
         coordinates = np.arange(self.n_weights, dtype=np.uintp)
         weights = np.empty(self.n_weights, dtype=np_float)
         tol = self.tol
@@ -279,6 +282,7 @@ class CGD(Solver):
                 np.random.shuffle(coordinates)
 
                 for j in coordinates:
+
                     partial_deriv_j = partial_deriv_estimator(
                         j, inner_products, state_estimator
                     )
