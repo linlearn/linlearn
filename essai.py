@@ -136,4 +136,4 @@ assert (lr.predict(X) == br.predict(X)).any()
 # assert lr.score(X, y) == br.score(X, y)
 
 classes = {0: "truc", 1: "machin"}
-print(classes[np.array([0, 0, 1, 0, 0], dtype="int")])
+#print(classes[np.array([0, 0, 1, 0, 0], dtype="int")])

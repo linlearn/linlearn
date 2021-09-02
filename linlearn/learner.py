@@ -20,8 +20,8 @@ from sklearn.utils.extmath import safe_sparse_dot
 
 from ._loss import steps_coordinate_descent, Logistic
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
-from ._solver import CGD, History
-from ._estimator import ERM, MOM, TMean, Catoni
+from ._solver import CGD, GD, History
+from ._estimator import ERM, MOM, TMean, Catoni, Implicit, GMOM, Holland
 
 
 # TODO: serialization
@@ -31,8 +31,8 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
     _losses = ["logistic"]
     _penalties = ["none", "l2", "l1", "elasticnet"]
-    _estimators = ["erm", "mom", "tmean", "catoni"]
-    _solvers = ["cgd"]
+    _estimators = ["erm", "mom", "tmean", "catoni", "implicit", "gmom", "holland"]
+    _solvers = ["cgd", "gd"]
 
     def __init__(
         self,
@@ -246,6 +246,14 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             return TMean(X, y, loss, self.fit_intercept, self.percentage)
         elif self.estimator == "catoni":
             return Catoni(X, y, loss, self.fit_intercept, self.eps)
+        elif self.estimator == "holland":
+            return Holland(X, y, loss, self.fit_intercept, self.eps)
+        elif self.estimator == "implicit":
+            return Implicit(X, y, loss, self.fit_intercept, int(1/self.block_size))
+        elif self.estimator == "gmom":
+            n_samples = y.shape[0]
+            n_samples_in_block = int(self.block_size * n_samples)
+            return GMOM(X, y, loss, self.fit_intercept, n_samples_in_block)
         else:
             raise ValueError("Unknown estimator")
 
@@ -303,24 +311,29 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
                 history
             )
 
+        elif self.solver == "gd":
+            # Get the gradient descent steps for each coordinate
+            step = np.min(steps_coordinate_descent(loss.lip, X, self.fit_intercept))
+            # Create an history object for the solver
+            history = History("GD", self.max_iter, self.verbose)
+            self.history_ = history
 
-            # def solve(w):
-            #
-            #     return coordinate_gradient_descent(
-            #         loss,
-            #         penalty,
-            #         estimator,
-            #         w,
-            #         X,
-            #         y,
-            #         self.fit_intercept,
-            #         steps,
-            #         self.max_iter,
-            #         self.tol,
-            #         self.history_,
-            #     )
-            #
-            # return solve
+            return GD(
+                X,
+                y,
+                loss,
+                self.fit_intercept,
+                estimator,
+                penalty,
+                self.max_iter,
+                self.tol,
+                self.random_state,
+                step,
+                history
+            )
+
+
+
 
         else:
             raise NotImplementedError("%s is not implemented yet" % self.solver)

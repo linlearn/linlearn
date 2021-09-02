@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import numpy as np
 from math import fabs
 from numpy.random import permutation
@@ -51,21 +52,19 @@ jit_kwargs = {
 # maxcvfloat
 # The maximum constraint violation.
 
-
-class CGD(object):
+class Solver(ABC):
     def __init__(
-        self,
-        X,
-        y,
-        loss,
-        fit_intercept,
-        estimator,
-        penalty,
-        max_iter,
-        tol,
-        random_state,
-        steps,
-        history,
+            self,
+            X,
+            y,
+            loss,
+            fit_intercept,
+            estimator,
+            penalty,
+            max_iter,
+            tol,
+            random_state,
+            history,
     ):
         self.X = X
         self.y = y
@@ -82,8 +81,6 @@ class CGD(object):
         else:
             self.n_weights = self.n_features
 
-        # Automatic steps
-        self.steps = steps
         self.history = history
 
     def objective_factory(self):
@@ -110,108 +107,16 @@ class CGD(object):
 
             return objective
 
+    @abstractmethod
     def cycle_factory(self):
-
-        X = self.X
-        fit_intercept = self.fit_intercept
-        n_samples = self.estimator.n_samples
-        n_weights = self.n_weights
-        partial_deriv_estimator = self.estimator.partial_deriv_factory()
-        penalize = self.penalty.apply_one_unscaled_factory()
-        steps = self.steps
-
-        # The learning rates scaled by the strength of the penalization (we use the
-        # apply_one_unscaled penalization function)
-        scaled_steps = self.steps.copy()
-        scaled_steps *= self.penalty.strength
-
-        if fit_intercept:
-
-            @jit(**jit_kwargs)
-            def cycle(coordinates, weights, inner_products, state_estimator):
-                max_abs_delta = 0.0
-                max_abs_weight = 0.0
-                # weights = state_cgd.weights
-                # inner_products = state_cgd.inner_products
-                for idx in range(n_weights):
-                    coordinates[idx] = idx
-                np.random.shuffle(coordinates)
-
-                for j in coordinates:
-                    partial_deriv_j = partial_deriv_estimator(
-                        j, inner_products, state_estimator
-                    )
-                    if j == 0:
-                        # It's the intercept, so we don't penalize
-                        w_j_new = weights[j] - steps[j] * partial_deriv_j
-                    else:
-                        # It's not the intercept
-                        w_j_new = weights[j] - steps[j] * partial_deriv_j
-                        # TODO: compute the
-                        w_j_new = penalize(w_j_new, scaled_steps[j])
-                    # Update the inner products
-                    delta_j = w_j_new - weights[j]
-                    # Update the maximum update change
-                    abs_delta_j = fabs(delta_j)
-                    if abs_delta_j > max_abs_delta:
-                        max_abs_delta = abs_delta_j
-                    # Update the maximum weight
-                    abs_w_j_new = fabs(w_j_new)
-                    if abs_w_j_new > max_abs_weight:
-                        max_abs_weight = abs_w_j_new
-                    if j == 0:
-                        for i in range(n_samples):
-                            inner_products[i] += delta_j
-                    else:
-                        for i in range(n_samples):
-                            inner_products[i] += delta_j * X[i, j - 1]
-                    weights[j] = w_j_new
-
-                return max_abs_delta, max_abs_weight
-
-            return cycle
-
-        else:
-            # There is no intercept, so the code changes slightly
-            @jit(**jit_kwargs)
-            def cycle(coordinates, weights, inner_products, state_estimator):
-                max_abs_delta = 0.0
-                max_abs_weight = 0.0
-                for idx in range(n_weights):
-                    coordinates[idx] = idx
-                np.random.shuffle(coordinates)
-
-                for j in coordinates:
-                    partial_deriv_j = partial_deriv_estimator(
-                        j, inner_products, state_estimator
-                    )
-                    w_j_new = weights[j] - steps[j] * partial_deriv_j
-                    w_j_new = penalize(w_j_new, scaled_steps[j])
-                    # Update the inner products
-                    delta_j = w_j_new - weights[j]
-                    # Update the maximum update change
-                    abs_delta_j = fabs(delta_j)
-                    if abs_delta_j > max_abs_delta:
-                        max_abs_delta = abs_delta_j
-                    # Update the maximum weight
-                    abs_w_j_new = fabs(w_j_new)
-                    if abs_w_j_new > max_abs_weight:
-                        max_abs_weight = abs_w_j_new
-
-                    for i in range(n_samples):
-                        inner_products[i] += delta_j * X[i, j]
-
-                    weights[j] = w_j_new
-                return max_abs_delta, max_abs_weight
-
-            return cycle
+        pass
 
     def solve(self, w0=None):
         X = self.X
         fit_intercept = self.fit_intercept
         inner_products = np.empty(self.n_samples, dtype=np_float)
+        coordinates = np.arange(self.n_weights, dtype=np.uintp)
         weights = np.empty(self.n_weights, dtype=np_float)
-        coordinates = np.empty(self.n_weights, dtype=np.uintp)
         tol = self.tol
         max_iter = self.max_iter
         history = self.history
@@ -226,7 +131,6 @@ class CGD(object):
 
         random_state = self.random_state
         if random_state is not None:
-
             @jit(**jit_kwargs)
             def numba_seed_numpy(rnd_state):
                 np.random.seed(rnd_state)
@@ -270,6 +174,237 @@ class CGD(object):
         return OptimizationResult(
             w=weights, n_iter=max_iter + 1, success=False, tol=tol, message=None
         )
+
+
+class CGD(Solver):
+    def __init__(
+        self,
+        X,
+        y,
+        loss,
+        fit_intercept,
+        estimator,
+        penalty,
+        max_iter,
+        tol,
+        random_state,
+        steps,
+        history,
+    ):
+        super(CGD, self).__init__(
+            X=X,
+            y=y,
+            loss=loss,
+            fit_intercept=fit_intercept,
+            estimator=estimator,
+            penalty=penalty,
+            max_iter=max_iter,
+            tol=tol,
+            random_state=random_state,
+            history=history
+        )
+
+        # Automatic steps
+        self.steps = steps
+
+    def cycle_factory(self):
+
+        X = self.X
+        fit_intercept = self.fit_intercept
+        n_samples = self.estimator.n_samples
+        n_weights = self.n_weights
+        partial_deriv_estimator = self.estimator.partial_deriv_factory()
+        penalize = self.penalty.apply_one_unscaled_factory()
+        steps = self.steps
+
+        # The learning rates scaled by the strength of the penalization (we use the
+        # apply_one_unscaled penalization function)
+        scaled_steps = self.steps.copy()
+        scaled_steps *= self.penalty.strength
+
+        if fit_intercept:
+
+            @jit(**jit_kwargs)
+            def cycle(coordinates, weights, inner_products, state_estimator):
+                max_abs_delta = 0.0
+                max_abs_weight = 0.0
+                # weights = state_cgd.weights
+                # inner_products = state_cgd.inner_products
+                # for idx in range(n_weights):
+                #     coordinates[idx] = idx
+                np.random.shuffle(coordinates)
+
+                for j in coordinates:
+                    partial_deriv_j = partial_deriv_estimator(
+                        j, inner_products, state_estimator
+                    )
+                    if j == 0:
+                        # It's the intercept, so we don't penalize
+                        w_j_new = weights[j] - steps[j] * partial_deriv_j
+                    else:
+                        # It's not the intercept
+                        w_j_new = weights[j] - steps[j] * partial_deriv_j
+                        # TODO: compute the
+                        w_j_new = penalize(w_j_new, scaled_steps[j])
+                    # Update the inner products
+                    delta_j = w_j_new - weights[j]
+                    # Update the maximum update change
+                    abs_delta_j = fabs(delta_j)
+                    if abs_delta_j > max_abs_delta:
+                        max_abs_delta = abs_delta_j
+                    # Update the maximum weight
+                    abs_w_j_new = fabs(w_j_new)
+                    if abs_w_j_new > max_abs_weight:
+                        max_abs_weight = abs_w_j_new
+                    if j == 0:
+                        for i in range(n_samples):
+                            inner_products[i] += delta_j
+                    else:
+                        for i in range(n_samples):
+                            inner_products[i] += delta_j * X[i, j - 1]
+                    weights[j] = w_j_new
+
+                return max_abs_delta, max_abs_weight
+
+            return cycle
+
+        else:
+            # There is no intercept, so the code changes slightly
+            @jit(**jit_kwargs)
+            def cycle(coordinates, weights, inner_products, state_estimator):
+                max_abs_delta = 0.0
+                max_abs_weight = 0.0
+                # for idx in range(n_weights):
+                #     coordinates[idx] = idx
+                np.random.shuffle(coordinates)
+
+                for j in coordinates:
+                    partial_deriv_j = partial_deriv_estimator(
+                        j, inner_products, state_estimator
+                    )
+                    w_j_new = weights[j] - steps[j] * partial_deriv_j
+                    w_j_new = penalize(w_j_new, scaled_steps[j])
+                    # Update the inner products
+                    delta_j = w_j_new - weights[j]
+                    # Update the maximum update change
+                    abs_delta_j = fabs(delta_j)
+                    if abs_delta_j > max_abs_delta:
+                        max_abs_delta = abs_delta_j
+                    # Update the maximum weight
+                    abs_w_j_new = fabs(w_j_new)
+                    if abs_w_j_new > max_abs_weight:
+                        max_abs_weight = abs_w_j_new
+
+                    for i in range(n_samples):
+                        inner_products[i] += delta_j * X[i, j]
+
+                    weights[j] = w_j_new
+                return max_abs_delta, max_abs_weight
+
+            return cycle
+
+class GD(Solver):
+    def __init__(
+            self,
+            X,
+            y,
+            loss,
+            fit_intercept,
+            estimator,
+            penalty,
+            max_iter,
+            tol,
+            random_state,
+            step,
+            history,
+    ):
+        super(GD, self).__init__(
+            X=X,
+            y=y,
+            loss=loss,
+            fit_intercept=fit_intercept,
+            estimator=estimator,
+            penalty=penalty,
+            max_iter=max_iter,
+            tol=tol,
+            random_state=random_state,
+            history=history
+        )
+
+        # Automatic steps
+        self.step = step
+
+    def cycle_factory(self):
+
+        X = self.X
+        fit_intercept = self.fit_intercept
+        n_samples = self.estimator.n_samples
+        n_weights = self.n_weights
+        grad_estimator = self.estimator.grad_factory()
+        penalize = self.penalty.apply_one_unscaled_factory()
+        step = self.step
+
+        # The learning rates scaled by the strength of the penalization (we use the
+        # apply_one_unscaled penalization function)
+        scaled_step = self.penalty.strength * self.step
+
+        if fit_intercept:
+
+            @jit(**jit_kwargs)
+            def cycle(coordinates, weights, inner_products, state_estimator):
+                max_abs_delta = 0.0
+                max_abs_weight = 0.0
+                decision_function(X, fit_intercept, weights, inner_products)
+
+                grad = grad_estimator(
+                    inner_products, state_estimator
+                )
+                w_new = weights - step * grad
+                for j in range(1, n_weights):
+                    w_new[j] = penalize(w_new[j], scaled_step)
+                for j in range(n_weights):
+                    # Update the maximum update change
+                    abs_delta_j = fabs(w_new[j] - weights[j])
+                    if abs_delta_j > max_abs_delta:
+                        max_abs_delta = abs_delta_j
+                    # Update the maximum weight
+                    abs_w_j_new = fabs(w_new[j])
+                    if abs_w_j_new > max_abs_weight:
+                        max_abs_weight = abs_w_j_new
+
+                weights[:] = w_new
+
+                return max_abs_delta, max_abs_weight
+
+            return cycle
+
+        else:
+            # There is no intercept, so the code changes slightly
+            @jit(**jit_kwargs)
+            def cycle(coordinates, weights, inner_products, state_estimator):
+                max_abs_delta = 0.0
+                max_abs_weight = 0.0
+                decision_function(X, fit_intercept, weights, inner_products)
+
+                grad = grad_estimator(
+                    inner_products, state_estimator
+                )
+                w_new = weights - step * grad
+                for j in coordinates:
+                    w_new[j] = penalize(w_new[j], scaled_step)
+                    # Update the maximum update change
+                    abs_delta_j = fabs(w_new[j] - weights[j])
+                    if abs_delta_j > max_abs_delta:
+                        max_abs_delta = abs_delta_j
+                    # Update the maximum weight
+                    abs_w_j_new = fabs(w_new[j])
+                    if abs_w_j_new > max_abs_weight:
+                        max_abs_weight = abs_w_j_new
+
+                weights[:] = w_new
+                return max_abs_delta, max_abs_weight
+
+            return cycle
 
     # TODO: stopping criterion max(weigth difference) / max(weight) + duality gap
     # TODO: and then use
