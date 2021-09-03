@@ -157,7 +157,7 @@ class ERM(object):
             @jit(**jit_kwargs)
             def grad(inner_products, state):
                 gradient = np.zeros(X.shape[1])
-                for i in n_samples:
+                for i in range(n_samples):
                     gradient += deriv_loss(y[i], inner_products[i]) * X[i]
                 return gradient / n_samples
 
@@ -213,8 +213,9 @@ class MOM(Estimator):
                 # Block counter
                 n_block = 0
                 if j == 0:
-                    for i in sample_indices:
-                        derivatives_sum_block += deriv_loss(y[i], inner_products[i])
+                    for i in range(n_samples):
+                        idx = sample_indices[i]
+                        derivatives_sum_block += deriv_loss(y[idx], inner_products[idx])
                         if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                             block_means[n_block] = (
                                 derivatives_sum_block / n_samples_in_block
@@ -222,9 +223,10 @@ class MOM(Estimator):
                             n_block += 1
                             derivatives_sum_block = 0.0
                 else:
-                    for i in sample_indices:
+                    for i in range(n_samples):
+                        idx = sample_indices[i]
                         derivatives_sum_block += (
-                            deriv_loss(y[i], inner_products[i]) * X[i, j - 1]
+                            deriv_loss(y[idx], inner_products[idx]) * X[idx, j - 1]
                         )
                         if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                             block_means[n_block] = (
@@ -254,9 +256,10 @@ class MOM(Estimator):
                 derivatives_sum_block = 0.0
                 # Block counter
                 n_block = 0
-                for i in sample_indices:
+                for i in range(n_samples):
+                    idx = sample_indices[i]
                     derivatives_sum_block += (
-                        deriv_loss(y[i], inner_products[i]) * X[i, j]
+                        deriv_loss(y[idx], inner_products[idx]) * X[idx, j]
                     )
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                         block_means[n_block] = (
@@ -271,6 +274,8 @@ class MOM(Estimator):
 
             return partial_deriv
 
+    def grad_factory(self):
+        raise Exception("don't use mom with a full gradient solver (that's gmom)")
 
 ################################################################
 # Trimmed means estimator (TMEAN)
@@ -333,6 +338,9 @@ class TMean(Estimator):
                 return np.mean(deriv_samples[n_excluded_tails:-n_excluded_tails])
 
             return partial_deriv
+
+    def grad_factory(self):
+        raise Exception("Don't use TMean estimator for full gradient")
 
 
 ################################################################
@@ -445,6 +453,8 @@ class Catoni(Estimator):
 
             return partial_deriv
 
+    def grad_factory(self):
+        raise Exception("Don't use Catoni estimator for full gradient")
 
 ################################################################
 # Holland et al. (Holland)
@@ -773,97 +783,97 @@ class GMOM(Estimator):
 # SAGA estimator (SAGA_est)
 ################################################################
 
-StateSAGA = namedtuple(
-    "StateSAGA", ["deriv_samples", "mean_grad", "initialized", "j_grad_diff"]
-)
-
-# this class exists just to provide place holder variables through the estimator state
-class SAGA_est(Estimator):
-    def __init__(self, X, y, loss, fit_intercept):
-        Estimator.__init__(self, X, y, loss, fit_intercept)
-
-    def get_state(self):
-        return StateSAGA(
-            deriv_samples=np.empty(self.n_samples, dtype=np_float),
-            mean_grad=np.empty(
-                self.X.shape[1] + int(self.fit_intercept), dtype=np_float
-            ),
-            initialized=False,
-            j_grad_diff=np.empty(
-                int(self.fit_intercept) + self.X.shape[1], dtype=np_float
-            ),
-        )
-
-    def partial_deriv_factory(self):
-        raise ValueError("Don't use SAGA estimator with cgd")
-
-    def grad_factory(self):
-        X = self.X
-        y = self.y
-        n_samples = X.shape[0]
-        loss = self.loss
-        deriv_loss = loss.deriv_factory()
-        fit_intercept = self.fit_intercept
-
-        if fit_intercept:
-
-            @jit(**jit_kwargs)
-            def grad(inner_products, state):
-                mean_grad = state.mean_grad
-                j_grad_diff = state.j_grad_diff
-                deriv_samples = state.deriv_samples
-                initialized = state.initialized
-                if not initialized:
-                    state.mean_grad.fill(0.0)
-                    for i in range(n_samples):
-                        deriv = deriv_loss(y[i], inner_products[i])
-                        mean_grad[0] += deriv
-                        mean_grad[1:] += deriv*X[i]
-                    mean_grad /= n_samples
-                    initialized = True
-
-                j = np.random.randint(n_samples)
-                new_j_score = inner_products[j]
-                new_j_der = deriv_loss(y[j], new_j_score)
-
-                j_grad_diff[0] = (new_j_der - state.deriv_samples[j])
-                j_grad_diff[1:] = (new_j_der - state.deriv_samples[j]) * X[j]
-                gradient = (state.j_grad_diff + state.mean_grad)
-                mean_grad += j_grad_diff / X.shape[0]
-                deriv_samples[j] = new_j_der
-
-                return gradient
-
-            return grad
-
-        else:
-            # There is no intercept, so the code changes slightly
-            @jit(**jit_kwargs)
-            def grad(inner_products, state):
-                mean_grad = state.mean_grad
-                j_grad_diff = state.j_grad_diff
-                deriv_samples = state.deriv_samples
-                initialized = state.initialized
-
-                if not initialized:
-                    mean_grad.fill(0.0)
-                    for i in range(n_samples):
-                        mean_grad += deriv_loss(y[i], inner_products[i]) * X[i]
-                    mean_grad /= n_samples
-                    initialized = True
-
-                j = np.random.randint(n_samples)
-                new_j_score = inner_products[j]
-                new_j_der = deriv_loss(y[j], new_j_score)
-
-                j_grad_diff = (new_j_der - deriv_samples[j]) * X[j]
-                gradient = (j_grad_diff + mean_grad)
-                mean_grad += j_grad_diff / X.shape[0]
-                deriv_samples[j] = new_j_der
-
-                return gradient
-
-            return grad
+# StateSAGA = namedtuple(
+#     "StateSAGA", ["deriv_samples", "mean_grad", "initialized", "j_grad_diff"]
+# )
+# 
+# # this class exists just to provide place holder variables through the estimator state
+# class SAGA_est(Estimator):
+#     def __init__(self, X, y, loss, fit_intercept):
+#         Estimator.__init__(self, X, y, loss, fit_intercept)
+# 
+#     def get_state(self):
+#         return StateSAGA(
+#             deriv_samples=np.empty(self.n_samples, dtype=np_float),
+#             mean_grad=np.empty(
+#                 self.X.shape[1] + int(self.fit_intercept), dtype=np_float
+#             ),
+#             initialized=False,
+#             j_grad_diff=np.empty(
+#                 int(self.fit_intercept) + self.X.shape[1], dtype=np_float
+#             ),
+#         )
+# 
+#     def partial_deriv_factory(self):
+#         raise ValueError("Don't use SAGA estimator with cgd")
+# 
+#     def grad_factory(self):
+#         X = self.X
+#         y = self.y
+#         n_samples = X.shape[0]
+#         loss = self.loss
+#         deriv_loss = loss.deriv_factory()
+#         fit_intercept = self.fit_intercept
+# 
+#         if fit_intercept:
+# 
+#             @jit(**jit_kwargs)
+#             def grad(inner_products, state):
+#                 mean_grad = state.mean_grad
+#                 j_grad_diff = state.j_grad_diff
+#                 deriv_samples = state.deriv_samples
+#                 initialized = state.initialized
+#                 if not initialized:
+#                     state.mean_grad.fill(0.0)
+#                     for i in range(n_samples):
+#                         deriv = deriv_loss(y[i], inner_products[i])
+#                         mean_grad[0] += deriv
+#                         mean_grad[1:] += deriv*X[i]
+#                     mean_grad /= n_samples
+#                     initialized = True
+# 
+#                 j = np.random.randint(n_samples)
+#                 new_j_score = inner_products[j]
+#                 new_j_der = deriv_loss(y[j], new_j_score)
+# 
+#                 j_grad_diff[0] = (new_j_der - state.deriv_samples[j])
+#                 j_grad_diff[1:] = (new_j_der - state.deriv_samples[j]) * X[j]
+#                 gradient = (state.j_grad_diff + state.mean_grad)
+#                 mean_grad += j_grad_diff / X.shape[0]
+#                 deriv_samples[j] = new_j_der
+# 
+#                 return gradient
+# 
+#             return grad
+# 
+#         else:
+#             # There is no intercept, so the code changes slightly
+#             @jit(**jit_kwargs)
+#             def grad(inner_products, state):
+#                 mean_grad = state.mean_grad
+#                 j_grad_diff = state.j_grad_diff
+#                 deriv_samples = state.deriv_samples
+#                 initialized = state.initialized
+# 
+#                 if not initialized:
+#                     mean_grad.fill(0.0)
+#                     for i in range(n_samples):
+#                         mean_grad += deriv_loss(y[i], inner_products[i]) * X[i]
+#                     mean_grad /= n_samples
+#                     initialized = True
+# 
+#                 j = np.random.randint(n_samples)
+#                 new_j_score = inner_products[j]
+#                 new_j_der = deriv_loss(y[j], new_j_score)
+# 
+#                 j_grad_diff = (new_j_der - deriv_samples[j]) * X[j]
+#                 gradient = (j_grad_diff + mean_grad)
+#                 mean_grad += j_grad_diff / X.shape[0]
+#                 deriv_samples[j] = new_j_der
+# 
+#                 return gradient
+# 
+#             return grad
 
 
 # C5 = 0.01

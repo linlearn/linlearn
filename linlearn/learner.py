@@ -18,19 +18,19 @@ from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import safe_sparse_dot
 
-from ._loss import steps_coordinate_descent, Logistic
+from ._loss import steps_coordinate_descent, Logistic, LeastSquares
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
 from ._solver import CGD, GD, SGD, SVRG, SAGA, History
-from ._estimator import ERM, MOM, TMean, Catoni, Implicit, GMOM, Holland, SAGA_est
+from ._estimator import ERM, MOM, TMean, Catoni, Implicit, GMOM, Holland
 
 
 # TODO: serialization
 
 class BaseLearner(ClassifierMixin, BaseEstimator):
 
-    _losses = ["logistic"]
+    _losses = ["logistic", "leastsquares"]
     _penalties = ["none", "l2", "l1", "elasticnet"]
-    _estimators = ["erm", "mom", "tmean", "catoni", "implicit", "gmom", "holland", "saga_est"]
+    _estimators = ["erm", "mom", "tmean", "catoni", "implicit", "gmom", "holland"]
     _solvers = ["cgd", "gd", "sgd", "svrg", "saga"]
 
     def __init__(
@@ -38,6 +38,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         *,
         penalty="l2",
         C=1.0,
+        step_size=1.0,
         loss="logistic",
         fit_intercept=True,
         estimator="erm",
@@ -55,6 +56,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
     ):
         self.penalty = penalty
         self.C = C
+        self.step_size = step_size
         self.loss = loss
         self.estimator = estimator
         self.block_size = block_size
@@ -100,6 +102,17 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             raise ValueError("C must be a positive number; got (C=%r)" % val)
         else:
             self._C = float(val)
+
+    @property
+    def step_size(self):
+        return self._step_size
+
+    @step_size.setter
+    def step_size(self, val):
+        if not isinstance(val, numbers.Real) or val <= 0:
+            raise ValueError("step_size must be a positive number; got (step_size=%r)" % val)
+        else:
+            self._step_size = float(val)
 
     @property
     def loss(self):
@@ -191,10 +204,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
     @tol.setter
     def tol(self, val):
-        if not isinstance(val, numbers.Real) or val <= 0.0:
+        if not isinstance(val, numbers.Real) or val < 0.0:
             raise ValueError(
                 "Tolerance for stopping criteria must be "
-                "positive; got (tol=%r)" % val
+                "non negative; got (tol=%r)" % val
             )
         else:
             self._tol = val
@@ -229,6 +242,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
     def _get_loss(self):
         if self.loss == "logistic":
             return Logistic()
+        elif self.loss == "leastsquares":
+                return LeastSquares()
         else:
             raise ValueError("Loss unknown")
 
@@ -247,8 +262,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return Holland(X, y, loss, self.fit_intercept, self.eps)
         elif self.estimator == "implicit":
             return Implicit(X, y, loss, self.fit_intercept, int(1/self.block_size))
-        elif self.estimator == "saga_est":
-            return SAGA_est(X, y, loss, self.fit_intercept)
         elif self.estimator == "gmom":
             n_samples = y.shape[0]
             n_samples_in_block = int(self.block_size * n_samples)
@@ -271,7 +284,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         else:
             raise ValueError("Unknown penalty")
 
-    def _get_solver(self, X, y):
+    def _get_solver(self, X, y, trackers=None):
         n_samples, n_features = X.shape
 
         # # Get the loss object
@@ -288,12 +301,13 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         # The strength is scaled using following scikit-learn's scaling
         # strength = 1 / (self.C * n_samples)
         # penalty = penalty_factory(strength=strength, l1_ratio=self.l1_ratio)
+        n_samples_in_block = int(n_samples * self.block_size)
 
         if self.solver == "cgd":
             # Get the gradient descent steps for each coordinate
-            steps = steps_coordinate_descent(loss.lip, X, self.fit_intercept)
+            steps = self.step_size * steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept)
             # Create an history object for the solver
-            history = History("CGD", self.max_iter, self.verbose)
+            history = History("CGD", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
 
             return CGD(
@@ -312,9 +326,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
         elif self.solver == "gd":
             # Get the gradient descent steps for each coordinate
-            step = np.min(steps_coordinate_descent(loss.lip, X, self.fit_intercept))
+            step = self.step_size * np.min(steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept))
             # Create an history object for the solver
-            history = History("GD", self.max_iter, self.verbose)
+            history = History("GD", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
 
             return GD(
@@ -332,9 +346,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
         elif self.solver == "sgd":
             # Get the gradient descent steps for each coordinate
-            step = np.min(steps_coordinate_descent(loss.lip, X, self.fit_intercept))
+            step = self.step_size * np.min(steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept))
             # Create an history object for the solver
-            history = History("SGD", self.max_iter, self.verbose)
+            history = History("SGD", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
 
             return SGD(
@@ -353,9 +367,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
         elif self.solver == "svrg":
             # Get the gradient descent steps for each coordinate
-            step = np.min(steps_coordinate_descent(loss.lip, X, self.fit_intercept))
+            step = self.step_size * np.min(steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept))
             # Create an history object for the solver
-            history = History("SVRG", self.max_iter, self.verbose)
+            history = History("SVRG", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
 
             return SVRG(
@@ -373,9 +387,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
         elif self.solver == "saga":
             # Get the gradient descent steps for each coordinate
-            step = np.min(steps_coordinate_descent(loss.lip, X, self.fit_intercept))
+            step = self.step_size * np.min(steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept))
             # Create an history object for the solver
-            history = History("SAGA", self.max_iter, self.verbose)
+            history = History("SAGA", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
 
             return SAGA(
@@ -405,7 +419,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         return w
 
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, trackers=None, dummy_first_step=True):
         """
         Fit the model according to the given training data.
 
@@ -527,9 +541,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         #     )
 
         #######
-        solver = self._get_solver(X, y_encoded)
+        solver = self._get_solver(X, y_encoded, trackers=trackers)
         w = self._get_initial_iterate(X, y_encoded)
-        optimization_result = solver.solve(w)
+        optimization_result = solver.solve(w, dummy_first_step=dummy_first_step)
 
         self.optimization_result_ = optimization_result
         self.n_iter_ = np.asarray([optimization_result.n_iter], dtype=np.int32)
@@ -589,6 +603,7 @@ class BinaryClassifier(BaseLearner):
         *,
         penalty="l2",
         C=1.0,
+        step_size=1.0,
         loss="logistic",
         fit_intercept=True,
         estimator="erm",
@@ -608,6 +623,7 @@ class BinaryClassifier(BaseLearner):
         super(BinaryClassifier, self).__init__(
             penalty=penalty,
             C=C,
+            step_size=step_size,
             loss=loss,
             fit_intercept=fit_intercept,
             estimator=estimator,
@@ -738,7 +754,8 @@ class Regressor(BaseLearner, RegressorMixin):
         *,
         penalty="l2",
         C=1.0,
-        loss="lestsquares",
+        step_size=1.0,
+        loss="leastsquares",
         fit_intercept=True,
         estimator="erm",
         block_size=0.07,
@@ -756,6 +773,7 @@ class Regressor(BaseLearner, RegressorMixin):
         super(Regressor, self).__init__(
             penalty=penalty,
             C=C,
+            step_size=step_size,
             loss=loss,
             fit_intercept=fit_intercept,
             estimator=estimator,
@@ -778,7 +796,7 @@ class Regressor(BaseLearner, RegressorMixin):
         # TODO: deal with threshold for predictions
         return self.decision_function(X)
 
-    def mse_score(self, X, y):
+    def mse(self, X, y):
         """
         Return the mean accuracy on the given test data and labels.
 
