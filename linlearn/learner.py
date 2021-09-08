@@ -7,38 +7,41 @@ Binary Classifier
 # Parts of the code below are directly from scikit-learn, in particular from
 # https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/linear_model/_logistic.py
 
+from warnings import warn
+
 import numbers
 import numpy as np
 from scipy.special import expit
 
-from sklearn.base import ClassifierMixin, BaseEstimator
+from sklearn.base import ClassifierMixin, RegressorMixin, BaseEstimator
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils import check_array, check_consistent_length
 from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import safe_sparse_dot
 
-from ._loss import steps_coordinate_descent, Logistic
+from ._loss import steps_coordinate_descent, Logistic, LeastSquares, steps_factory
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
-from ._solver import CGD, History
-from ._estimator import ERM, MOM, TMean, Catoni
+from ._solver import CGD, GD, SGD, SVRG, SAGA, History
+from ._estimator import ERM, MOM, TMean, Implicit, GMOM, HollandCatoni
 
 
 # TODO: serialization
 
 
-class BinaryClassifier(ClassifierMixin, BaseEstimator):
+class BaseLearner(ClassifierMixin, BaseEstimator):
 
-    _losses = ["logistic"]
+    _losses = ["logistic", "leastsquares"]
     _penalties = ["none", "l2", "l1", "elasticnet"]
-    _estimators = ["erm", "mom", "tmean", "catoni"]
-    _solvers = ["cgd"]
+    _estimators = ["erm", "mom", "tmean", "implicit", "gmom", "holland_catoni"]
+    _solvers = ["cgd", "gd", "sgd", "svrg", "saga"]
 
     def __init__(
         self,
         *,
         penalty="l2",
         C=1.0,
+        step_size=1.0,
         loss="logistic",
         fit_intercept=True,
         estimator="erm",
@@ -48,15 +51,16 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         solver="cgd",
         tol=1e-4,
         max_iter=100,
-        class_weight=None,
         random_state=None,
         verbose=0,
         warm_start=False,
         n_jobs=None,
-        l1_ratio=0.5
+        l1_ratio=0.5,
+        sgd_exponent=0.5
     ):
         self.penalty = penalty
         self.C = C
+        self.step_size = step_size
         self.loss = loss
         self.estimator = estimator
         self.block_size = block_size
@@ -66,12 +70,12 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         self.fit_intercept = fit_intercept
         self.solver = solver
         self.max_iter = max_iter
-        self.class_weight = class_weight
         self.random_state = random_state
         self.verbose = verbose
         self.warm_start = warm_start
         self.n_jobs = n_jobs
         self.l1_ratio = l1_ratio
+        self.sgd_exponent = sgd_exponent
 
         self.history_ = None
         self.intercept_ = None
@@ -80,13 +84,15 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         self.n_iter_ = None
         self.classes_ = None
 
+        self.check_estimator_solver_combination(estimator, solver)
+
     @property
     def penalty(self):
         return self._penalty
 
     @penalty.setter
     def penalty(self, val):
-        if val not in BinaryClassifier._penalties:
+        if val not in BaseLearner._penalties:
             raise ValueError(
                 "penalty must be one of %r; got (penalty=%r)" % (self._penalties, val)
             )
@@ -105,12 +111,25 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             self._C = float(val)
 
     @property
+    def step_size(self):
+        return self._step_size
+
+    @step_size.setter
+    def step_size(self, val):
+        if not isinstance(val, numbers.Real) or val <= 0:
+            raise ValueError(
+                "step_size must be a positive number; got (step_size=%r)" % val
+            )
+        else:
+            self._step_size = float(val)
+
+    @property
     def loss(self):
         return self._loss
 
     @loss.setter
     def loss(self, val):
-        if val not in BinaryClassifier._losses:
+        if val not in BaseLearner._losses:
             raise ValueError(
                 "loss must be one of %r; got (loss=%r)" % (self._losses, val)
             )
@@ -134,7 +153,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
     @estimator.setter
     def estimator(self, val):
-        if val not in BinaryClassifier._estimators:
+        if val not in BaseLearner._estimators:
             raise ValueError(
                 "estimator must be one of %r; got (estimator=%r)"
                 % (self._estimators, val)
@@ -181,7 +200,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
     @solver.setter
     def solver(self, val):
-        if val not in BinaryClassifier._solvers:
+        if val not in BaseLearner._solvers:
             raise ValueError(
                 "solver must be one of %r; got (solver=%r)" % (self._solvers, val)
             )
@@ -194,10 +213,10 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
     @tol.setter
     def tol(self, val):
-        if not isinstance(val, numbers.Real) or val <= 0.0:
+        if not isinstance(val, numbers.Real) or val < 0.0:
             raise ValueError(
                 "Tolerance for stopping criteria must be "
-                "positive; got (tol=%r)" % val
+                "non negative; got (tol=%r)" % val
             )
         else:
             self._tol = val
@@ -227,11 +246,52 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         else:
             self._l1_ratio = val
 
+    @property
+    def sgd_exponent(self):
+        return self._sgd_exponent
+
+    @sgd_exponent.setter
+    def sgd_exponent(self, val):
+        if not isinstance(val, numbers.Real) or val < 0.5 or val > 1:
+            raise ValueError("sgd_exponent must be between 0.5 and 1; got (sgd_exponent=%r)" % val)
+        else:
+            self._sgd_exponent = float(val)
+
     # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None
+
+    def check_estimator_solver_combination(self, estimator, solver):
+        if solver in ["sgd", "svrg", "saga"] and estimator != "erm":
+            warn(
+                "Your choice of robust estimator will be ignored because it is not supported by SGD type solvers (SGD, SVRG and SAGA)"
+            )
+        elif solver == "gd" and estimator == "mom":
+            warn(
+                "The Median-of-Means estimator computes only single gradient coordinates, a full gradient can be constituted for Gradient Descent but we recommend to either use mom estimator with cgd solver or gmom estimator with gd solver instead"
+            )
+        # elif solver == "gd" and estimator == "catoni":
+        #     warn(
+        #         "The Catoni estimator computes only single gradient coordinates, doing Gradient Descent with this estimator is equivalent to using holland estimator with GD. Switching estimator to 'holland'"
+        #     )
+        #     self.estimator = "holland"
+        # elif solver == "cgd" and estimator == "holland":
+        #     warn(
+        #         "The Holland estimator computes full gradients, doing CGD with this estimator is equivalent to using catoni estimator with CGD. Switching estimator to 'catoni'"
+        #     )
+        #     self.estimator = "catoni"
+        elif solver == "gd" and estimator == "tmean":
+            warn(
+                "The Trimmed Mean estimator computes only single gradient coordinates, full gradients for GD will be constituted from coordinates."
+            )
+        elif solver == "cgd" and estimator == "gmom":
+            raise ValueError(
+                "The GMOM estimator computes whole gradients and cannot be used with CGD."
+            )
 
     def _get_loss(self):
         if self.loss == "logistic":
             return Logistic()
+        elif self.loss == "leastsquares":
+            return LeastSquares()
         else:
             raise ValueError("Loss unknown")
 
@@ -244,8 +304,14 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             return MOM(X, y, loss, self.fit_intercept, n_samples_in_block)
         elif self.estimator == "tmean":
             return TMean(X, y, loss, self.fit_intercept, self.percentage)
-        elif self.estimator == "catoni":
-            return Catoni(X, y, loss, self.fit_intercept, self.eps)
+        elif self.estimator == "holland_catoni":
+            return HollandCatoni(X, y, loss, self.fit_intercept, self.eps)
+        elif self.estimator == "implicit":
+            return Implicit(X, y, loss, self.fit_intercept, int(1 / self.block_size))
+        elif self.estimator == "gmom":
+            n_samples = y.shape[0]
+            n_samples_in_block = int(self.block_size * n_samples)
+            return GMOM(X, y, loss, self.fit_intercept, n_samples_in_block)
         else:
             raise ValueError("Unknown estimator")
 
@@ -264,7 +330,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         else:
             raise ValueError("Unknown penalty")
 
-    def _get_solver(self, X, y):
+    def _get_solver(self, X, y, trackers=None):
         n_samples, n_features = X.shape
 
         # # Get the loss object
@@ -281,12 +347,20 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         # The strength is scaled using following scikit-learn's scaling
         # strength = 1 / (self.C * n_samples)
         # penalty = penalty_factory(strength=strength, l1_ratio=self.l1_ratio)
+        n_samples_in_block = int(n_samples * self.block_size)
 
         if self.solver == "cgd":
             # Get the gradient descent steps for each coordinate
-            steps = steps_coordinate_descent(loss.lip, X, self.fit_intercept)
+            steps_func = steps_factory(
+                fit_intercept=self.fit_intercept,
+                estimator=self.estimator,
+                percentage=self.percentage,
+                eps=self.eps,
+                n_samples_in_block=n_samples_in_block,
+            )
+            steps = self.step_size * steps_func(loss.lip, X)
             # Create an history object for the solver
-            history = History("CGD", self.max_iter, self.verbose)
+            history = History("CGD", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
 
             return CGD(
@@ -300,27 +374,108 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
                 self.tol,
                 self.random_state,
                 steps,
-                history
+                history,
             )
 
+        elif self.solver == "gd":
+            # Get the gradient descent steps for each coordinate
 
-            # def solve(w):
-            #
-            #     return coordinate_gradient_descent(
-            #         loss,
-            #         penalty,
-            #         estimator,
-            #         w,
-            #         X,
-            #         y,
-            #         self.fit_intercept,
-            #         steps,
-            #         self.max_iter,
-            #         self.tol,
-            #         self.history_,
-            #     )
-            #
-            # return solve
+            steps_func = steps_factory(
+                fit_intercept=self.fit_intercept,
+                estimator=self.estimator,
+                percentage=self.percentage,
+                eps=self.eps,
+                n_samples_in_block=n_samples_in_block,
+            )
+            step = self.step_size * np.min(steps_func(loss.lip, X))
+            # Create an history object for the solver
+            history = History("GD", self.max_iter, self.verbose, trackers=trackers)
+            self.history_ = history
+
+            return GD(
+                X,
+                y,
+                loss,
+                self.fit_intercept,
+                estimator,
+                penalty,
+                self.max_iter,
+                self.tol,
+                self.random_state,
+                step,
+                history,
+            )
+        elif self.solver == "sgd":
+            # Get the gradient descent steps for each coordinate
+            steps_func = steps_factory(
+                fit_intercept=self.fit_intercept, estimator="erm"
+            )
+            step = self.step_size * np.min(steps_func(loss.lip, X))
+            # Create an history object for the solver
+            history = History("SGD", self.max_iter, self.verbose, trackers=trackers)
+            self.history_ = history
+
+            return SGD(
+                X,
+                y,
+                loss,
+                self.fit_intercept,
+                estimator,
+                penalty,
+                self.max_iter,
+                self.tol,
+                self.random_state,
+                step,
+                history,
+                exponent=self.sgd_exponent
+            )
+
+        elif self.solver == "svrg":
+            # Get the gradient descent steps for each coordinate
+            steps_func = steps_factory(
+                fit_intercept=self.fit_intercept, estimator="erm"
+            )
+            step = self.step_size * np.min(steps_func(loss.lip, X))
+            # Create an history object for the solver
+            history = History("SVRG", self.max_iter, self.verbose, trackers=trackers)
+            self.history_ = history
+
+            return SVRG(
+                X,
+                y,
+                loss,
+                self.fit_intercept,
+                estimator,
+                penalty,
+                self.max_iter,
+                self.tol,
+                self.random_state,
+                step,
+                history,
+            )
+        elif self.solver == "saga":
+            # Get the gradient descent steps for each coordinate
+            steps_func = steps_factory(
+                fit_intercept=self.fit_intercept, estimator="erm"
+            )
+            step = self.step_size * np.min(steps_func(loss.lip, X))
+            # Create an history object for the solver
+            history = History("SAGA", self.max_iter, self.verbose, trackers=trackers)
+            self.history_ = history
+
+            return SAGA(
+                X,
+                y,
+                loss,
+                self.fit_intercept,
+                estimator,
+                penalty,
+                self.max_iter,
+                self.tol,
+                self.random_state,
+                step,
+                history,
+            )
 
         else:
             raise NotImplementedError("%s is not implemented yet" % self.solver)
@@ -334,7 +489,7 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             w = np.zeros(n_features)
         return w
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, trackers=None, dummy_first_step=False):
         """
         Fit the model according to the given training data.
 
@@ -373,29 +528,45 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
             order = "C"
             accept_large_sparse = False
 
+        estimator_name = self.__class__.__name__
+        is_classifier = estimator_name == "BinaryClassifier"
         X = check_array(
             X,
             order=order,
             accept_sparse=accept_sparse,
             dtype="numeric",
             accept_large_sparse=accept_large_sparse,
-            estimator="BinaryClassifier",
+            estimator=estimator_name,
         )
-        y = check_array(y, ensure_2d=False, dtype=None, estimator="BinaryClassifier")
-        check_consistent_length(X, y)
-        # Ensure that the label type is binary
-        y_type = type_of_target(y)
-        if y_type != "binary":
-            raise ValueError("Unknown label type: %r" % y_type)
 
-        # TODO: random_state = check_random_state(random_state)
-        # This replaces the target modalities by elements in {0, 1}
-        le = LabelEncoder()
-        y_encoded = le.fit_transform(y)
-        # Keep track of the classes
-        self.classes_ = le.classes_
-        # We need to put the targets in {-1, 1}
-        y_encoded[y_encoded == 0] = -1.0
+        check_consistent_length(X, y)
+
+        if is_classifier:
+            y = check_array(y, ensure_2d=False, dtype=None, estimator=estimator_name)
+            # Ensure that the label type is binary
+            y_type = type_of_target(y)
+            # if y_type not in ["binary", "multiclass", "multilabel-indicator"]:
+            #     raise ValueError("Unknown label type: %r" % y_type)
+            if y_type != "binary":
+                raise ValueError("Unknown label type: %r" % y_type)
+            # TODO: random_state = check_random_state(random_state)
+            # This replaces the target modalities by elements in {0, 1}
+            le = LabelEncoder()
+            # if y_type =="multilabel-indicator":
+            #     y_encoded = le.fit_transform(np.argmax(y, axis=1))
+            # else:
+            #     y_encoded = le.fit_transform(y)
+            y_encoded = le.fit_transform(y)
+            # Keep track of the classes
+            self.classes_ = le.classes_
+            # We need to put the targets in {-1, 1}
+            y_encoded[y_encoded == 0] = -1.0
+
+        else:
+            y = check_array(
+                y, ensure_2d=False, dtype="numeric", estimator=estimator_name
+            )
+            y_encoded = y
 
         # TODO: sample weights stuff, later...
         # # If sample weights exist, convert them to array (support for lists)
@@ -441,9 +612,9 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         #     )
 
         #######
-        solver = self._get_solver(X, y_encoded)
+        solver = self._get_solver(X, y_encoded, trackers=trackers)
         w = self._get_initial_iterate(X, y_encoded)
-        optimization_result = solver.solve(w)
+        optimization_result = solver.solve(w, dummy_first_step=dummy_first_step)
 
         self.optimization_result_ = optimization_result
         self.n_iter_ = np.asarray([optimization_result.n_iter], dtype=np.int32)
@@ -493,6 +664,53 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
 
         scores = safe_sparse_dot(X, self.coef_.T, dense_output=True) + self.intercept_
         return scores.ravel()
+
+
+class BinaryClassifier(BaseLearner):
+    def __init__(
+        self,
+        *,
+        penalty="l2",
+        C=1.0,
+        step_size=1.0,
+        loss="logistic",
+        fit_intercept=True,
+        estimator="erm",
+        block_size=0.07,
+        percentage=0.05,
+        eps=0.001,
+        solver="cgd",
+        tol=1e-4,
+        max_iter=100,
+        class_weight=None,
+        random_state=None,
+        verbose=0,
+        warm_start=False,
+        n_jobs=None,
+        l1_ratio=0.5
+    ):
+        super(BinaryClassifier, self).__init__(
+            penalty=penalty,
+            C=C,
+            step_size=step_size,
+            loss=loss,
+            fit_intercept=fit_intercept,
+            estimator=estimator,
+            block_size=block_size,
+            percentage=percentage,
+            eps=eps,
+            solver=solver,
+            tol=tol,
+            max_iter=max_iter,
+            random_state=random_state,
+            verbose=verbose,
+            warm_start=warm_start,
+            n_jobs=n_jobs,
+            l1_ratio=l1_ratio,
+        )
+
+        self.class_weight = class_weight
+        self.classes_ = None
 
     def predict_proba(self, X):
         """
@@ -595,3 +813,70 @@ class BinaryClassifier(ClassifierMixin, BaseEstimator):
         from sklearn.metrics import accuracy_score
 
         return accuracy_score(y, self.predict(X), sample_weight=sample_weight)
+
+
+class Regressor(BaseLearner, RegressorMixin):
+    def __init__(
+        self,
+        *,
+        penalty="l2",
+        C=1.0,
+        step_size=1.0,
+        loss="leastsquares",
+        fit_intercept=True,
+        estimator="erm",
+        block_size=0.07,
+        percentage=0.05,
+        eps=0.001,
+        solver="cgd",
+        tol=1e-4,
+        max_iter=100,
+        random_state=None,
+        verbose=0,
+        warm_start=False,
+        n_jobs=None,
+        l1_ratio=0.5
+    ):
+        super(Regressor, self).__init__(
+            penalty=penalty,
+            C=C,
+            step_size=step_size,
+            loss=loss,
+            fit_intercept=fit_intercept,
+            estimator=estimator,
+            block_size=block_size,
+            percentage=percentage,
+            eps=eps,
+            solver=solver,
+            tol=tol,
+            max_iter=max_iter,
+            random_state=random_state,
+            verbose=verbose,
+            warm_start=warm_start,
+            n_jobs=n_jobs,
+            l1_ratio=l1_ratio,
+        )
+
+    def predict(self, X):
+
+        # TODO: deal with threshold for predictions
+        return self.decision_function(X)
+
+    def mse(self, X, y):
+        """
+        Return the mean accuracy on the given test data and labels.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            Test samples.
+
+        y : array-like of shape (n_samples,) or (n_samples, n_outputs)
+            True labels for `X`.
+
+        Returns
+        -------
+        score : float
+            MSE of ``self.predict(X)`` wrt. `y`.
+        """
+        return ((y - self.predict(X)) ** 2).mean()
