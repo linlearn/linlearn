@@ -4,11 +4,12 @@
 from abc import ABC, abstractmethod
 from collections import namedtuple
 import numpy as np
-from numba import njit, jit, vectorize, prange
+from numba import jit, vectorize, prange
 
-from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float, np_float
+from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float
 
 
+# Options passed to the @jit decorator within this module
 jit_kwargs = {
     "nopython": NOPYTHON,
     "nogil": NOGIL,
@@ -17,45 +18,12 @@ jit_kwargs = {
 }
 
 
+# Options passed to the @vectorize decorator within this module
 vectorize_kwargs = {
     "nopython": NOPYTHON,
     "boundscheck": BOUNDSCHECK,
     "fastmath": FASTMATH,
 }
-
-# @njit
-# def inner_prod(X, fit_intercept, i, w):
-#     if fit_intercept:
-#         return X[i].dot(w[1:]) + w[0]
-#     else:
-#         return X[i].dot(w)
-
-# TODO: definir ici une strategy
-
-# Strategy = namedtuple("Strategy", ["grad_coordinate", "n_samples_in_block"])
-
-# TODO
-
-
-@njit
-def decision_function(X, fit_intercept, w, out):
-    if fit_intercept:
-        # TODO: use out= in dot and + z[0] at the same time with parallelize ?
-        out[:] = X.dot(w[1:]) + w[0]
-    else:
-        out[:] = X.dot(w)
-    return out
-
-
-@njit
-def decision_function_coef_intercept(X, fit_intercept, coef, intercept, out):
-    if fit_intercept:
-        # TODO: use out= in dot and + z[0] at the same time with parallelize ?
-        # intercept is in a (1,) ndarray, following scikit-learn
-        out[:] = X.dot(coef) + intercept[0]
-    else:
-        out[:] = X.dot(coef)
-    return out
 
 
 ################################################################
@@ -63,15 +31,45 @@ def decision_function_coef_intercept(X, fit_intercept, coef, intercept, out):
 ################################################################
 
 
-class Estimator(ABC):
+class Estimator(object):
+    """Base abstract estimator class for internal use only.
+
+    Parameters
+    ----------
+    X : {array-like, sparse matrix} of shape (n_samples, n_features)
+        Training vector, where n_samples is the number of samples and
+        n_features is the number of features.
+
+    y : array-like of shape (n_samples,)
+        Target vector relative to X.
+
+    loss : Loss
+        A loss class for which gradients will be estimated by the estimator.
+
+    fit_intercept : bool
+        Specifies if a constant (a.k.a. bias or intercept) should be added to the
+        decision function.
+
+    Attributes
+    ----------
+    n_samples : int
+        Number of samples.
+
+    n_features : int
+        Number of features.
+
+    n_weights : int
+        This is `n_features` if `fit_intercept=False` and `n_features` otherwise.
+    """
+
     def __init__(self, X, y, loss, fit_intercept):
         self.X = X
         self.y = y
         self.loss = loss
         self.fit_intercept = fit_intercept
-        self.n_samples = y.shape[0]
+        self.n_samples, self.n_features = X.shape
+        self.n_weights = self.n_features + int(self.fit_intercept)
 
-    @abstractmethod
     def get_state(self):
         pass
 
@@ -86,20 +84,75 @@ class Estimator(ABC):
 # Empirical risk minimizer (ERM)
 ################################################################
 
+
+"""
+`StateERM` is a place-holder for the ERM estimator containing:
+
+    gradient: numpy.ndarray
+        A numpy array of shape (n_weights,) containing gradients computed by the
+        `grad` function returned by the `grad_factory` factory function.
+"""
 StateERM = namedtuple("StateERM", ["gradient"])
 
 
 class ERM(Estimator):
+    """Empirical risk minimization estimator. This is the standard statistical
+    learning approach, that corresponds to gradients equal to the average of each
+    individual sample loss. Using this estimator should match the results of standard
+    linear methods from other libraries.
+
+    Parameters
+    ----------
+    X : {array-like, sparse matrix} of shape (n_samples, n_features)
+        Training vector, where n_samples is the number of samples and
+        n_features is the number of features.
+
+    y : array-like of shape (n_samples,)
+        Target vector relative to X.
+
+    loss : Loss
+        A loss class for which gradients will be estimated by the estimator.
+
+    fit_intercept : bool
+        Specifies if a constant (a.k.a. bias or intercept) should be added to the
+        decision function.
+
+    Attributes
+    ----------
+    n_samples : int
+        Number of samples.
+
+    n_features : int
+        Number of features.
+
+    n_weights : int
+        This is `n_features` if `fit_intercept=False` and `n_features` otherwise.
+
+    """
+
     def __init__(self, X, y, loss, fit_intercept):
-        super().__init__(X, y, loss, fit_intercept)
+        Estimator.__init__(self, X, y, loss, fit_intercept)
 
     def get_state(self):
-        return StateERM(
-            gradient=np.empty(self.X.shape[1] + int(self.fit_intercept), dtype=np_float)
-        )
-        # return StateERM()
+        """Returns the state of the ERM estimator, which is a place-holder used for
+        computations.
+
+        Returns
+        -------
+        output : StateERM
+            State of the ERM estimator
+        """
+        return StateERM(gradient=np.empty(self.n_weights, dtype=np_float))
 
     def partial_deriv_factory(self):
+        """Partial derivatives factory. This returns a jit-compiled function allowing to
+        compute partial derivatives of the considered goodness-of-fit.
+
+        Returns
+        -------
+        output : function
+            A jit-compiled function allowing to compute partial derivatives.
+        """
         X = self.X
         y = self.y
         loss = self.loss
@@ -110,6 +163,29 @@ class ERM(Estimator):
 
             @jit(**jit_kwargs)
             def partial_deriv(j, inner_products, state):
+                """Computes the partial derivative of the goodness-of-fit with
+                respect to coordinate `j`, given the value of the `inner_products` and
+                `state`.
+
+                Parameters
+                ----------
+                j : int
+                    Partial derivative is with respect to this coordinate
+
+                inner_products : numpy.array
+                    A numpy array of shape (n_samples,), containing the inner
+                    products (decision function) X.dot(w) + b where w is the weights
+                    and b the (optional) intercept.
+
+                state : StateERM
+                    The state of the ERM estimator (not used here, but this allows
+                    all estimators to have the same prototypes for `partial_deriv`).
+
+                Returns
+                -------
+                output : float
+                    The value of the partial derivative
+                """
                 deriv_sum = 0.0
                 if j == 0:
                     for i in range(n_samples):
@@ -125,6 +201,29 @@ class ERM(Estimator):
 
             @jit(**jit_kwargs)
             def partial_deriv(j, inner_products, state):
+                """Computes the partial derivative of the goodness-of-fit with
+                respect to coordinate `j`, given the value of the `inner_products` and
+                `state`.
+
+                Parameters
+                ----------
+                j : int
+                    Partial derivative is with respect to this coordinate
+
+                inner_products : numpy.array
+                    A numpy array of shape (n_samples,), containing the inner
+                    products (decision function) X.dot(w) + b where w is the weights
+                    and b the (optional) intercept.
+
+                state : StateERM
+                    The state of the ERM estimator (not used here, but this allows
+                    all estimators to have the same prototypes for `partial_deriv`).
+
+                Returns
+                -------
+                output : float
+                    The value of the partial derivative
+                """
                 deriv_sum = 0.0
                 for i in range(y.shape[0]):
                     deriv_sum += deriv_loss(y[i], inner_products[i]) * X[i, j]
@@ -133,6 +232,14 @@ class ERM(Estimator):
             return partial_deriv
 
     def grad_factory(self):
+        """Gradient factory. This returns a jit-compiled function allowing to
+        compute the gradient of the considered goodness-of-fit.
+
+        Returns
+        -------
+        output : function
+            A jit-compiled function allowing to compute gradients.
+        """
         X = self.X
         y = self.y
         loss = self.loss
@@ -143,9 +250,27 @@ class ERM(Estimator):
 
             @jit(**jit_kwargs)
             def grad(inner_products, state):
+                """Computes the gradient of the goodness-of-fit, given the value of the
+                 `inner_products` and `state`.
+
+                Parameters
+                ----------
+                inner_products : numpy.array
+                    A numpy array of shape (n_samples,), containing the inner
+                    products (decision function) X.dot(w) + b where w is the weights
+                    and b the (optional) intercept.
+
+                state : StateERM
+                    The state of the ERM estimator, which contains a place-holder for
+                    the returned gradient.
+
+                Returns
+                -------
+                output : numpy.array
+                    A numpy array of shape (n_weights,) containing the gradient.
+                """
                 gradient = state.gradient
                 gradient.fill(0.0)
-                deriv = 0.0
                 for i in range(n_samples):
                     deriv = deriv_loss(y[i], inner_products[i])
                     gradient[0] += deriv
@@ -157,6 +282,25 @@ class ERM(Estimator):
 
             @jit(**jit_kwargs)
             def grad(inner_products, state):
+                """Computes the gradient of the goodness-of-fit, given the value of the
+                 `inner_products` and `state`.
+
+                Parameters
+                ----------
+                inner_products : numpy.array
+                    A numpy array of shape (n_samples,), containing the inner
+                    products (decision function) X.dot(w) + b where w is the weights
+                    and b the (optional) intercept.
+
+                state : StateERM
+                    The state of the ERM estimator, which contains a place-holder for
+                    the returned gradient.
+
+                Returns
+                -------
+                output : numpy.array
+                    A numpy array of shape (n_weights,) containing the gradient.
+                """
                 gradient = state.gradient
                 gradient.fill(0.0)
                 for i in range(n_samples):
@@ -170,12 +314,68 @@ class ERM(Estimator):
 # Median of means estimator (MOM)
 ################################################################
 
+"""
+`StateMOM` is a place-holder for the MOM estimator containing:
 
+    block_means : numpy.ndarray
+        A numpy array of shape (n_blocks,) containing the mean partial derivatives in 
+        MOM's blocks.
+    
+    sample_indices : numpy.ndarray
+        A numpy array of shape (n_samples,) containing the shuffled indices 
+        corresponding to the block samples.
+        
+    gradient : numpy.ndarray
+        A numpy array of shape (n_weights,) containing gradients computed by the
+        `grad` function returned by the `grad_factory` factory function.
+"""
 StateMOM = namedtuple("StateMOM", ["block_means", "sample_indices", "gradient"])
 
 
 class MOM(Estimator):
-    """MOM (Median-of-Means) estimator."""
+    """Median of means estimator. This estimator is robust with respect to outliers
+    and heavy-tails. It computes means in blocks, and returns the median value of the
+    blocks. Blocks are obtained through a shuffle of the sample indices. This estimator
+    mainly allows to compute fast and robust estimations of the partial derivatives
+    of the goodness-of-fit.
+
+    Parameters
+    ----------
+    X : {array-like, sparse matrix} of shape (n_samples, n_features)
+        Training vector, where n_samples is the number of samples and
+        n_features is the number of features.
+
+    y : array-like of shape (n_samples,)
+        Target vector relative to X.
+
+    loss : Loss
+        A loss class for which gradients will be estimated by the estimator.
+
+    fit_intercept : bool
+        Specifies if a constant (a.k.a. bias or intercept) should be added to the
+        decision function.
+
+    n_samples_in_block : int
+        Number of samples used in the blocks. Note that the last block can be smaller
+        than that.
+
+    Attributes
+    ----------
+    n_samples : int
+        Number of samples.
+
+    n_features : int
+        Number of features.
+
+    n_weights : int
+        This is `n_features` if `fit_intercept=False` and `n_features` otherwise.
+
+    n_blocks : int
+        Number of blocks used.
+
+    last_block_size : int
+        Size of the last block
+    """
 
     def __init__(self, X, y, loss, fit_intercept, n_samples_in_block):
         super().__init__(X, y, loss, fit_intercept)
@@ -186,6 +386,15 @@ class MOM(Estimator):
             self.n_blocks += 1
 
     def get_state(self):
+        """Returns the state of the MOM estimator, which is a place-holder used for
+        computations.
+
+        Returns
+        -------
+        output : StateMOM
+            State of the MOM estimator
+        """
+
         return StateMOM(
             block_means=np.empty(self.n_blocks, dtype=np_float),
             sample_indices=np.empty(self.n_samples, dtype=np.intp),
@@ -195,18 +404,47 @@ class MOM(Estimator):
         )
 
     def partial_deriv_factory(self):
+        """Partial derivatives factory. This returns a jit-compiled function allowing to
+        compute partial derivatives of the considered goodness-of-fit.
+
+        Returns
+        -------
+        output : function
+            A jit-compiled function allowing to compute partial derivatives.
+        """
         X = self.X
         y = self.y
         deriv_loss = self.loss.deriv_factory()
         n_samples = self.n_samples
         n_samples_in_block = self.n_samples_in_block
-        n_blocks = self.n_blocks
         last_block_size = self.last_block_size
 
         if self.fit_intercept:
 
             @jit(**jit_kwargs)
             def partial_deriv(j, inner_products, state):
+                """Computes the partial derivative of the goodness-of-fit with
+                respect to coordinate `j`, given the value of the `inner_products` and
+                `state`.
+
+                Parameters
+                ----------
+                j : int
+                    Partial derivative is with respect to this coordinate
+
+                inner_products : numpy.array
+                    A numpy array of shape (n_samples,), containing the inner
+                    products (decision function) X.dot(w) + b where w is the weights
+                    and b the (optional) intercept.
+
+                state : StateMOM
+                    The state of the MOM estimator.
+
+                Returns
+                -------
+                output : float
+                    The value of the partial derivative
+                """
                 sample_indices = state.sample_indices
                 block_means = state.block_means
 
@@ -250,6 +488,28 @@ class MOM(Estimator):
             # Same function without an intercept
             @jit(**jit_kwargs)
             def partial_deriv(j, inner_products, state):
+                """Computes the partial derivative of the goodness-of-fit with
+                respect to coordinate `j`, given the value of the `inner_products` and
+                `state`.
+
+                Parameters
+                ----------
+                j : int
+                    Partial derivative is with respect to this coordinate
+
+                inner_products : numpy.array
+                    A numpy array of shape (n_samples,), containing the inner
+                    products (decision function) X.dot(w) + b where w is the weights
+                    and b the (optional) intercept.
+
+                state : StateMOM
+                    The state of the MOM estimator.
+
+                Returns
+                -------
+                output : float
+                    The value of the partial derivative
+                """
                 sample_indices = state.sample_indices
                 block_means = state.block_means
                 for i in range(n_samples):
@@ -273,17 +533,44 @@ class MOM(Estimator):
 
                 if last_block_size != 0:
                     block_means[n_block] = derivatives_sum_block / last_block_size
+
                 return np.median(block_means)
 
             return partial_deriv
 
     def grad_factory(self):
+        """Gradient factory. This returns a jit-compiled function allowing to
+        compute the gradient of the considered goodness-of-fit.
+
+        Returns
+        -------
+        output : function
+            A jit-compiled function allowing to compute gradients.
+        """
         X = self.X
         fit_intercept = self.fit_intercept
         partial_deriv = self.partial_deriv_factory()
 
         @jit(**jit_kwargs)
         def grad(inner_products, state):
+            """Computes the gradient of the goodness-of-fit, given the value of the
+             `inner_products` and `state`.
+
+            Parameters
+            ----------
+            inner_products : numpy.array
+                A numpy array of shape (n_samples,), containing the inner
+                products (decision function) X.dot(w) + b where w is the weights
+                and b the (optional) intercept.
+
+            state : StateMOM
+                The state of the MOM estimator.
+
+            Returns
+            -------
+            output : numpy.array
+                A numpy array of shape (n_weights,) containing the gradient.
+            """
             gradient = state.gradient
 
             for j in range(X.shape[1] + int(fit_intercept)):
@@ -296,6 +583,8 @@ class MOM(Estimator):
 # Trimmed means estimator (TMEAN)
 ################################################################
 
+
+# TODO: add docstrings for the next estimators
 
 StateTMean = namedtuple(
     "StateTMean", ["deriv_samples", "deriv_samples_outer_prods", "gradient"]
@@ -386,11 +675,15 @@ class TMean(Estimator):
                 deriv_samples_outer_prods[:] = deriv_samples
                 deriv_samples_outer_prods.sort()
 
-                gradient[0] = np.mean(deriv_samples_outer_prods[n_excluded_tails:-n_excluded_tails])
+                gradient[0] = np.mean(
+                    deriv_samples_outer_prods[n_excluded_tails:-n_excluded_tails]
+                )
                 for j in range(X.shape[1]):
                     deriv_samples_outer_prods[:] = deriv_samples * X[:, j]
                     deriv_samples_outer_prods.sort()
-                    gradient[j+1] = np.mean(deriv_samples_outer_prods[n_excluded_tails:-n_excluded_tails])
+                    gradient[j + 1] = np.mean(
+                        deriv_samples_outer_prods[n_excluded_tails:-n_excluded_tails]
+                    )
 
             return grad
         else:
@@ -409,8 +702,9 @@ class TMean(Estimator):
                 for j in range(X.shape[1]):
                     deriv_samples_outer_prods[:] = deriv_samples * X[:, j]
                     deriv_samples_outer_prods.sort()
-                    gradient[j] = np.mean(deriv_samples_outer_prods[n_excluded_tails:-n_excluded_tails])
-
+                    gradient[j] = np.mean(
+                        deriv_samples_outer_prods[n_excluded_tails:-n_excluded_tails]
+                    )
 
             return grad
 
@@ -660,14 +954,14 @@ class Implicit(Estimator):
                 deriv = 0.0
                 if j == 0:
                     for i in sample_indices[
-                             argmed * n_samples_in_block: (argmed + 1) * n_samples_in_block
-                             ]:
+                        argmed * n_samples_in_block : (argmed + 1) * n_samples_in_block
+                    ]:
                         deriv += deriv_loss(y[i], inner_products[i])
                 else:
                     for i in sample_indices[
-                             argmed * n_samples_in_block: (argmed + 1) * n_samples_in_block
-                             ]:
-                        deriv += deriv_loss(y[i], inner_products[i]) * X[i, j-1]
+                        argmed * n_samples_in_block : (argmed + 1) * n_samples_in_block
+                    ]:
+                        deriv += deriv_loss(y[i], inner_products[i]) * X[i, j - 1]
 
                 deriv /= n_samples_in_block
                 return deriv
@@ -697,8 +991,8 @@ class Implicit(Estimator):
 
                 deriv = 0.0
                 for i in sample_indices[
-                         argmed * n_samples_in_block: (argmed + 1) * n_samples_in_block
-                         ]:
+                    argmed * n_samples_in_block : (argmed + 1) * n_samples_in_block
+                ]:
                     deriv += deriv_loss(y[i], inner_products[i]) * X[i, j]
 
                 deriv /= n_samples_in_block
@@ -831,7 +1125,9 @@ class GMOM(Estimator):
         )
 
     def partial_deriv_factory(self):
-        raise ValueError("gmom estimator does not support CGD, use mom estimator instead")
+        raise ValueError(
+            "gmom estimator does not support CGD, use mom estimator instead"
+        )
 
     def grad_factory(self):
         X = self.X
