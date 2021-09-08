@@ -7,6 +7,8 @@ Binary Classifier
 # Parts of the code below are directly from scikit-learn, in particular from
 # https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/linear_model/_logistic.py
 
+from warnings import warn
+
 import numbers
 import numpy as np
 from scipy.special import expit
@@ -18,10 +20,10 @@ from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import safe_sparse_dot
 
-from ._loss import steps_coordinate_descent, Logistic, LeastSquares
+from ._loss import steps_coordinate_descent, Logistic, LeastSquares, steps_factory
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
 from ._solver import CGD, GD, SGD, SVRG, SAGA, History
-from ._estimator import ERM, MOM, TMean, Catoni, Implicit, GMOM, Holland
+from ._estimator import ERM, MOM, TMean, Implicit, GMOM, HollandCatoni
 
 
 # TODO: serialization
@@ -30,7 +32,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
     _losses = ["logistic", "leastsquares"]
     _penalties = ["none", "l2", "l1", "elasticnet"]
-    _estimators = ["erm", "mom", "tmean", "catoni", "implicit", "gmom", "holland"]
+    _estimators = ["erm", "mom", "tmean", "implicit", "gmom", "holland_catoni"]
     _solvers = ["cgd", "gd", "sgd", "svrg", "saga"]
 
     def __init__(
@@ -52,7 +54,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         verbose=0,
         warm_start=False,
         n_jobs=None,
-        l1_ratio=0.5
+        l1_ratio=0.5,
+        sgd_exponent=0.5
     ):
         self.penalty = penalty
         self.C = C
@@ -71,6 +74,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         self.warm_start = warm_start
         self.n_jobs = n_jobs
         self.l1_ratio = l1_ratio
+        self.sgd_exponent = sgd_exponent
 
         self.history_ = None
         self.intercept_ = None
@@ -78,6 +82,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         self.optimization_result_ = None
         self.n_iter_ = None
         self.classes_ = None
+
+        self.check_estimator_solver_combination(estimator, solver)
 
     @property
     def penalty(self):
@@ -110,7 +116,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
     @step_size.setter
     def step_size(self, val):
         if not isinstance(val, numbers.Real) or val <= 0:
-            raise ValueError("step_size must be a positive number; got (step_size=%r)" % val)
+            raise ValueError(
+                "step_size must be a positive number; got (step_size=%r)" % val
+            )
         else:
             self._step_size = float(val)
 
@@ -237,13 +245,52 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         else:
             self._l1_ratio = val
 
+    @property
+    def sgd_exponent(self):
+        return self._sgd_exponent
+
+    @sgd_exponent.setter
+    def sgd_exponent(self, val):
+        if not isinstance(val, numbers.Real) or val < 0.5 or val > 1:
+            raise ValueError("sgd_exponent must be between 0.5 and 1; got (sgd_exponent=%r)" % val)
+        else:
+            self._sgd_exponent = float(val)
+
     # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None
+
+    def check_estimator_solver_combination(self, estimator, solver):
+        if solver in ["sgd", "svrg", "saga"] and estimator != "erm":
+            warn(
+                "Your choice of robust estimator will be ignored because it is not supported by SGD type solvers (SGD, SVRG and SAGA)"
+            )
+        elif solver == "gd" and estimator == "mom":
+            warn(
+                "The Median-of-Means estimator computes only single gradient coordinates, a full gradient can be constituted for Gradient Descent but we recommend to either use mom estimator with cgd solver or gmom estimator with gd solver instead"
+            )
+        # elif solver == "gd" and estimator == "catoni":
+        #     warn(
+        #         "The Catoni estimator computes only single gradient coordinates, doing Gradient Descent with this estimator is equivalent to using holland estimator with GD. Switching estimator to 'holland'"
+        #     )
+        #     self.estimator = "holland"
+        # elif solver == "cgd" and estimator == "holland":
+        #     warn(
+        #         "The Holland estimator computes full gradients, doing CGD with this estimator is equivalent to using catoni estimator with CGD. Switching estimator to 'catoni'"
+        #     )
+        #     self.estimator = "catoni"
+        elif solver == "gd" and estimator == "tmean":
+            warn(
+                "The Trimmed Mean estimator computes only single gradient coordinates, full gradients for GD will be constituted from coordinates."
+            )
+        elif solver == "cgd" and estimator == "gmom":
+            raise ValueError(
+                "The GMOM estimator computes whole gradients and cannot be used with CGD."
+            )
 
     def _get_loss(self):
         if self.loss == "logistic":
             return Logistic()
         elif self.loss == "leastsquares":
-                return LeastSquares()
+            return LeastSquares()
         else:
             raise ValueError("Loss unknown")
 
@@ -256,12 +303,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return MOM(X, y, loss, self.fit_intercept, n_samples_in_block)
         elif self.estimator == "tmean":
             return TMean(X, y, loss, self.fit_intercept, self.percentage)
-        elif self.estimator == "catoni":
-            return Catoni(X, y, loss, self.fit_intercept, self.eps)
-        elif self.estimator == "holland":
-            return Holland(X, y, loss, self.fit_intercept, self.eps)
+        elif self.estimator == "holland_catoni":
+            return HollandCatoni(X, y, loss, self.fit_intercept, self.eps)
         elif self.estimator == "implicit":
-            return Implicit(X, y, loss, self.fit_intercept, int(1/self.block_size))
+            return Implicit(X, y, loss, self.fit_intercept, int(1 / self.block_size))
         elif self.estimator == "gmom":
             n_samples = y.shape[0]
             n_samples_in_block = int(self.block_size * n_samples)
@@ -305,7 +350,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
         if self.solver == "cgd":
             # Get the gradient descent steps for each coordinate
-            steps = self.step_size * steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept)
+            steps_func = steps_factory(
+                fit_intercept=self.fit_intercept,
+                estimator=self.estimator,
+                percentage=self.percentage,
+                eps=self.eps,
+                n_samples_in_block=n_samples_in_block,
+            )
+            steps = self.step_size * steps_func(loss.lip, X)
             # Create an history object for the solver
             history = History("CGD", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
@@ -321,12 +373,20 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.tol,
                 self.random_state,
                 steps,
-                history
+                history,
             )
 
         elif self.solver == "gd":
             # Get the gradient descent steps for each coordinate
-            step = self.step_size * np.min(steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept))
+
+            steps_func = steps_factory(
+                fit_intercept=self.fit_intercept,
+                estimator=self.estimator,
+                percentage=self.percentage,
+                eps=self.eps,
+                n_samples_in_block=n_samples_in_block,
+            )
+            step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
             history = History("GD", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
@@ -342,11 +402,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.tol,
                 self.random_state,
                 step,
-                history
+                history,
             )
         elif self.solver == "sgd":
             # Get the gradient descent steps for each coordinate
-            step = self.step_size * np.min(steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept))
+            steps_func = steps_factory(
+                fit_intercept=self.fit_intercept, estimator="erm"
+            )
+            step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
             history = History("SGD", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
@@ -362,12 +425,16 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.tol,
                 self.random_state,
                 step,
-                history
+                history,
+                exponent=self.sgd_exponent
             )
 
         elif self.solver == "svrg":
             # Get the gradient descent steps for each coordinate
-            step = self.step_size * np.min(steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept))
+            steps_func = steps_factory(
+                fit_intercept=self.fit_intercept, estimator="erm"
+            )
+            step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
             history = History("SVRG", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
@@ -383,11 +450,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.tol,
                 self.random_state,
                 step,
-                history
+                history,
             )
         elif self.solver == "saga":
             # Get the gradient descent steps for each coordinate
-            step = self.step_size * np.min(steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept))
+            steps_func = steps_factory(
+                fit_intercept=self.fit_intercept, estimator="erm"
+            )
+            step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
             history = History("SAGA", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
@@ -403,7 +473,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.tol,
                 self.random_state,
                 step,
-                history
+                history,
             )
 
         else:
@@ -418,8 +488,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             w = np.zeros(n_features)
         return w
 
-
-    def fit(self, X, y, sample_weight=None, trackers=None, dummy_first_step=True):
+    def fit(self, X, y, sample_weight=None, trackers=None, dummy_first_step=False):
         """
         Fit the model according to the given training data.
 
@@ -493,9 +562,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             y_encoded[y_encoded == 0] = -1.0
 
         else:
-            y = check_array(y, ensure_2d=False, dtype="numeric", estimator=estimator_name)
+            y = check_array(
+                y, ensure_2d=False, dtype="numeric", estimator=estimator_name
+            )
             y_encoded = y
-
 
         # TODO: sample weights stuff, later...
         # # If sample weights exist, convert them to array (support for lists)
@@ -595,9 +665,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         return scores.ravel()
 
 
-
 class BinaryClassifier(BaseLearner):
-
     def __init__(
         self,
         *,
@@ -637,12 +705,11 @@ class BinaryClassifier(BaseLearner):
             verbose=verbose,
             warm_start=warm_start,
             n_jobs=n_jobs,
-            l1_ratio=l1_ratio
+            l1_ratio=l1_ratio,
         )
 
         self.class_weight = class_weight
         self.classes_ = None
-
 
     def predict_proba(self, X):
         """
@@ -748,7 +815,6 @@ class BinaryClassifier(BaseLearner):
 
 
 class Regressor(BaseLearner, RegressorMixin):
-
     def __init__(
         self,
         *,
@@ -787,9 +853,8 @@ class Regressor(BaseLearner, RegressorMixin):
             verbose=verbose,
             warm_start=warm_start,
             n_jobs=n_jobs,
-            l1_ratio=l1_ratio
+            l1_ratio=l1_ratio,
         )
-
 
     def predict(self, X):
 
@@ -813,4 +878,4 @@ class Regressor(BaseLearner, RegressorMixin):
         score : float
             MSE of ``self.predict(X)`` wrt. `y`.
         """
-        return ((y - self.predict(X))**2).mean()
+        return ((y - self.predict(X)) ** 2).mean()

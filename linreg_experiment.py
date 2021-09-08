@@ -8,14 +8,26 @@ import sys
 import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
+<<<<<<< HEAD
 import time
 import os
 
+=======
+from collections import namedtuple
+import os
+
+
+>>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
 def ensure_directory(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
 
+<<<<<<< HEAD
 ensure_directory('exp_archives/')
+=======
+
+ensure_directory("exp_archives/")
+>>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
 
 
 file_handler = logging.FileHandler(filename="exp_archives/linreg_exp.log")
@@ -39,7 +51,11 @@ logging.info(128 * "=")
 if not save_results:
     logging.info("WARNING : results will NOT be saved at the end of this session")
 
+<<<<<<< HEAD
 n_repeats = 10
+=======
+n_repeats = 30
+>>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
 
 n_samples = 500
 n_features = 5
@@ -49,7 +65,11 @@ fit_intercept = False
 n_outliers = 10
 outliers = False
 
+<<<<<<< HEAD
 MOMreg_block_size = 0.02
+=======
+MOMreg_block_size = 0.07
+>>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
 
 prasad_delta = 0.01
 
@@ -70,10 +90,17 @@ Sigma_X = np.diag(np.arange(1, n_features + 1))
 mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
 
 w_star_dist = "uniform"
+<<<<<<< HEAD
 noise_dist = "lognormal"
 
 step_size = 0.05
 T = 250
+=======
+noise_dist = "student"
+
+step_size = 0.05
+T = 150
+>>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
 
 logging.info(
     "Lauching experiment with parameters : \n n_repeats = %d , n_samples = %d , n_features = %d , outliers = %r"
@@ -83,8 +110,12 @@ if outliers:
     logging.info("n_outliers = %d" % n_outliers)
 logging.info("block size for MOM_CGD is %f" % MOMreg_block_size)
 logging.info(
+<<<<<<< HEAD
     "random_seed = %d , mu_X = %r , Sigma_X = %r"
     % (random_seed, mu_X, Sigma_X)
+=======
+    "random_seed = %d , mu_X = %r , Sigma_X = %r" % (random_seed, mu_X, Sigma_X)
+>>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
 )
 logging.info(
     "w_star_dist = %s , noise_dist = %s , sigma = %f"
@@ -94,6 +125,7 @@ logging.info("step_size = %f , T = %d" % (step_size, T))
 
 rng = np.random.RandomState(random_seed)  ## Global random generator
 
+<<<<<<< HEAD
 # def gmom(xs, tol=1e-7):
 #     y = np.average(xs, axis=0)
 #     eps = 1e-10
@@ -115,6 +147,8 @@ rng = np.random.RandomState(random_seed)  ## Global random generator
 #     # print(niter)
 #     return y
 
+=======
+>>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
 
 def gen_w_star(d, dist="normal"):
     if dist == "normal":
@@ -192,14 +226,14 @@ def generate_loglogistic_noise_sample(n_samples, sigma=10, c=2.2):
 def gradient_descent(funs_to_track, x0, grad, step_size, T):
     """run gradient descent for given gradient grad and step size for T steps"""
     x = x0
-    tracks = [np.zeros(T) for i in range(len(funs_to_track) + 1)]
+    tracks = [np.zeros(T) for i in range(len(funs_to_track))]
     for t in range(T):
-        grad_x = grad(x)
-        grad_error = np.linalg.norm(grad_x - true_gradient(x))
-        x -= step_size * grad_x
         for i, f in enumerate(funs_to_track):
             tracks[i][t] = f(x)
-        tracks[len(funs_to_track)][t] = grad_error
+        grad_x = grad(x)
+        # grad_error = np.linalg.norm(grad_x - true_gradient(x))
+        x -= step_size * grad_x
+        # tracks[len(funs_to_track)][t] = grad_error
     return tracks
 
 
@@ -223,15 +257,24 @@ elif noise_dist == "loglogistic":
 else:
     raise Exception("unknown noise dist")
 
-class Record(object):
-    def __init__(self, shape, capacity):
-        self.record = np.zeros(capacity) if shape == 1 else np.zeros(tuple([capacity] + list(shape)))
-        self.cursor = 0
-    def update(self, value):
-        self.record[self.cursor] = value
-        self.cursor += 1
+trackers = [(lambda w: w, (n_features + int(fit_intercept),))]
 
-trackers = [(lambda w : w, (n_features + int(fit_intercept),))]
+Algorithm = StateHollandCatoni = namedtuple(
+    "Algorithm", ["name", "solver", "estimator", "max_iter"]
+)
+
+algorithms = [Algorithm(name="erm_gd", solver="gd", estimator="erm", max_iter=T),
+              Algorithm(name="mom_cgd", solver="cgd", estimator="mom", max_iter=T),
+              Algorithm(name="catoni_cgd", solver="cgd", estimator="holland_catoni", max_iter=T),
+              Algorithm(name="tmean_cgd", solver="cgd", estimator="tmean", max_iter=T),
+              Algorithm(name="holland_gd", solver="gd", estimator="holland_catoni", max_iter=T),
+              Algorithm(name="gmom_gd", solver="gd", estimator="gmom", max_iter=T),
+              Algorithm(name="implicit_gd", solver="gd", estimator="implicit", max_iter=T),
+              #Algorithm(name="implicit_cgd", solver="cgd", estimator="implicit", max_iter=T),
+              #Algorithm(name="tmean_gd", solver="gd", estimator="tmean", max_iter=T),
+              #Algorithm(name="mom_gd", solver="gd", estimator="mom", max_iter=T),
+              ]
+
 
 for rep in range(n_repeats):
     if not save_results:
@@ -252,17 +295,18 @@ for rep in range(n_repeats):
 
     # outliers
     if outliers:
-        X = np.concatenate((X, np.max(Sigma_X)*np.ones((n_outliers, n_features))), axis=0)
+        X = np.concatenate(
+            (X, np.max(Sigma_X) * np.ones((n_outliers, n_features))), axis=0
+        )
         # y = np.concatenate((y, 10*np.ones(n_outliers)*np.max(np.abs(y))))
         y = np.concatenate(
             (
                 y,
                 2
-                * (2 * np.random.randint(2, size=n_outliers) - 1)#np.ones(n_outliers)
+                * (2 * np.random.randint(2, size=n_outliers) - 1)  # np.ones(n_outliers)
                 * np.max(np.abs(y)),
             )
         )
-
 
     logging.info("generating risks and gradients ...")
 
@@ -285,7 +329,7 @@ for rep in range(n_repeats):
     XXT = X.T @ X
     Xy = X.T @ y
 
-    Lip = np.linalg.eigh(XXT/X.shape[0])[0][-1]
+    Lip = np.linalg.eigh(XXT / X.shape[0])[0][-1]
 
     def empirical_gradient(w):
         return (XXT @ w - Xy) / n_samples
@@ -308,41 +352,37 @@ for rep in range(n_repeats):
 
     metrics = [excess_empirical_risk, excess_risk]  # , "gradient_error"]
 
-    ## ERM
-    ERM_reg = Regressor(tol=0, max_iter=T, solver="gd", estimator="erm", fit_intercept=fit_intercept, step_size=step_size, penalty="none")
-    ERM_reg.fit(X, y, trackers=trackers)
-    outputs["erm_gd"] = ERM_reg.history_.records
+    def run_algorithm(algo, out):
+        reg = Regressor(
+            tol=0,
+            max_iter=T,
+            solver=algo.solver,
+            estimator=algo.estimator,
+            fit_intercept=fit_intercept,
+            step_size=step_size,
+            penalty="none",
+        )
+        reg.fit(X, y, trackers=trackers)
+        out[algo.name] = reg.history_.records
 
-    ## MOM CGD
-    reg = Regressor(tol=0, max_iter=T, solver="cgd", estimator="mom", fit_intercept=fit_intercept, step_size=step_size, penalty="none")
-    reg.fit(X, y, trackers=trackers)
-    outputs["mom_cgd"] = reg.history_.records
+    for algo in algorithms:
+        run_algorithm(algo, outputs)
 
-    ## Catoni CGD
-    reg = Regressor(tol=0, max_iter=T, solver="cgd", estimator="catoni", fit_intercept=fit_intercept, step_size=step_size, penalty="none")
-    reg.fit(X, y, trackers=trackers)
-    outputs["catoni_cgd"] = reg.history_.records
+    oracle_output = gradient_descent(
+        [excess_empirical_risk, excess_risk],
+        np.zeros(n_features),
+        true_gradient,
+        step_size / Lip,
+        T,
+    )
 
-    ## TMean CGD
-    reg = Regressor(tol=0, max_iter=T, solver="cgd", estimator="tmean", fit_intercept=fit_intercept, step_size=step_size, penalty="none")
-    reg.fit(X, y, trackers=trackers)
-    outputs["tmean_cgd"] = reg.history_.records
-
-    ## Holland GD
-    reg = Regressor(tol=0, max_iter=T, solver="gd", estimator="holland", fit_intercept=fit_intercept, step_size=step_size, penalty="none")
-    reg.fit(X, y, trackers=trackers)
-    outputs["holland_gd"] = reg.history_.records
-
-    ## GMOM GD
-    reg = Regressor(tol=0, max_iter=T, solver="gd", estimator="gmom", fit_intercept=fit_intercept, step_size=step_size, penalty="none")
-    reg.fit(X, y, trackers=trackers)
-    outputs["gmom_gd"] = reg.history_.records
-
-    ## implicit GD
-    reg = Regressor(tol=0, max_iter=T, solver="gd", estimator="implicit", fit_intercept=fit_intercept, step_size=step_size, penalty="none")
-    reg.fit(X, y, trackers=trackers)
-    outputs["implicit_gd"] = reg.history_.records
-
+    for tt in range(T):
+        for ind_metric, metric in enumerate(metrics):
+            col_try.append(rep)
+            col_algo.append("oracle")
+            col_metric.append(metric.__name__)
+            col_val.append(oracle_output[ind_metric][tt])
+            col_time.append(tt)
 
     logging.info("computing objective history")
     for alg in outputs.keys():
@@ -352,7 +392,9 @@ for rep in range(n_repeats):
                 col_algo.append(alg)
                 col_metric.append(metric.__name__)
                 col_val.append(metric(outputs[alg][0].record[i]))
-                col_time.append(i)#outputs[alg][1].record[i] - outputs[alg][1].record[0])
+                col_time.append(
+                    i
+                )  # outputs[alg][1].record[i] - outputs[alg][1].record[0])
     logging.info("repetition done")
 
 logging.info("Creating pandas DataFrame")
@@ -385,35 +427,39 @@ logging.info("Plotting ...")
 line_width = 1.0
 
 g = sns.FacetGrid(data, col="metric", height=4, legend_out=True)
-g.map(sns.lineplot, "t", "value", "algo", lw=line_width, ci=None,).set(xlabel="", ylabel="").set(yscale="log")
+g.map(sns.lineplot, "t", "value", "algo", lw=line_width, ci=None,).set(
+    xlabel="", ylabel=""
+).set(yscale="log")
 
-#g.set_titles(col_template="{col_name}")
+# g.set_titles(col_template="{col_name}")
 
 axes = g.axes.flatten()
 axes[0].set_title("Excess empirical risk")
 axes[1].set_title("Excess risk")
 
-color_palette=[]
+color_palette = []
 for line in axes[0].get_lines():
     color_palette.append(line.get_c())
 color_palette = color_palette[:7]
 
-code_names = {
-    "ERM": "erm",
-    "empirical_gradient": "erm",
-    "Holland_gradient": "holland",
-    "true_gradient": "oracle",
-    "mom_cgd": "mom_cgd",
-    "Prasad_HeavyTail_gradient": "gmom_grad",
-    "Lecue_gradient": "implicit",
-    "catoni_cgd":"catoni_cgd",
-    "tmean_cgd":"tmean_cgd",
-    "Prasad_outliers_gradient":"Prasad_outliers_gradient"
-}
+# code_names = {
+#     "ERM": "erm",
+#     "empirical_gradient": "erm",
+#     "Holland_gradient": "holland",
+#     "true_gradient": "oracle",
+#     "mom_cgd": "mom_cgd",
+#     "Prasad_HeavyTail_gradient": "gmom_grad",
+#     "Lecue_gradient": "implicit",
+#     "catoni_cgd": "catoni_cgd",
+#     "tmean_cgd": "tmean_cgd",
+#     "Prasad_outliers_gradient": "Prasad_outliers_gradient",
+# }
 
-#plt.legend(
+# plt.legend(
 axes[0].legend(
-    list(data["algo"].unique()),#[code_names[name] for name in data["algo"].unique()],
+    list(
+        data["algo"].unique()
+    ),  # [code_names[name] for name in data["algo"].unique()],
     # bbox_to_anchor=(0.3, 0.7, 1.0, 0.0),
     loc="lower left",
     ncol=2,
@@ -491,8 +537,9 @@ plt.show()
 
 if save_fig:
     now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
-    specs = "n%d_%s%.2f_block_size=%.2f_w_dist=%s" % (
+    specs = "n%d_n_rep%d_%s%.2f_block_size=%.2f_w_dist=%s" % (
         n_samples,
+        n_repeats,
         noise_dist,
         noise_sigma[noise_dist],
         MOMreg_block_size,
@@ -501,5 +548,5 @@ if save_fig:
     ensure_directory("exp_archives/linreg/")
 
     fig_file_name = "exp_archives/linreg/" + specs + now + ".pdf"
-    g.fig.savefig(fname=fig_file_name, bbox_inches='tight')
+    g.fig.savefig(fname=fig_file_name, bbox_inches="tight")
     logging.info("Saved figure into file : %s" % fig_file_name)

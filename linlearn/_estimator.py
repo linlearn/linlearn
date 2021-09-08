@@ -75,11 +75,9 @@ class Estimator(ABC):
     def get_state(self):
         pass
 
-    @abstractmethod
     def partial_deriv_factory(self):
         pass
 
-    @abstractmethod
     def grad_factory(self):
         pass
 
@@ -88,15 +86,17 @@ class Estimator(ABC):
 # Empirical risk minimizer (ERM)
 ################################################################
 
-StateERM = namedtuple("StateERM", [])
+StateERM = namedtuple("StateERM", ["gradient"])
 
 
-class ERM(object):
+class ERM(Estimator):
     def __init__(self, X, y, loss, fit_intercept):
-        Estimator.__init__(self, X, y, loss, fit_intercept)
+        super().__init__(X, y, loss, fit_intercept)
 
     def get_state(self):
-        return StateERM()
+        return StateERM(
+            gradient=np.empty(self.X.shape[1] + int(self.fit_intercept), dtype=np_float)
+        )
         # return StateERM()
 
     def partial_deriv_factory(self):
@@ -143,23 +143,25 @@ class ERM(object):
 
             @jit(**jit_kwargs)
             def grad(inner_products, state):
-                gradient = np.zeros(X.shape[1] + 1)
+                gradient = state.gradient
+                gradient.fill(0.0)
                 deriv = 0.0
                 for i in range(n_samples):
                     deriv = deriv_loss(y[i], inner_products[i])
-                    gradient[0] = deriv
+                    gradient[0] += deriv
                     gradient[1:] += deriv * X[i]
-                return gradient / n_samples
+                gradient /= n_samples
 
             return grad
         else:
 
             @jit(**jit_kwargs)
             def grad(inner_products, state):
-                gradient = np.zeros(X.shape[1])
+                gradient = state.gradient
+                gradient.fill(0.0)
                 for i in range(n_samples):
                     gradient += deriv_loss(y[i], inner_products[i]) * X[i]
-                return gradient / n_samples
+                gradient /= n_samples
 
             return grad
 
@@ -169,7 +171,7 @@ class ERM(object):
 ################################################################
 
 
-StateMOM = namedtuple("StateMOM", ["block_means", "sample_indices"])
+StateMOM = namedtuple("StateMOM", ["block_means", "sample_indices", "gradient"])
 
 
 class MOM(Estimator):
@@ -187,6 +189,9 @@ class MOM(Estimator):
         return StateMOM(
             block_means=np.empty(self.n_blocks, dtype=np_float),
             sample_indices=np.empty(self.n_samples, dtype=np.intp),
+            gradient=np.empty(
+                self.X.shape[1] + int(self.fit_intercept), dtype=np_float
+            ),
         )
 
     def partial_deriv_factory(self):
@@ -204,6 +209,7 @@ class MOM(Estimator):
             def partial_deriv(j, inner_products, state):
                 sample_indices = state.sample_indices
                 block_means = state.block_means
+
                 for i in range(n_samples):
                     sample_indices[i] = i
 
@@ -213,8 +219,7 @@ class MOM(Estimator):
                 # Block counter
                 n_block = 0
                 if j == 0:
-                    for i in range(n_samples):
-                        idx = sample_indices[i]
+                    for i, idx in enumerate(sample_indices):
                         derivatives_sum_block += deriv_loss(y[idx], inner_products[idx])
                         if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                             block_means[n_block] = (
@@ -223,8 +228,7 @@ class MOM(Estimator):
                             n_block += 1
                             derivatives_sum_block = 0.0
                 else:
-                    for i in range(n_samples):
-                        idx = sample_indices[i]
+                    for i, idx in enumerate(sample_indices):
                         derivatives_sum_block += (
                             deriv_loss(y[idx], inner_products[idx]) * X[idx, j - 1]
                         )
@@ -236,7 +240,7 @@ class MOM(Estimator):
                             derivatives_sum_block = 0.0
 
                 if last_block_size != 0:
-                    block_means[n_blocks] = derivatives_sum_block / last_block_size
+                    block_means[n_block] = derivatives_sum_block / last_block_size
 
                 return np.median(block_means)
 
@@ -256,8 +260,7 @@ class MOM(Estimator):
                 derivatives_sum_block = 0.0
                 # Block counter
                 n_block = 0
-                for i in range(n_samples):
-                    idx = sample_indices[i]
+                for i, idx in enumerate(sample_indices):
                     derivatives_sum_block += (
                         deriv_loss(y[idx], inner_products[idx]) * X[idx, j]
                     )
@@ -269,20 +272,34 @@ class MOM(Estimator):
                         derivatives_sum_block = 0.0
 
                 if last_block_size != 0:
-                    block_means[n_blocks] = derivatives_sum_block / last_block_size
+                    block_means[n_block] = derivatives_sum_block / last_block_size
                 return np.median(block_means)
 
             return partial_deriv
 
     def grad_factory(self):
-        raise Exception("don't use mom with a full gradient solver (that's gmom)")
+        X = self.X
+        fit_intercept = self.fit_intercept
+        partial_deriv = self.partial_deriv_factory()
+
+        @jit(**jit_kwargs)
+        def grad(inner_products, state):
+            gradient = state.gradient
+
+            for j in range(X.shape[1] + int(fit_intercept)):
+                gradient[j] = partial_deriv(j, inner_products, state)
+
+        return grad
+
 
 ################################################################
 # Trimmed means estimator (TMEAN)
 ################################################################
 
 
-StateTMean = namedtuple("StateTMean", ["deriv_samples"])
+StateTMean = namedtuple(
+    "StateTMean", ["deriv_samples", "deriv_samples_outer_prods", "gradient"]
+)
 
 
 class TMean(Estimator):
@@ -295,7 +312,13 @@ class TMean(Estimator):
         self.n_excluded_tails = int(self.n_samples * percentage / 2)
 
     def get_state(self):
-        return StateTMean(deriv_samples=np.empty(self.n_samples, dtype=np_float))
+        return StateTMean(
+            deriv_samples=np.empty(self.n_samples, dtype=np_float),
+            deriv_samples_outer_prods=np.empty(self.n_samples, dtype=np_float),
+            gradient=np.empty(
+                self.X.shape[1] + int(self.fit_intercept), dtype=np_float
+            ),
+        )
 
     def partial_deriv_factory(self):
         X = self.X
@@ -340,7 +363,56 @@ class TMean(Estimator):
             return partial_deriv
 
     def grad_factory(self):
-        raise Exception("Don't use TMean estimator for full gradient")
+        X = self.X
+        y = self.y
+        loss = self.loss
+        deriv_loss = loss.deriv_factory()
+        n_samples = self.n_samples
+        n_excluded_tails = self.n_excluded_tails
+
+        if self.fit_intercept:
+
+            @jit(**jit_kwargs)
+            def grad(inner_products, state):
+                deriv_samples = state.deriv_samples
+                deriv_samples_outer_prods = state.deriv_samples_outer_prods
+                gradient = state.gradient
+
+                gradient.fill(0.0)
+
+                for i in range(n_samples):
+                    deriv_samples[i] = deriv_loss(y[i], inner_products[i])
+
+                deriv_samples_outer_prods[:] = deriv_samples
+                deriv_samples_outer_prods.sort()
+
+                gradient[0] = np.mean(deriv_samples_outer_prods[n_excluded_tails:-n_excluded_tails])
+                for j in range(X.shape[1]):
+                    deriv_samples_outer_prods[:] = deriv_samples * X[:, j]
+                    deriv_samples_outer_prods.sort()
+                    gradient[j+1] = np.mean(deriv_samples_outer_prods[n_excluded_tails:-n_excluded_tails])
+
+            return grad
+        else:
+
+            @jit(**jit_kwargs)
+            def grad(inner_products, state):
+                deriv_samples = state.deriv_samples
+                deriv_samples_outer_prods = state.deriv_samples_outer_prods
+                gradient = state.gradient
+
+                gradient.fill(0.0)
+
+                for i in range(n_samples):
+                    deriv_samples[i] = deriv_loss(y[i], inner_products[i])
+
+                for j in range(X.shape[1]):
+                    deriv_samples_outer_prods[:] = deriv_samples * X[:, j]
+                    deriv_samples_outer_prods.sort()
+                    gradient[j] = np.mean(deriv_samples_outer_prods[n_excluded_tails:-n_excluded_tails])
+
+
+            return grad
 
 
 ################################################################
@@ -405,16 +477,28 @@ def standard_catoni_estimator(x, eps=0.001):
     return res
 
 
-StateCatoni = namedtuple("StateCatoni", ["deriv_samples"])
+################################################################
+# Holland Catoni (Holland et al.)
+################################################################
+
+StateHollandCatoni = namedtuple(
+    "StateHollandCatoni", ["deriv_samples", "deriv_samples_outer_prods", "gradient"]
+)
 
 
-class Catoni(Estimator):
+class HollandCatoni(Estimator):
     def __init__(self, X, y, loss, fit_intercept, eps=0.001):
         Estimator.__init__(self, X, y, loss, fit_intercept)
         self.eps = eps
 
     def get_state(self):
-        return StateCatoni(deriv_samples=np.empty(self.n_samples, dtype=np_float))
+        return StateHollandCatoni(
+            deriv_samples=np.empty(self.n_samples, dtype=np_float),
+            deriv_samples_outer_prods=np.empty(self.n_samples, dtype=np_float),
+            gradient=np.empty(
+                self.X.shape[1] + int(self.fit_intercept), dtype=np_float
+            ),
+        )
 
     def partial_deriv_factory(self):
         X = self.X
@@ -454,32 +538,6 @@ class Catoni(Estimator):
             return partial_deriv
 
     def grad_factory(self):
-        raise Exception("Don't use Catoni estimator for full gradient")
-
-################################################################
-# Holland et al. (Holland)
-################################################################
-
-StateHolland = namedtuple(
-    "StateHolland", ["deriv_samples", "deriv_samples_outer_prods"]
-)
-
-
-class Holland(Estimator):
-    def __init__(self, X, y, loss, fit_intercept, eps=0.001):
-        Estimator.__init__(self, X, y, loss, fit_intercept)
-        self.eps = eps
-
-    def get_state(self):
-        return StateHolland(
-            deriv_samples=np.empty(self.n_samples, dtype=np_float),
-            deriv_samples_outer_prods=np.empty(self.n_samples, dtype=np_float),
-        )
-
-    def partial_deriv_factory(self):
-        raise ValueError("Don't use Holland with cgd (that's Catoni)")
-
-    def grad_factory(self):
         X = self.X
         y = self.y
         loss = self.loss
@@ -493,8 +551,9 @@ class Holland(Estimator):
             def grad(inner_products, state):
                 deriv_samples = state.deriv_samples
                 deriv_samples_outer_prods = state.deriv_samples_outer_prods
+                gradient = state.gradient
 
-                gradient = np.zeros(X.shape[1] + 1)
+                gradient.fill(0.0)
                 for i in range(n_samples):
                     deriv_samples[i] = deriv_loss(y[i], inner_products[i])
                 gradient[0] = holland_catoni_estimator(deriv_samples, eps)
@@ -503,7 +562,6 @@ class Holland(Estimator):
                     gradient[j + 1] = holland_catoni_estimator(
                         deriv_samples_outer_prods, eps
                     )
-                return gradient
 
             return grad
         else:
@@ -512,8 +570,9 @@ class Holland(Estimator):
             def grad(inner_products, state):
                 deriv_samples = state.deriv_samples
                 deriv_samples_outer_prods = state.deriv_samples_outer_prods
+                gradient = state.gradient
 
-                gradient = np.zeros(X.shape[1])
+                gradient.fill(0.0)
                 for i in range(n_samples):
                     deriv_samples[i] = deriv_loss(y[i], inner_products[i])
                 for j in range(X.shape[1]):
@@ -521,7 +580,6 @@ class Holland(Estimator):
                     gradient[j] = holland_catoni_estimator(
                         deriv_samples_outer_prods, eps
                     )
-                return gradient
 
             return grad
 
@@ -530,7 +588,9 @@ class Holland(Estimator):
 # Lecue et al. (Implicit)
 ################################################################
 
-StateImplicit = namedtuple("StateImplicit", ["block_means", "sample_indices"])
+StateImplicit = namedtuple(
+    "StateImplicit", ["block_means", "sample_indices", "gradient"]
+)
 
 
 class Implicit(Estimator):
@@ -549,10 +609,102 @@ class Implicit(Estimator):
         return StateImplicit(
             block_means=np.empty(self.n_blocks, dtype=np_float),
             sample_indices=np.arange(self.n_samples, dtype=np.uintp),
+            gradient=np.empty(
+                self.X.shape[1] + int(self.fit_intercept), dtype=np_float
+            ),
         )
 
     def partial_deriv_factory(self):
-        raise ValueError("don't use implicit for cgd")
+        X = self.X
+        y = self.y
+        deriv_loss = self.loss.deriv_factory()
+        n_samples_in_block = self.n_samples_in_block
+        loss = self.loss
+        value_loss = loss.value_factory()
+        deriv_loss = loss.deriv_factory()
+
+        # Better implementation of argmedian ??
+        @jit(**jit_kwargs)
+        def argmedian(x):
+            med = np.median(x)
+            id = 0
+            for a in x:
+                if a == med:
+                    return id
+                id += 1
+            raise ValueError("Failed argmedian")
+
+            # return np.argpartition(x, len(x) // 2)[len(x) // 2]
+
+        if self.fit_intercept:
+
+            @jit(**jit_kwargs)
+            def partial_deriv(j, inner_products, state):
+                sample_indices = state.sample_indices
+                block_means = state.block_means
+
+                np.random.shuffle(sample_indices)
+                # Cumulative sum in the block
+                objectives_sum_block = 0.0
+                # Block counter
+                counter = 0
+                for i in sample_indices:
+                    objectives_sum_block += value_loss(y[i], inner_products[i])
+                    if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                        block_means[counter] = objectives_sum_block / n_samples_in_block
+                        counter += 1
+                        objectives_sum_block = 0.0
+
+                argmed = argmedian(block_means)
+
+                deriv = 0.0
+                if j == 0:
+                    for i in sample_indices[
+                             argmed * n_samples_in_block: (argmed + 1) * n_samples_in_block
+                             ]:
+                        deriv += deriv_loss(y[i], inner_products[i])
+                else:
+                    for i in sample_indices[
+                             argmed * n_samples_in_block: (argmed + 1) * n_samples_in_block
+                             ]:
+                        deriv += deriv_loss(y[i], inner_products[i]) * X[i, j-1]
+
+                deriv /= n_samples_in_block
+                return deriv
+
+            return partial_deriv
+
+        else:
+            # Same function without an intercept
+            @jit(**jit_kwargs)
+            def partial_deriv(j, inner_products, state):
+                sample_indices = state.sample_indices
+                block_means = state.block_means
+
+                np.random.shuffle(sample_indices)
+                # Cumulative sum in the block
+                objectives_sum_block = 0.0
+                # Block counter
+                counter = 0
+                for i in sample_indices:
+                    objectives_sum_block += value_loss(y[i], inner_products[i])
+                    if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                        block_means[counter] = objectives_sum_block / n_samples_in_block
+                        counter += 1
+                        objectives_sum_block = 0.0
+
+                argmed = argmedian(block_means)
+
+                deriv = 0.0
+                for i in sample_indices[
+                         argmed * n_samples_in_block: (argmed + 1) * n_samples_in_block
+                         ]:
+                    deriv += deriv_loss(y[i], inner_products[i]) * X[i, j]
+
+                deriv /= n_samples_in_block
+                return deriv
+
+            return partial_deriv
 
     def grad_factory(self):
         X = self.X
@@ -582,6 +734,7 @@ class Implicit(Estimator):
             def grad(inner_products, state):
                 sample_indices = state.sample_indices
                 block_means = state.block_means
+                gradient = state.gradient
                 # for i in range(n_samples):
                 #     sample_indices[i] = i
 
@@ -599,15 +752,15 @@ class Implicit(Estimator):
 
                 argmed = argmedian(block_means)
 
-                gradient = np.zeros(X.shape[1] + 1)
+                gradient.fill(0.0)
                 deriv = 0.0
                 for i in sample_indices[
                     argmed * n_samples_in_block : (argmed + 1) * n_samples_in_block
                 ]:
                     deriv = deriv_loss(y[i], inner_products[i])
-                    gradient[0] = deriv
+                    gradient[0] += deriv
                     gradient[1:] += deriv * X[i]
-                return gradient / n_samples_in_block
+                gradient /= n_samples_in_block
 
             return grad
         else:
@@ -616,6 +769,7 @@ class Implicit(Estimator):
             def grad(inner_products, state):
                 sample_indices = state.sample_indices
                 block_means = state.block_means
+                gradient = state.gradient
                 # for i in range(n_samples):
                 #     sample_indices[i] = i
 
@@ -633,12 +787,12 @@ class Implicit(Estimator):
 
                 argmed = argmedian(block_means)
 
-                gradient = np.zeros(X.shape[1])
+                gradient.fill(0.0)
                 for i in sample_indices[
                     argmed * n_samples_in_block : (argmed + 1) * n_samples_in_block
                 ]:
                     gradient += deriv_loss(y[i], inner_products[i]) * X[i]
-                return gradient / n_samples_in_block
+                gradient /= n_samples_in_block
 
             return grad
 
@@ -647,7 +801,9 @@ class Implicit(Estimator):
 # Prasad et al. (GMOM)
 ################################################################
 
-StateGMOM = namedtuple("StateGMOM", ["block_means", "sample_indices"])
+StateGMOM = namedtuple(
+    "StateGMOM", ["block_means", "sample_indices", "grads_sum_block", "gradient"]
+)
 
 
 class GMOM(Estimator):
@@ -666,10 +822,16 @@ class GMOM(Estimator):
                 dtype=np_float,
             ),
             sample_indices=np.arange(self.n_samples, dtype=np.uintp),
+            grads_sum_block=np.empty(
+                self.X.shape[1] + int(self.fit_intercept), dtype=np_float
+            ),
+            gradient=np.empty(
+                self.X.shape[1] + int(self.fit_intercept), dtype=np_float
+            ),
         )
 
     def partial_deriv_factory(self):
-        raise ValueError("don't use gmom for cgd")
+        raise ValueError("gmom estimator does not support CGD, use mom estimator instead")
 
     def grad_factory(self):
         X = self.X
@@ -726,19 +888,21 @@ class GMOM(Estimator):
             def grad(inner_products, state):
                 sample_indices = state.sample_indices
                 block_means = state.block_means
+                gradient = state.gradient
+                # Cumulative sum in the block
+                grads_sum_block = state.grads_sum_block
                 # for i in range(n_samples):
                 #     sample_indices[i] = i
 
                 np.random.shuffle(sample_indices)
-                # Cumulative sum in the block
-                grads_sum_block = np.zeros(X.shape[1] + 1)
+                grads_sum_block.fill(0.0)
                 # Block counter
                 counter = 0
                 deriv = 0.0
-                for i in sample_indices:
-                    deriv = deriv_loss(y[i], inner_products[i])
-                    grads_sum_block[0] = deriv
-                    grads_sum_block[1:] += deriv * X[i]
+                for i, idx in enumerate(sample_indices):
+                    deriv = deriv_loss(y[idx], inner_products[idx])
+                    grads_sum_block[0] += deriv
+                    grads_sum_block[1:] += deriv * X[idx]
 
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                         block_means[counter] = grads_sum_block / n_samples_in_block
@@ -747,7 +911,7 @@ class GMOM(Estimator):
                 if last_block_size != 0:
                     block_means[counter] = grads_sum_block / last_block_size
 
-                return gmom_njit(block_means)
+                gradient[:] = gmom_njit(block_means)
 
             return grad
         else:
@@ -756,16 +920,19 @@ class GMOM(Estimator):
             def grad(inner_products, state):
                 sample_indices = state.sample_indices
                 block_means = state.block_means
+                gradient = state.gradient
+                # Cumulative sum in the block
+                grads_sum_block = state.grads_sum_block
                 # for i in range(n_samples):
                 #     sample_indices[i] = i
 
                 np.random.shuffle(sample_indices)
                 # Cumulative sum in the block
-                grads_sum_block = np.zeros(X.shape[1])
+                grads_sum_block.fill(0.0)
                 # Block counter
                 counter = 0
-                for i in sample_indices:
-                    grads_sum_block += deriv_loss(y[i], inner_products[i]) * X[i]
+                for i, idx in enumerate(sample_indices):
+                    grads_sum_block += deriv_loss(y[idx], inner_products[idx]) * X[idx]
 
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                         block_means[counter] = grads_sum_block / n_samples_in_block
@@ -774,106 +941,9 @@ class GMOM(Estimator):
                 if last_block_size != 0:
                     block_means[counter] = grads_sum_block / last_block_size
 
-                return gmom_njit(block_means)
+                gradient[:] = gmom_njit(block_means)
 
             return grad
-
-
-################################################################
-# SAGA estimator (SAGA_est)
-################################################################
-
-# StateSAGA = namedtuple(
-#     "StateSAGA", ["deriv_samples", "mean_grad", "initialized", "j_grad_diff"]
-# )
-# 
-# # this class exists just to provide place holder variables through the estimator state
-# class SAGA_est(Estimator):
-#     def __init__(self, X, y, loss, fit_intercept):
-#         Estimator.__init__(self, X, y, loss, fit_intercept)
-# 
-#     def get_state(self):
-#         return StateSAGA(
-#             deriv_samples=np.empty(self.n_samples, dtype=np_float),
-#             mean_grad=np.empty(
-#                 self.X.shape[1] + int(self.fit_intercept), dtype=np_float
-#             ),
-#             initialized=False,
-#             j_grad_diff=np.empty(
-#                 int(self.fit_intercept) + self.X.shape[1], dtype=np_float
-#             ),
-#         )
-# 
-#     def partial_deriv_factory(self):
-#         raise ValueError("Don't use SAGA estimator with cgd")
-# 
-#     def grad_factory(self):
-#         X = self.X
-#         y = self.y
-#         n_samples = X.shape[0]
-#         loss = self.loss
-#         deriv_loss = loss.deriv_factory()
-#         fit_intercept = self.fit_intercept
-# 
-#         if fit_intercept:
-# 
-#             @jit(**jit_kwargs)
-#             def grad(inner_products, state):
-#                 mean_grad = state.mean_grad
-#                 j_grad_diff = state.j_grad_diff
-#                 deriv_samples = state.deriv_samples
-#                 initialized = state.initialized
-#                 if not initialized:
-#                     state.mean_grad.fill(0.0)
-#                     for i in range(n_samples):
-#                         deriv = deriv_loss(y[i], inner_products[i])
-#                         mean_grad[0] += deriv
-#                         mean_grad[1:] += deriv*X[i]
-#                     mean_grad /= n_samples
-#                     initialized = True
-# 
-#                 j = np.random.randint(n_samples)
-#                 new_j_score = inner_products[j]
-#                 new_j_der = deriv_loss(y[j], new_j_score)
-# 
-#                 j_grad_diff[0] = (new_j_der - state.deriv_samples[j])
-#                 j_grad_diff[1:] = (new_j_der - state.deriv_samples[j]) * X[j]
-#                 gradient = (state.j_grad_diff + state.mean_grad)
-#                 mean_grad += j_grad_diff / X.shape[0]
-#                 deriv_samples[j] = new_j_der
-# 
-#                 return gradient
-# 
-#             return grad
-# 
-#         else:
-#             # There is no intercept, so the code changes slightly
-#             @jit(**jit_kwargs)
-#             def grad(inner_products, state):
-#                 mean_grad = state.mean_grad
-#                 j_grad_diff = state.j_grad_diff
-#                 deriv_samples = state.deriv_samples
-#                 initialized = state.initialized
-# 
-#                 if not initialized:
-#                     mean_grad.fill(0.0)
-#                     for i in range(n_samples):
-#                         mean_grad += deriv_loss(y[i], inner_products[i]) * X[i]
-#                     mean_grad /= n_samples
-#                     initialized = True
-# 
-#                 j = np.random.randint(n_samples)
-#                 new_j_score = inner_products[j]
-#                 new_j_der = deriv_loss(y[j], new_j_score)
-# 
-#                 j_grad_diff = (new_j_der - deriv_samples[j]) * X[j]
-#                 gradient = (j_grad_diff + mean_grad)
-#                 mean_grad += j_grad_diff / X.shape[0]
-#                 deriv_samples[j] = new_j_der
-# 
-#                 return gradient
-# 
-#             return grad
 
 
 # C5 = 0.01
@@ -978,7 +1048,7 @@ def col_squared_norm_dense(X, fit_intercept):
         norms_squared[0] = n_samples
         for j in prange(1, n_features + 1):
             for i in range(n_samples):
-                norms_squared[j] += X[i, j - 1] ** 2
+                norms_squared[j] += X[i, j - 1] * X[i, j - 1]
     else:
         norms_squared = np.zeros(n_features, dtype=X.dtype)
         for j in prange(n_features):

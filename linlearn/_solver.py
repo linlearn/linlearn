@@ -4,6 +4,7 @@ from math import fabs
 from numpy.random import permutation
 from numba import jit
 import matplotlib.pyplot as plt
+import math
 from collections import namedtuple
 
 # from .history import History
@@ -111,13 +112,10 @@ class Solver(ABC):
     def cycle_factory(self):
         pass
 
-    def solve(self, w0=None, dummy_first_step=True):
+    def solve(self, w0=None, dummy_first_step=False):
         X = self.X
         fit_intercept = self.fit_intercept
         inner_products = np.empty(self.n_samples, dtype=np_float)
-        # We use intp and not uintp since j-1 is np.float64 when j has type np.uintp
-        # (namely np.uint64 on most machines), and this fails in nopython mode for
-        # coverage analysis
         coordinates = np.arange(self.n_weights, dtype=np.uintp)
         weights = np.empty(self.n_weights, dtype=np_float)
         tol = self.tol
@@ -156,13 +154,14 @@ class Solver(ABC):
             cycle(
                 coordinates, weights, inner_products, state_estimator
             )
-        if w0 is not None:
-            weights[:] = w0
-        else:
-            weights.fill(0.0)
+            if w0 is not None:
+                weights[:] = w0
+            else:
+                weights.fill(0.0)
+            decision_function(weights, inner_products)
 
         history.update(weights)
-        success = False
+
         for n_iter in range(1, max_iter + 1):
             max_abs_delta, max_abs_weight = cycle(
                 coordinates, weights, inner_products, state_estimator
@@ -179,12 +178,14 @@ class Solver(ABC):
             history.update(weights)
 
             if current_tol < tol:
-                success = True
-                break
+                history.close_bar()
+                return OptimizationResult(
+                    w=weights, n_iter=n_iter, success=True, tol=tol, message=None
+                )
 
         history.close_bar()
         return OptimizationResult(
-            w=weights, n_iter=max_iter + 1, success=success, tol=tol, message=None
+            w=weights, n_iter=max_iter + 1, success=False, tol=tol, message=None
         )
 
 
@@ -240,6 +241,7 @@ class CGD(Solver):
             def cycle(coordinates, weights, inner_products, state_estimator):
                 max_abs_delta = 0.0
                 max_abs_weight = 0.0
+
                 # weights = state_cgd.weights
                 # inner_products = state_cgd.inner_products
                 # for idx in range(n_weights):
@@ -250,6 +252,7 @@ class CGD(Solver):
                     partial_deriv_j = partial_deriv_estimator(
                         j, inner_products, state_estimator
                     )
+
                     if j == 0:
                         # It's the intercept, so we don't penalize
                         w_j_new = weights[j] - steps[j] * partial_deriv_j
@@ -258,16 +261,19 @@ class CGD(Solver):
                         w_j_new = weights[j] - steps[j] * partial_deriv_j
                         # TODO: compute the
                         w_j_new = penalize(w_j_new, scaled_steps[j])
+
                     # Update the inner products
                     delta_j = w_j_new - weights[j]
                     # Update the maximum update change
                     abs_delta_j = fabs(delta_j)
+
                     if abs_delta_j > max_abs_delta:
                         max_abs_delta = abs_delta_j
                     # Update the maximum weight
                     abs_w_j_new = fabs(w_j_new)
                     if abs_w_j_new > max_abs_weight:
                         max_abs_weight = abs_w_j_new
+
                     if j == 0:
                         for i in range(n_samples):
                             inner_products[i] += delta_j
@@ -354,6 +360,8 @@ class GD(Solver):
         n_samples = self.estimator.n_samples
         n_weights = self.n_weights
         grad_estimator = self.estimator.grad_factory()
+        decision_function = decision_function_factory(X, fit_intercept)
+
         penalize = self.penalty.apply_one_unscaled_factory()
         step = self.step
 
@@ -365,17 +373,20 @@ class GD(Solver):
 
             @jit(**jit_kwargs)
             def cycle(coordinates, weights, inner_products, state_estimator):
-                max_abs_delta = 0.0
-                max_abs_weight = 0.0
-                decision_function(X, fit_intercept, weights, inner_products)
 
-                grad = grad_estimator(
+                decision_function(weights, inner_products)
+
+                grad_estimator(
                     inner_products, state_estimator
                 )
+                grad = state_estimator.gradient
                 w_new = weights - step * grad
+
+                max_abs_delta = fabs(w_new[0] - weights[0])
+                max_abs_weight = fabs(w_new[0])
+
                 for j in range(1, n_weights):
                     w_new[j] = penalize(w_new[j], scaled_step)
-                for j in range(n_weights):
                     # Update the maximum update change
                     abs_delta_j = fabs(w_new[j] - weights[j])
                     if abs_delta_j > max_abs_delta:
@@ -397,11 +408,12 @@ class GD(Solver):
             def cycle(coordinates, weights, inner_products, state_estimator):
                 max_abs_delta = 0.0
                 max_abs_weight = 0.0
-                decision_function(X, fit_intercept, weights, inner_products)
+                decision_function(weights, inner_products)
 
-                grad = grad_estimator(
+                grad_estimator(
                     inner_products, state_estimator
                 )
+                grad = state_estimator.gradient
                 w_new = weights - step * grad
                 for j in coordinates:
                     w_new[j] = penalize(w_new[j], scaled_step)
@@ -433,6 +445,7 @@ class SGD(Solver):
         random_state,
         step,
         history,
+        exponent=0.5
     ):
         super(SGD, self).__init__(
             X=X,
@@ -449,6 +462,7 @@ class SGD(Solver):
 
         # Automatic steps
         self.step = step
+        self.exponent = exponent
 
     def cycle_factory(self):
 
@@ -457,23 +471,24 @@ class SGD(Solver):
         fit_intercept = self.fit_intercept
         n_samples = self.estimator.n_samples
         n_weights = self.n_weights
+        exponent = self.exponent
         loss = self.loss
         deriv_loss = loss.deriv_factory()
 
         penalize = self.penalty.apply_one_unscaled_factory()
-        step = self.step / n_samples
+        step = self.step #/ n_samples
 
         # The learning rates scaled by the strength of the penalization (we use the
         # apply_one_unscaled penalization function)
-        scaled_step = self.penalty.strength * self.step / n_samples
+        scaled_step = self.penalty.strength * self.step #/ n_samples
 
         if fit_intercept:
 
             @jit(**jit_kwargs)
-            def cycle(coordinates, weights, inner_products, state_estimator):
+            def cycle(weights, epoch, state_estimator):
                 max_abs_delta = 0.0
                 max_abs_weight = 0.0
-                grad = np.empty(X.shape[1] + 1)
+                grad = state_estimator.gradient
                 w_new = weights.copy()
                 for i in range(n_samples):
                     ind = np.random.randint(n_samples)
@@ -481,9 +496,9 @@ class SGD(Solver):
                     grad[1:] = X[ind]
                     grad *= deriv_loss(y[ind], np.dot(X[ind], weights[1:]) + weights[0])
 
-                    w_new -= step * grad
+                    w_new -= step * grad / ((1 + epoch * n_samples + i) ** exponent)
                     for j in range(1, n_weights):
-                        w_new[j] = penalize(w_new[j], scaled_step)
+                        w_new[j] = penalize(w_new[j], scaled_step / ((1 + epoch * n_samples + i) ** exponent))
                 for j in range(n_weights):
                     # Update the maximum update change
                     abs_delta_j = fabs(w_new[j] - weights[j])
@@ -503,18 +518,18 @@ class SGD(Solver):
         else:
             # There is no intercept, so the code changes slightly
             @jit(**jit_kwargs)
-            def cycle(coordinates, weights, inner_products, state_estimator):
+            def cycle(weights, epoch, state_estimator):
                 max_abs_delta = 0.0
                 max_abs_weight = 0.0
-                grad = np.empty(n_weights)
+                grad = state_estimator.gradient
                 w_new = weights.copy()
                 for i in range(n_samples):
                     ind = np.random.randint(n_samples)
                     grad[:] = deriv_loss(y[ind], np.dot(X[ind], weights)) * X[ind]
 
-                    w_new -= step * grad
+                    w_new -= step * grad / ((1 + epoch * n_samples + i) ** exponent)
                     for j in range(n_weights):
-                        w_new[j] = penalize(w_new[j], scaled_step)
+                        w_new[j] = penalize(w_new[j], scaled_step / ((1 + epoch * n_samples + i) ** exponent))
                 for j in range(n_weights):
                     # Update the maximum update change
                     abs_delta_j = fabs(w_new[j] - weights[j])
@@ -530,6 +545,69 @@ class SGD(Solver):
                 return max_abs_delta, max_abs_weight
 
             return cycle
+
+    def solve(self, w0=None, dummy_first_step=False):
+
+        weights = np.empty(self.n_weights, dtype=np_float)
+        tol = self.tol
+        max_iter = self.max_iter
+        history = self.history
+        if w0 is not None:
+            weights[:] = w0
+        else:
+            weights.fill(0.0)
+
+        random_state = self.random_state
+        if random_state is not None:
+            @jit(**jit_kwargs)
+            def numba_seed_numpy(rnd_state):
+                np.random.seed(rnd_state)
+
+            numba_seed_numpy(random_state)
+
+        # Get the cycle function
+        cycle = self.cycle_factory()
+
+        # Get the estimator state (a place-holder for the estimator's internal
+        # computations)
+        state_estimator = self.estimator.get_state()
+
+        # TODO: First value for tolerance is 1.0 or NaN
+        # history.update(epoch=0, obj=obj, tol=1.0, update_bar=True)
+        if dummy_first_step:
+            cycle(
+                weights, 0, state_estimator
+            )
+            if w0 is not None:
+                weights[:] = w0
+            else:
+                weights.fill(0.0)
+
+        history.update(weights)
+
+        for epoch in range(1, max_iter + 1):
+            max_abs_delta, max_abs_weight = cycle(
+                weights, epoch, state_estimator
+            )
+            if max_abs_weight == 0.0:
+                current_tol = 0.0
+            else:
+                current_tol = max_abs_delta / max_abs_weight
+
+            # TODO: tester tous les cas "max_abs_weight == 0.0" etc..
+            # history.update(epoch=n_iter, obj=obj, tol=current_tol, update_bar=True)
+            history.update(weights)
+
+            if current_tol < tol:
+                history.close_bar()
+                return OptimizationResult(
+                    w=weights, n_iter=epoch, success=True, tol=tol, message=None
+                )
+
+        history.close_bar()
+        return OptimizationResult(
+            w=weights, n_iter=max_iter + 1, success=False, tol=tol, message=None
+        )
 
 
 class SVRG(Solver):
@@ -658,10 +736,6 @@ class SVRG(Solver):
 
             return cycle
 
-StateSAGA = namedtuple(
-    "StateSAGA", ["deriv_samples", "mean_grad", "j_grad_diff"]
-)
-
 class SAGA(Solver):
     def __init__(
             self,
@@ -700,14 +774,14 @@ class SAGA(Solver):
         fit_intercept = self.fit_intercept
         n_samples = X.shape[0]
         n_weights = self.n_weights
-        # grad_estimator = self.estimator.grad_factory()
+
         deriv_loss = self.loss.deriv_factory()
         penalize = self.penalty.apply_one_unscaled_factory()
         step = self.step / n_samples
 
         # The learning rates scaled by the strength of the penalization (we use the
         # apply_one_unscaled penalization function)
-        scaled_step = self.penalty.strength * self.step / n_samples
+        scaled_step = self.penalty.strength * step
 
         if fit_intercept:
 
@@ -733,10 +807,10 @@ class SAGA(Solver):
                     grad_update[1:] = X[j]
                     grad_update *= deriv_loss(y[j], new_j_inner_prod) - deriv_loss(y[j], inner_products[j])
 
+                    w_new -= step * (grad_update + mean_grad)
+
                     mean_grad += grad_update / n_samples
                     inner_products[j] = new_j_inner_prod
-
-                    w_new -= step * (grad_update + mean_grad)
 
                     for j in range(1, n_weights):
                         w_new[j] = penalize(w_new[j], scaled_step)
@@ -776,10 +850,10 @@ class SAGA(Solver):
                     new_j_inner_prod = np.dot(w_new, X[j])
 
                     grad_update[:] = (deriv_loss(y[j], new_j_inner_prod) - deriv_loss(y[j], inner_products[j])) * X[j]
-                    mean_grad += grad_update / n_samples
                     inner_products[j] = new_j_inner_prod
 
                     w_new -= step * (grad_update + mean_grad)
+                    mean_grad += grad_update / n_samples
 
                     for j in range(n_weights):
                         w_new[j] = penalize(w_new[j], scaled_step)
@@ -799,7 +873,7 @@ class SAGA(Solver):
 
             return cycle
 
-    def solve(self, w0=None):
+    def solve(self, w0=None, dummy_first_step=False):
         X = self.X
         fit_intercept = self.fit_intercept
         inner_products = np.empty(self.n_samples, dtype=np_float)
@@ -833,12 +907,22 @@ class SAGA(Solver):
         # Get the cycle function
         cycle = self.cycle_factory()
         # Get the objective function
-        objective = self.objective_factory()
-        # Compute the first value of the objective
-        obj = objective(weights, inner_products)
+        # objective = self.objective_factory()
+        # # Compute the first value of the objective
+        # obj = objective(weights, inner_products)
 
         # Get the estimator state (a place-holder for the estimator's internal
         # computations)
+
+        if dummy_first_step:
+            cycle(
+                weights, inner_products, mean_grad, grad_update, True
+            )
+            if w0 is not None:
+                weights[:] = w0
+            else:
+                weights.fill(0.0)
+            decision_function(weights, inner_products)
 
 
         # TODO: First value for tolerance is 1.0 or NaN
@@ -852,7 +936,7 @@ class SAGA(Solver):
             )
             init = False
             # Compute the new value of objective
-            obj = objective(weights, inner_products)
+            # obj = objective(weights, inner_products)
             if max_abs_weight == 0.0:
                 current_tol = 0.0
             else:

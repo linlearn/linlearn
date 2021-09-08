@@ -252,18 +252,18 @@ def test_tol():
     assert isinstance(clf.tol, float)
     assert clf.tol == 3.14e-3
 
-    for tol in [-1, 0.0, complex(1.0, 1.0), "1.0"]:
+    for tol in [-1, complex(1.0, 1.0), "1.0"]:#, 0.0]:
         with pytest.raises(ValueError) as exc_info:
             clf.tol = tol
         assert exc_info.type is ValueError
-        match = "Tolerance for stopping criteria must be positive; got (tol=%r)" % tol
+        match = "Tolerance for stopping criteria must be non negative; got (tol=%r)" % tol
         assert exc_info.value.args[0] == match
 
-    for tol in [-1, 0.0, complex(1.0, 1.0), "1.0"]:
+    for tol in [-1, complex(1.0, 1.0), "1.0"]:#, 0.0]:
         with pytest.raises(ValueError) as exc_info:
             BinaryClassifier(tol=tol)
         assert exc_info.type is ValueError
-        match = "Tolerance for stopping criteria must be positive; got (tol=%r)" % tol
+        match = "Tolerance for stopping criteria must be non negative; got (tol=%r)" % tol
         assert exc_info.value.args[0] == match
 
     setattr(clf, "tol", 3.14)
@@ -376,7 +376,8 @@ penalties = BinaryClassifier._penalties
 @pytest.mark.parametrize("penalty", penalties)
 @pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
 @pytest.mark.parametrize("l1_ratio", (0.1, 0.5, 0.9))
-def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio):
+@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))#, "sgd",))#
+def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, solver):
     """
     This is a test that checks on many combinations that BinaryClassifier gets the
     same coef_ and intercept_ as scikit-learn on simulated data
@@ -384,7 +385,7 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio):
     n_samples = 128
     n_features = 5
     tol = 1e-10
-    max_iter = 200
+    max_iter = 300
     verbose = False
 
     X, y = simulate_true_logistic(
@@ -423,7 +424,7 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio):
     # We compare with saga since it supports all penalties
     # clf_scikit = LogisticRegression(solver="saga", **args).fit(X, y)
     clf_linlearn = BinaryClassifier(
-        penalty=penalty, C=C, l1_ratio=l1_ratio, solver="cgd", **args
+        penalty=penalty, C=C, l1_ratio=l1_ratio, solver=solver, **args
     )
     clf_linlearn.fit(X, y)
 
@@ -453,14 +454,15 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio):
 @pytest.mark.parametrize("penalty", penalties)
 @pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
 @pytest.mark.parametrize("l1_ratio", (0.1, 0.5, 0.9))
-def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio):
+@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))#, "sgd",))#
+def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio, solver):
     """
     This is a test that checks on many combinations that BinaryClassifier gets the
     same coef_ and intercept_ as scikit-learn on simulated data
     """
     n_samples = 150
     tol = 1e-15
-    max_iter = 200
+    max_iter = 300
     verbose = False
     random_state = 42
 
@@ -495,7 +497,7 @@ def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio):
 
     clf_scikit.fit(X, y)
     clf_linlearn = BinaryClassifier(
-        penalty=penalty, C=C, l1_ratio=l1_ratio, solver="cgd", **args
+        penalty=penalty, C=C, l1_ratio=l1_ratio, solver=solver, **args
     )
     clf_linlearn.fit(X, y)
 
@@ -510,14 +512,15 @@ def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio):
 @pytest.mark.parametrize("penalty", penalties)
 @pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
 @pytest.mark.parametrize("l1_ratio", (0.1, 0.5, 0.9))
-def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio):
+@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))#, "sgd",))#
+def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio, solver):
     """
     This is a test that checks on many combinations that BinaryClassifier gets the
     same coef_ and intercept_ as scikit-learn on simulated data
     """
     n_samples = 150
     tol = 1e-15
-    max_iter = 200
+    max_iter = 300
     verbose = False
     random_state = 42
 
@@ -555,7 +558,7 @@ def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio):
 
     clf_scikit.fit(X, y)
     clf_linlearn = BinaryClassifier(
-        penalty=penalty, C=C, l1_ratio=l1_ratio, solver="cgd", **args
+        penalty=penalty, C=C, l1_ratio=l1_ratio, solver=solver, **args
     )
     clf_linlearn.fit(X, y)
 
@@ -567,7 +570,8 @@ def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio):
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
 @pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
-def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C):
+@pytest.mark.parametrize("solver", ("cgd", "gd", "sgd", "svrg", "saga", "sgd"))
+def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C, solver):
     n_samples = 128
     n_features = 5
     tol = 1e-10
@@ -591,9 +595,9 @@ def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C):
 
     # Test that elasticnet with l1_ratio=0.0 is the same as penalty="l2"
     clf_elasticnet = BinaryClassifier(
-        penalty="elasticnet", C=C, l1_ratio=0.0, solver="cgd", **args
+        penalty="elasticnet", C=C, l1_ratio=0.0, solver=solver, **args
     )
-    clf_l2 = BinaryClassifier(penalty="l2", C=C, solver="cgd", **args)
+    clf_l2 = BinaryClassifier(penalty="l2", C=C, solver=solver, **args)
     clf_elasticnet.fit(X, y)
     clf_l2.fit(X, y)
     assert clf_elasticnet.intercept_ == approx(clf_l2.intercept_)
@@ -601,9 +605,9 @@ def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C):
 
     # Test that elasticnet with l1_ratio=1.0 is the same as penalty="l1"
     clf_elasticnet = BinaryClassifier(
-        penalty="elasticnet", C=C, l1_ratio=1.0, solver="cgd", **args
+        penalty="elasticnet", C=C, l1_ratio=1.0, solver=solver, **args
     )
-    clf_l1 = BinaryClassifier(penalty="l1", C=C, l1_ratio=0.0, solver="cgd", **args)
+    clf_l1 = BinaryClassifier(penalty="l1", C=C, l1_ratio=0.0, solver=solver, **args)
     clf_elasticnet.fit(X, y)
     clf_l1.fit(X, y)
     assert clf_elasticnet.intercept_ == approx(clf_l1.intercept_)
