@@ -95,6 +95,7 @@ args = {
     # "estimator": "catoni",
     # "block_size": 0.5,
     # "percentage": 0.01,
+    "solver": "svrg",
     "penalty": penalty,
     "l1_ratio": 1.0,
     "tol": tol,
@@ -131,7 +132,8 @@ from linlearn.learner import BinaryClassifier
 
 learners = []
 
-estimators = ["erm", "mom", "catoni", "tmean"]
+# estimators = ["erm", "mom", "catoni", "tmean"]
+estimators = ["erm"]
 
 for estimator in estimators:
     args["estimator"] = estimator
