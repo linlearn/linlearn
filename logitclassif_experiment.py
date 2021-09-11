@@ -340,7 +340,7 @@ def run_repetition(rep):
         logging.info(str(rep)+" : "+x+" done")
 
     def run_algorithm(algo, out):
-        clf = BinaryClassifier(tol=0, max_iter=algo.max_iter, solver=algo.solver, estimator=algo.estimator, fit_intercept=fit_intercept, step_size=step_size, penalty=penalty or "none")
+        clf = BinaryClassifier(tol=0, max_iter=algo.max_iter, solver=algo.solver, estimator=algo.estimator, fit_intercept=fit_intercept, lr_factor=step_size, penalty=penalty or "none")
         clf.fit(X_train, y_train, trackers=trackers, dummy_first_step=True)
         out[algo.name] = clf.history_.records
         announce(algo.name)

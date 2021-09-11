@@ -91,3 +91,5 @@ Where to go from here?
 
    api
    classification
+   solver
+

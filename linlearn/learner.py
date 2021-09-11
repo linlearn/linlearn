@@ -9,6 +9,7 @@ from warnings import warn
 
 import numbers
 import numpy as np
+import pandas as pd
 from scipy.special import expit
 
 from sklearn.base import ClassifierMixin, RegressorMixin, BaseEstimator
@@ -18,13 +19,32 @@ from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import safe_sparse_dot
 
-from ._loss import Logistic, LeastSquares, steps_factory
+from ._loss import Logistic, LeastSquares
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
 from ._solver import CGD, GD, SGD, SVRG, SAGA, History
-from ._estimator import ERM, MOM, TMean, Implicit, GMOM, HollandCatoni
+from ._estimator import ERM, MOM, TMean, Implicit, GMOM, CH
 
 
 # TODO: serialization
+
+# TODO: use this dataframe to deal with optimal computational conditions. If the
+#  solver is not specified, it must be chosen automatically in an optimal way
+#  depending on the type of X
+# df = pd.DataFrame(
+#     index=["c", "f", "csc", "csr"],
+#     columns=["cgd", "gd", "sgd", "svrg", "saga"]
+# )
+#
+# df.loc["c", "cgd"] = "ok"
+# df.loc["f", "cgd"] = "optimal"
+# df.loc["csc", "cgd"] = "optimal"
+# df.loc["csr", "cgd"] = "slow"
+#
+# for solver in ["gd", "sgd", "svrg", "saga"]:
+#     df.loc["c", solver] = "optimal"
+#     df.loc["f", solver] = "ok"
+#     df.loc["csc", solver] = "slow"
+#     df.loc["csr", solver] = "optimal"
 
 
 class BaseLearner(ClassifierMixin, BaseEstimator):
@@ -38,7 +58,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         *,
         penalty="l2",
         C=1.0,
-        step_size=1.0,
         loss="logistic",
         fit_intercept=True,
         estimator="erm",
@@ -46,6 +65,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         percentage=0.05,
         eps=0.001,
         solver="cgd",
+        lr_factor=1.0,
         tol=1e-4,
         max_iter=100,
         random_state=None,
@@ -57,14 +77,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
     ):
         self.penalty = penalty
         self.C = C
-        self.step_size = step_size
         self.loss = loss
+        self.fit_intercept = fit_intercept
+        self.lr_factor = lr_factor
         self.estimator = estimator
         self.block_size = block_size
         self.percentage = percentage
         self.eps = eps
         self.tol = tol
-        self.fit_intercept = fit_intercept
         self.solver = solver
         self.max_iter = max_iter
         self.random_state = random_state
@@ -108,17 +128,17 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             self._C = float(val)
 
     @property
-    def step_size(self):
-        return self._step_size
+    def lr_factor(self):
+        return self._lr_factor
 
-    @step_size.setter
-    def step_size(self, val):
+    @lr_factor.setter
+    def lr_factor(self, val):
         if not isinstance(val, numbers.Real) or val <= 0:
             raise ValueError(
-                "step_size must be a positive number; got (step_size=%r)" % val
+                "lr_factor must be a positive number; got (step_size=%r)" % val
             )
         else:
-            self._step_size = float(val)
+            self._lr_factor = float(val)
 
     @property
     def loss(self):
@@ -304,7 +324,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         elif self.estimator == "tmean":
             return TMean(X, y, loss, self.fit_intercept, self.percentage)
         elif self.estimator == "holland_catoni":
-            return HollandCatoni(X, y, loss, self.fit_intercept, self.eps)
+            return CH(X, y, loss, self.fit_intercept, self.eps)
         elif self.estimator == "implicit":
             return Implicit(X, y, loss, self.fit_intercept, int(1 / self.block_size))
         elif self.estimator == "gmom":
@@ -331,62 +351,47 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
     def _get_solver(self, X, y, trackers=None):
         n_samples, n_features = X.shape
-
-        # # Get the loss object
-        # loss_factory = losses_factory[self.loss]
-        # loss = loss_factory()
-
         # Get the loss object
         loss = self._get_loss()
         # Get the estimator object
         estimator = self._get_estimator(X, y, loss)
         # Get the penalty object
         penalty = self._get_penalty(n_samples)
-        # penalty_factory = penalties_factory[self.penalty]
         # The strength is scaled using following scikit-learn's scaling
         # strength = 1 / (self.C * n_samples)
         # penalty = penalty_factory(strength=strength, l1_ratio=self.l1_ratio)
         n_samples_in_block = int(n_samples * self.block_size)
 
         if self.solver == "cgd":
-            # Get the gradient descent steps for each coordinate
-            steps_func = steps_factory(
-                fit_intercept=self.fit_intercept,
-                estimator=self.estimator,
-                percentage=self.percentage,
-                eps=self.eps,
-                n_samples_in_block=n_samples_in_block,
-            )
-            steps = self.step_size * steps_func(loss.lip, X)
             # Create an history object for the solver
             history = History("CGD", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
-
             return CGD(
                 X,
                 y,
-                loss,
-                self.fit_intercept,
-                estimator,
-                penalty,
-                self.max_iter,
-                self.tol,
-                self.random_state,
-                steps,
-                history,
+                loss=loss,
+                fit_intercept=self.fit_intercept,
+                estimator=estimator,
+                penalty=penalty,
+                max_iter=self.max_iter,
+                tol=self.tol,
+                random_state=self.random_state,
+                lr_factor=self.lr_factor,
+                history=history,
             )
 
         elif self.solver == "gd":
             # Get the gradient descent steps for each coordinate
 
             steps_func = steps_factory(
+                X=X,
                 fit_intercept=self.fit_intercept,
                 estimator=self.estimator,
                 percentage=self.percentage,
                 eps=self.eps,
                 n_samples_in_block=n_samples_in_block,
             )
-            step = self.step_size * np.min(steps_func(loss.lip, X))
+            step = self.step_size * np.min(steps_func(loss.lip))
             # Create an history object for the solver
             history = History("GD", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
@@ -407,9 +412,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         elif self.solver == "sgd":
             # Get the gradient descent steps for each coordinate
             steps_func = steps_factory(
-                fit_intercept=self.fit_intercept, estimator="erm"
+                X=X, fit_intercept=self.fit_intercept, estimator="erm"
             )
-            step = self.step_size * np.min(steps_func(loss.lip, X))
+            step = self.step_size * np.min(steps_func(loss.lip))
             # Create an history object for the solver
             history = History("SGD", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
@@ -432,9 +437,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         elif self.solver == "svrg":
             # Get the gradient descent steps for each coordinate
             steps_func = steps_factory(
-                fit_intercept=self.fit_intercept, estimator="erm"
+                X=X, fit_intercept=self.fit_intercept, estimator="erm"
             )
-            step = self.step_size * np.min(steps_func(loss.lip, X))
+            step = self.step_size * np.min(steps_func(loss.lip))
             # Create an history object for the solver
             history = History("SVRG", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
@@ -455,9 +460,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         elif self.solver == "saga":
             # Get the gradient descent steps for each coordinate
             steps_func = steps_factory(
-                fit_intercept=self.fit_intercept, estimator="erm"
+                X=X, fit_intercept=self.fit_intercept, estimator="erm"
             )
-            step = self.step_size * np.min(steps_func(loss.lip, X))
+            step = self.step_size * np.min(steps_func(loss.lip))
             # Create an history object for the solver
             history = History("SAGA", self.max_iter, self.verbose, trackers=trackers)
             self.history_ = history
@@ -521,11 +526,11 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         if self.solver == "cgd":
             accept_sparse = "csc"
             order = "F"
-            accept_large_sparse = False
+            accept_large_sparse = True
         else:
             accept_sparse = "csr"
             order = "C"
-            accept_large_sparse = False
+            accept_large_sparse = True
 
         estimator_name = self.__class__.__name__
         is_classifier = estimator_name == "BinaryClassifier"
@@ -537,7 +542,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             accept_large_sparse=accept_large_sparse,
             estimator=estimator_name,
         )
-
         check_consistent_length(X, y)
 
         if is_classifier:
@@ -580,35 +584,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         #     class_weight_ = compute_class_weight(class_weight, classes=classes, y=y)
         #     sample_weight *= class_weight_[le.fit_transform(y)]
         #
-        # # For doing a ovr, we need to mask the labels first. for the
-        # # multinomial case this is not necessary.
-        # if multi_class == "ovr":
-        #     w0 = np.zeros(n_features + int(fit_intercept), dtype=X.dtype)
-        # mask_classes = np.array([-1, 1])
-        #     # for compute_class_weight
-        #
-        #     if class_weight == "balanced":
-        #         class_weight_ = compute_class_weight(
-        #             class_weight, classes=mask_classes, y=y_bin
-        #         )
-        #         sample_weight *= class_weight_[le.fit_transform(y_bin)]
-        #
-        # else:
-        #     if solver not in ["sag", "saga"]:
-        #         lbin = LabelBinarizer()
-        #         Y_multi = lbin.fit_transform(y)
-        #         if Y_multi.shape[1] == 1:
-        #             Y_multi = np.hstack([1 - Y_multi, Y_multi])
-        #     else:
-        #         # SAG multinomial solver needs LabelEncoder, not LabelBinarizer
-        #         le = LabelEncoder()
-        #         Y_multi = le.fit_transform(y).astype(X.dtype, copy=False)
-        #
-        #     w0 = np.zeros(
-        #         (classes.size, n_features + int(fit_intercept)),
-        #         order="F",
-        #         dtype=X.dtype,
-        #     )
 
         #######
         solver = self._get_solver(X, y_encoded, trackers=trackers)
@@ -653,7 +628,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
         # For now, no sparse arrays
         # X = check_array(X, accept_sparse="csr")
-        X = check_array(X, accept_sparse=False, estimator="BinaryClassifier")
+        X = check_array(X, accept_sparse=["csr", "csc"], estimator="BinaryClassifier")
 
         n_features = self.coef_.shape[1]
         if X.shape[1] != n_features:
@@ -713,7 +688,7 @@ class BinaryClassifier(BaseLearner):
         Specifies if a constant (a.k.a. bias or intercept) should be
         added to the decision function.
 
-    step_size : float, default=1.0
+    lr_factor : float, default=1.0
         What the hell is this ? TODO
 
     class_weight : dict or 'balanced', default=None
@@ -765,29 +740,29 @@ class BinaryClassifier(BaseLearner):
     def __init__(
         self,
         *,
+        fit_intercept=True,
+        loss="logistic",
+        estimator="erm",
         penalty="l2",
         C=1.0,
-        step_size=1.0,
-        loss="logistic",
-        fit_intercept=True,
-        estimator="erm",
+        l1_ratio=0.5,
+        solver="cgd",
+        lr_factor=1.0,
         block_size=0.07,
         percentage=0.05,
         eps=0.001,
-        solver="cgd",
         tol=1e-4,
         max_iter=100,
         class_weight=None,
         random_state=None,
         verbose=0,
         warm_start=False,
-        n_jobs=None,
-        l1_ratio=0.5
+        n_jobs=None
     ):
         super(BinaryClassifier, self).__init__(
             penalty=penalty,
             C=C,
-            step_size=step_size,
+            lr_factor=lr_factor,
             loss=loss,
             fit_intercept=fit_intercept,
             estimator=estimator,

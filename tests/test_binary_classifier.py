@@ -5,6 +5,7 @@
 
 import numpy as np
 from numpy.random.mtrand import multivariate_normal
+from scipy.sparse import csr_matrix, csc_matrix
 from scipy.linalg import toeplitz
 from scipy.special import expit
 
@@ -340,7 +341,9 @@ def test_l1_ratio():
     assert getattr(clf, "l1_ratio") == 0.42
 
 
-def simulate_true_logistic(n_samples=150, n_features=5, fit_intercept=True, corr=0.5):
+def simulate_true_logistic(
+    n_samples=150, n_features=5, fit_intercept=True, corr=0.5, sparsify=False
+):
     rng = np.random.RandomState(42)
     coef0 = rng.randn(n_features)
     if fit_intercept:
@@ -350,6 +353,9 @@ def simulate_true_logistic(n_samples=150, n_features=5, fit_intercept=True, corr
 
     cov = toeplitz(corr ** np.arange(0, n_features))
     X = rng.multivariate_normal(np.zeros(n_features), cov, size=n_samples)
+    if sparsify:
+        X[X < 0.0] = 0.0
+
     logits = X.dot(coef0)
     logits += intercept0
     p = expit(logits)
@@ -374,7 +380,7 @@ def simulate_linear(n_samples, random_state=2):
 
 
 penalties = BinaryClassifier._penalties
-# (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3)
+# grid_C = (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3)
 grid_C = (1e-3, 1.0, 1e3)
 grid_l1_ratio = (0.1, 0.5, 0.9)
 
@@ -621,6 +627,83 @@ def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C, solver):
     assert clf_elasticnet.coef_ == approx(clf_l1.coef_)
 
 
+@pytest.mark.parametrize("fit_intercept", (False, True))
+@pytest.mark.parametrize("penalty", penalties)
+@pytest.mark.parametrize("C", (1.0,))
+@pytest.mark.parametrize("l1_ratio", (0.5,))
+@pytest.mark.parametrize("sparsify", (False, True))
+@pytest.mark.parametrize("estimator", ("erm",))
+@pytest.mark.parametrize("solver", ("cgd",))
+def test_fit_dense_sparse_consistent(
+    fit_intercept, penalty, C, l1_ratio, sparsify, estimator, solver
+):
+    n_samples = 128
+    n_features = 5
+    kwargs = {
+        "loss": "logistic",
+        "estimator": estimator,
+        "penalty": penalty,
+        "solver": solver,
+        "tol": 1e-4,
+        "max_iter": 10,
+        "verbose": False,
+        "fit_intercept": fit_intercept,
+        "random_state": 42,
+        "l1_ratio": l1_ratio,
+        "C": C,
+    }
+
+    X, y = simulate_true_logistic(
+        n_samples=n_samples,
+        n_features=n_features,
+        fit_intercept=fit_intercept,
+        sparsify=sparsify,
+    )
+
+    X_f = np.asfortranarray(X)
+    X_c = np.ascontiguousarray(X)
+    X_csc = csc_matrix(X)
+    # X_csr = csr_matrix(X)
+
+    clf_f = BinaryClassifier(**kwargs).fit(X_f, y)
+    clf_c = BinaryClassifier(**kwargs).fit(X_c, y)
+    clf_csc = BinaryClassifier(**kwargs).fit(X_csc, y)
+    # clf_csr = BinaryClassifier(**kwargs).fit(X_csr, y)
+
+    # Test intercepts_
+    assert clf_f.intercept_ == pytest.approx(clf_c.intercept_, abs=1e-13)
+    assert clf_f.intercept_ == pytest.approx(clf_csc.intercept_, abs=1e-13)
+    # assert clf_f.intercept_ == pytest.approx(clf_csr.intercept_, abs=1e-13)
+    # Test coef_
+    assert clf_f.coef_ == pytest.approx(clf_c.coef_, abs=1e-13)
+    assert clf_f.coef_ == pytest.approx(clf_csc.coef_, abs=1e-13)
+    # assert clf_f.coef_ == pytest.approx(clf_csr.coef_, abs=1e-13)
+    # Test decision_function
+    dec_func_f = clf_f.decision_function(X_f)
+    assert dec_func_f == pytest.approx(clf_c.decision_function(X_c), abs=1e-13)
+    assert dec_func_f == pytest.approx(clf_csc.decision_function(X_csc), abs=1e-13)
+    # assert dec_func_f == pytest.approx(
+    #     clf_csr.predict_proba(X_csr, abs=1e-13)
+    # )
+    # Test predict_log_proba
+    log_prob_f = clf_f.predict_log_proba(X_f)
+    assert log_prob_f == pytest.approx(clf_c.predict_log_proba(X_c), abs=1e-13)
+    assert log_prob_f == pytest.approx(clf_csc.predict_log_proba(X_csc), abs=1e-13)
+    # assert log_prob_f == pytest.approx(
+    #     clf_csr.predict_log_proba(X_csr, abs=1e-13)
+    # )
+    # Test predict
+    pred_f = clf_f.predict(X_f)
+    assert (pred_f == clf_c.predict(X_c)).any()
+    assert (pred_f == clf_csc.predict(X_csc)).any()
+    # assert (pred_f == clf_csr.predict(X_csr)).any()
+    # Test score
+    score_f = clf_f.score(X, y)
+    assert score_f == clf_c.score(X_c, y)
+    assert clf_f.score(X, y) == clf_csc.score(X_csc, y)
+    # assert score_f == clf_csr.score(X_csr, y)
+
+
 def test_that_array_conversion_is_ok():
     import pandas as pd
 
@@ -664,3 +747,80 @@ def test_that_array_conversion_is_ok():
 #     y_pred_2 = clf.predict_proba(X_test)
 #
 #     assert y_pred_1 == approx(y_pred_2)
+
+
+# @pytest.mark.parametrize("fit_intercept", (False, True))
+#  def test_sparse_and_dense_match(
+#      fit_intercept, penalty="elasticnet", C=1.0, l1_ratio=0.5
+#  ):
+#      """
+#      This is a test that checks on many combinations that BinaryClassifier gets the
+#      same coef_ and intercept_ as scikit-learn on simulated data
+#      """
+#      n_samples = 128
+#      n_features = 5
+#      tol = 1e-10
+#      max_iter = 200
+#      verbose = False
+#
+#      X_dense, y = simulate_true_logistic(
+#          n_samples=n_samples, n_features=n_features, fit_intercept=fit_intercept,
+#      )
+#
+#      X_csc = csc_matrix(X_dense)
+#      X_csr = csr_matrix(X_dense)
+#
+#      args = {
+#          "tol": tol,
+#          "max_iter": max_iter,
+#          "verbose": verbose,
+#          "fit_intercept": fit_intercept,
+#          "random_state": 42,
+#      }
+#
+#      clf_dense = BinaryClassifier(penalty=penalty, C=C, l1_ratio=l1_ratio, **args).fit(
+#          X_dense, y
+#      )
+#      clf_csc = BinaryClassifier(penalty=penalty, C=C, l1_ratio=l1_ratio, **args).fit(
+#          X_csc, y
+#      )
+#      clf_csr = BinaryClassifier(penalty=penalty, C=C, l1_ratio=l1_ratio, **args).fit(
+#          X_csr, y
+#      )
+#
+#      # Dense is same as csc
+#      assert clf_dense.intercept_ == pytest.approx(clf_csc.intercept_, abs=1e-7)
+#      assert clf_dense.coef_ == pytest.approx(clf_csc.coef_, abs=1e-7)
+#      # Dense is same as crs
+#      assert clf_dense.intercept_ == pytest.approx(clf_csr.intercept_, abs=1e-7)
+#      assert clf_dense.coef_ == pytest.approx(clf_csr.coef_, abs=1e-7)
+#
+#      # Test prediction methods on csc
+#      assert clf_dense.decision_function(X_dense) == pytest.approx(
+#          clf_csc.decision_function(X_csc), abs=1e-9
+#      )
+#      assert clf_dense.predict_proba(X_dense) == pytest.approx(
+#          clf_csc.predict_proba(X_csc), abs=1e-9
+#      )
+#      assert clf_dense.predict_log_proba(X_dense) == pytest.approx(
+#          clf_csc.predict_log_proba(X_csc), abs=1e-9
+#      )
+#      assert clf_dense.predict(X_dense) == pytest.approx(clf_csc.predict(X_csc), abs=1e-9)
+#      assert clf_dense.score(X_dense, y) == pytest.approx(
+#          clf_csc.score(X_csc, y), abs=1e-9
+#      )
+#
+#      # Test prediction methods on csr (only for clf_csc
+#      assert clf_dense.decision_function(X_dense) == pytest.approx(
+#          clf_csc.decision_function(X_csr), abs=1e-9
+#      )
+#      assert clf_dense.predict_proba(X_dense) == pytest.approx(
+#          clf_csc.predict_proba(X_csr), abs=1e-9
+#      )
+#      assert clf_dense.predict_log_proba(X_dense) == pytest.approx(
+#          clf_csc.predict_log_proba(X_csr), abs=1e-9
+#      )
+#      assert clf_dense.predict(X_dense) == pytest.approx(clf_csc.predict(X_csc), abs=1e-9)
+#      assert clf_dense.score(X_dense, y) == pytest.approx(
+#          clf_csc.score(X_csr, y), abs=1e-9
+#      )

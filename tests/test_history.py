@@ -25,3 +25,6 @@ def test_history():
     assert "'update' excepted the following keys:" in exc_info.value.args[0]
 
     # TODO: figure out how to test print()
+
+
+# TODO: Add a test that check that history works with a learner and a solver

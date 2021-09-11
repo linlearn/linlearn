@@ -1,12 +1,14 @@
 # Authors: Stephane Gaiffas <stephane.gaiffas@gmail.com>
 #          Ibrahim Merad <imerad7@gmail.com>
 # License: BSD 3 clause
+import warnings
 from abc import ABC, abstractmethod
 from collections import namedtuple
 import numpy as np
+from scipy.sparse import issparse, isspmatrix_csc, isspmatrix_csr
 from numba import jit, vectorize, prange
 
-from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float
+from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float, csr_get
 
 
 # Options passed to the @jit decorator within this module
@@ -69,6 +71,21 @@ class Estimator(object):
         self.fit_intercept = fit_intercept
         self.n_samples, self.n_features = X.shape
         self.n_weights = self.n_features + int(self.fit_intercept)
+        if issparse(X):
+            self.X_data = X.data
+            self.X_indices = X.indices
+            self.X_indptr = X.indptr
+            if isspmatrix_csr(X):
+                self.sparse = "csr"
+            elif isspmatrix_csc(X):
+                self.sparse = "csc"
+            else:
+                raise ValueError("Only sparse CSC and CSR matrices are supported.")
+        else:
+            self.sparse = False
+            self.X_data = None
+            self.X_indices = None
+            self.X_indptr = None
 
     def get_state(self):
         pass
@@ -159,77 +176,255 @@ class ERM(Estimator):
         deriv_loss = loss.deriv_factory()
         n_samples = self.n_samples
 
-        if self.fit_intercept:
+        if self.sparse == "csc":
 
-            @jit(**jit_kwargs)
-            def partial_deriv(j, inner_products, state):
-                """Computes the partial derivative of the goodness-of-fit with
-                respect to coordinate `j`, given the value of the `inner_products` and
-                `state`.
+            X_data = self.X_data
+            X_indices = self.X_indices
+            X_indptr = self.X_indptr
 
-                Parameters
-                ----------
-                j : int
-                    Partial derivative is with respect to this coordinate
+            if self.fit_intercept:
 
-                inner_products : numpy.array
-                    A numpy array of shape (n_samples,), containing the inner
-                    products (decision function) X.dot(w) + b where w is the weights
-                    and b the (optional) intercept.
+                @jit(**jit_kwargs)
+                def partial_deriv(j, inner_products, state):
+                    """Computes the partial derivative of the goodness-of-fit with
+                    respect to coordinate `j`, given the value of the `inner_products`
+                    and `state`.
 
-                state : StateERM
-                    The state of the ERM estimator (not used here, but this allows
-                    all estimators to have the same prototypes for `partial_deriv`).
+                    Parameters
+                    ----------
+                    j : int
+                        Partial derivative is with respect to this coordinate
 
-                Returns
-                -------
-                output : float
-                    The value of the partial derivative
-                """
-                deriv_sum = 0.0
-                if j == 0:
-                    for i in range(n_samples):
-                        deriv_sum += deriv_loss(y[i], inner_products[i])
+                    inner_products : numpy.array
+                        A numpy array of shape (n_samples,), containing the inner
+                        products (decision function) X.dot(w) + b where w is the weights
+                        and b the (optional) intercept.
+
+                    state : StateERM
+                        The state of the ERM estimator (not used here, but this allows
+                        all estimators to have the same prototypes for `partial_deriv`).
+
+                    Returns
+                    -------
+                    output : float
+                        The value of the partial derivative
+                    """
+                    deriv_sum = 0.0
+                    if j == 0:
+                        for i in range(n_samples):
+                            deriv_sum += deriv_loss(y[i], inner_products[i])
+                        return deriv_sum / n_samples
+                    else:
+                        col_start = X_indptr[j - 1]
+                        col_end = X_indptr[j]
+                        for idx in range(col_start, col_end):
+                            # i contains the actual row index
+                            i = X_indices[idx]
+                            deriv_sum += (
+                                deriv_loss(y[i], inner_products[i]) * X_data[idx]
+                            )
+                        return deriv_sum / n_samples
+
+                return partial_deriv
+            else:
+
+                @jit(**jit_kwargs)
+                def partial_deriv(j, inner_products, state):
+                    """Computes the partial derivative of the goodness-of-fit with
+                    respect to coordinate `j`, given the value of the `inner_products`
+                    and `state`.
+
+                    Parameters
+                    ----------
+                    j : int
+                        Partial derivative is with respect to this coordinate
+
+                    inner_products : numpy.array
+                        A numpy array of shape (n_samples,), containing the inner
+                        products (decision function) X.dot(w) + b where w is the weights
+                        and b the (optional) intercept.
+
+                    state : StateERM
+                        The state of the ERM estimator (not used here, but this allows
+                        all estimators to have the same prototypes for `partial_deriv`).
+
+                    Returns
+                    -------
+                    output : float
+                        The value of the partial derivative
+                    """
+                    deriv_sum = 0.0
+                    col_start = X_indptr[j]
+                    col_end = X_indptr[j + 1]
+                    for idx in range(col_start, col_end):
+                        # i contains the actual row index
+                        i = X_indices[idx]
+                        deriv_sum += deriv_loss(y[i], inner_products[i]) * X_data[idx]
                     return deriv_sum / n_samples
-                else:
+
+                return partial_deriv
+
+        elif self.sparse == "csr":
+            # TODO: raise this warning elsewhere
+            warnings.warn(
+                "Using a CSR matrix with partial_deriv is slow and requires to sort "
+                "its indices"
+            )
+            # We need to sort indices since lookups will use binary search
+            X.sort_indices()
+            X_data = self.X_data
+            X_indices = self.X_indices
+            X_indptr = self.X_indptr
+
+            if self.fit_intercept:
+
+                @jit(**jit_kwargs)
+                def partial_deriv(j, inner_products, state):
+                    """Computes the partial derivative of the goodness-of-fit with
+                    respect to coordinate `j`, given the value of the `inner_products`
+                    and `state`.
+
+                    Parameters
+                    ----------
+                    j : int
+                        Partial derivative is with respect to this coordinate
+
+                    inner_products : numpy.array
+                        A numpy array of shape (n_samples,), containing the inner
+                        products (decision function) X.dot(w) + b where w is the weights
+                        and b the (optional) intercept.
+
+                    state : StateERM
+                        The state of the ERM estimator (not used here, but this allows
+                        all estimators to have the same prototypes for `partial_deriv`).
+
+                    Returns
+                    -------
+                    output : float
+                        The value of the partial derivative
+                    """
+                    deriv_sum = 0.0
+                    if j == 0:
+                        for i in range(n_samples):
+                            deriv_sum += deriv_loss(y[i], inner_products[i])
+                        return deriv_sum / n_samples
+                    else:
+                        for i in range(n_samples):
+                            x_ij = csr_get(X_indptr, X_indices, X_data, i, j - 1)
+                            deriv_sum += deriv_loss(y[i], inner_products[i]) * x_ij
+                        return deriv_sum / n_samples
+
+                return partial_deriv
+            else:
+
+                @jit(**jit_kwargs)
+                def partial_deriv(j, inner_products, state):
+                    """Computes the partial derivative of the goodness-of-fit with
+                    respect to coordinate `j`, given the value of the `inner_products`
+                    and `state`.
+
+                    Parameters
+                    ----------
+                    j : int
+                        Partial derivative is with respect to this coordinate
+
+                    inner_products : numpy.array
+                        A numpy array of shape (n_samples,), containing the inner
+                        products (decision function) X.dot(w) + b where w is the weights
+                        and b the (optional) intercept.
+
+                    state : StateERM
+                        The state of the ERM estimator (not used here, but this allows
+                        all estimators to have the same prototypes for `partial_deriv`).
+
+                    Returns
+                    -------
+                    output : float
+                        The value of the partial derivative
+                    """
+                    deriv_sum = 0.0
                     for i in range(n_samples):
-                        deriv_sum += deriv_loss(y[i], inner_products[i]) * X[i, j - 1]
+                        x_ij = csr_get(X_indptr, X_indices, X_data, i, j)
+                        deriv_sum += deriv_loss(y[i], inner_products[i]) * x_ij
                     return deriv_sum / n_samples
 
-            return partial_deriv
+                return partial_deriv
+
         else:
+            if self.fit_intercept:
 
-            @jit(**jit_kwargs)
-            def partial_deriv(j, inner_products, state):
-                """Computes the partial derivative of the goodness-of-fit with
-                respect to coordinate `j`, given the value of the `inner_products` and
-                `state`.
+                @jit(**jit_kwargs)
+                def partial_deriv(j, inner_products, state):
+                    """Computes the partial derivative of the goodness-of-fit with
+                    respect to coordinate `j`, given the value of the `inner_products` and
+                    `state`.
 
-                Parameters
-                ----------
-                j : int
-                    Partial derivative is with respect to this coordinate
+                    Parameters
+                    ----------
+                    j : int
+                        Partial derivative is with respect to this coordinate
 
-                inner_products : numpy.array
-                    A numpy array of shape (n_samples,), containing the inner
-                    products (decision function) X.dot(w) + b where w is the weights
-                    and b the (optional) intercept.
+                    inner_products : numpy.array
+                        A numpy array of shape (n_samples,), containing the inner
+                        products (decision function) X.dot(w) + b where w is the weights
+                        and b the (optional) intercept.
 
-                state : StateERM
-                    The state of the ERM estimator (not used here, but this allows
-                    all estimators to have the same prototypes for `partial_deriv`).
+                    state : StateERM
+                        The state of the ERM estimator (not used here, but this allows
+                        all estimators to have the same prototypes for `partial_deriv`).
 
-                Returns
-                -------
-                output : float
-                    The value of the partial derivative
-                """
-                deriv_sum = 0.0
-                for i in range(y.shape[0]):
-                    deriv_sum += deriv_loss(y[i], inner_products[i]) * X[i, j]
-                return deriv_sum / n_samples
+                    Returns
+                    -------
+                    output : float
+                        The value of the partial derivative
+                    """
+                    deriv_sum = 0.0
+                    if j == 0:
+                        for i in range(n_samples):
+                            deriv_sum += deriv_loss(y[i], inner_products[i])
+                        return deriv_sum / n_samples
+                    else:
+                        for i in range(n_samples):
+                            deriv_sum += (
+                                deriv_loss(y[i], inner_products[i]) * X[i, j - 1]
+                            )
+                        return deriv_sum / n_samples
 
-            return partial_deriv
+                return partial_deriv
+
+            else:
+
+                @jit(**jit_kwargs)
+                def partial_deriv(j, inner_products, state):
+                    """Computes the partial derivative of the goodness-of-fit with
+                    respect to coordinate `j`, given the value of the `inner_products` and
+                    `state`.
+
+                    Parameters
+                    ----------
+                    j : int
+                        Partial derivative is with respect to this coordinate
+
+                    inner_products : numpy.array
+                        A numpy array of shape (n_samples,), containing the inner
+                        products (decision function) X.dot(w) + b where w is the weights
+                        and b the (optional) intercept.
+
+                    state : StateERM
+                        The state of the ERM estimator (not used here, but this allows
+                        all estimators to have the same prototypes for `partial_deriv`).
+
+                    Returns
+                    -------
+                    output : float
+                        The value of the partial derivative
+                    """
+                    deriv_sum = 0.0
+                    for i in range(y.shape[0]):
+                        deriv_sum += deriv_loss(y[i], inner_products[i]) * X[i, j]
+                    return deriv_sum / n_samples
+
+                return partial_deriv
 
     def grad_factory(self):
         """Gradient factory. This returns a jit-compiled function allowing to
@@ -310,9 +505,137 @@ class ERM(Estimator):
             return grad
 
 
+#
+#
+#  # @njit(parallel=True)
+#  @njit
+#  def col_squared_norm_dense(n_samples, n_features, X, fit_intercept, out):
+#      if fit_intercept:
+#          # First squared norm is n_samples
+#          out[0] = n_samples
+#          for j in range(1, n_features + 1):
+#              for i in range(n_samples):
+#                  out[j] += X[i, j - 1] * X[i, j - 1]
+#      else:
+#          for j in range(n_features):
+#              for i in range(n_samples):
+#                  out[j] += X[i, j] * X[i, j]
+#
+#
+#  # TODO: put these functions in the strategy
+#
+#  # @njit(parallel=True)
+#  @njit
+#  def col_squared_norm_sparse(
+#      n_samples, n_features, X_indptr, X_data, fit_intercept, out
+#  ):
+#      # TODO: use prange ?
+#      # This assumes that the matrix is in CSC format
+#      if fit_intercept:
+#          # First squared norm is n_samples
+#          out[0] = n_samples
+#          # Flat version instead of nested loop
+#          for j in range(0, n_features):
+#              col_start = X_indptr[j]
+#              col_end = X_indptr[j + 1]
+#              for idx in range(col_start, col_end):
+#                  out[j + 1] += X_data[idx] * X_data[idx]
+#      else:
+#          for j in range(n_features):
+#              col_start = X_indptr[j]
+#              col_end = X_indptr[j + 1]
+#              for idx in range(col_start, col_end):
+#                  out[j] += X_data[idx] * X_data[idx]
+#
+#
+#  def col_squared_norm(X, fit_intercept):
+#      # At this point X must be dense or CSC and nothing else
+#      n_samples, n_features = X.shape
+#      if fit_intercept:
+#          out = np.zeros(n_features + 1)
+#      else:
+#          out = np.zeros(n_features)
+#      if issparse(X):
+#          col_squared_norm_sparse(
+#              n_samples, n_features, X.indptr, X.data, fit_intercept, out
+#          )
+#      else:
+#          col_squared_norm_dense(n_samples, n_features, X, fit_intercept, out)
+#      return out
+#
+#
+#  def erm_strategy_factory(loss, X, y, fit_intercept, **kwargs):
+#      @njit
+#      def grad_coordinate(j, inner_products):
+#          return grad_coordinate_erm(
+#              loss.derivative, j, X, y, inner_products, fit_intercept
+#
+#      if issparse(X):
+#          X_indices = X.indices
+#          X_indptr = X.indptr
+#          X_data = X.data
+#
+#          @njit
+#          def grad_coordinate_sparse(j, inner_products):
+#              return grad_coordinate_erm_sparse(
+#                  loss.derivative,
+#                  j,
+#                  X_indices,
+#                  X_indptr,
+#                  X_data,
+#                  y,
+#                  inner_products,
+#                  fit_intercept,
+#              )
+#
+#          return Strategy(
+#              grad_coordinate=grad_coordinate_sparse, n_samples_in_block=None,
+#          )
+#      else:
+#
+#          @njit
+#          def grad_coordinate_dense(j, inner_products):
+#              return grad_coordinate_erm_dense(
+#                  loss.derivative, j, X, y, inner_products, fit_intercept
+#              )
+
+
 ################################################################
 # Median of means estimator (MOM)
 ################################################################
+
+
+@jit(**jit_kwargs)
+def median_of_means(x, block_size):
+    n = x.shape[0]
+    n_blocks = int(n // block_size)
+    last_block_size = n % block_size
+    if last_block_size == 0:
+        block_means = np.empty(n_blocks, dtype=x.dtype)
+    else:
+        block_means = np.empty(n_blocks + 1, dtype=x.dtype)
+
+    # TODO:instanciates in the closure
+    # This shuffle or the indexes to get different blocks each time
+    permuted_indices = np.random.permutation(n)
+    sum_block = 0.0
+    n_block = 0
+    for i in range(n):
+        idx = permuted_indices[i]
+        # Update current sum in the block
+        sum_block += x[idx]
+        if (i != 0) and ((i + 1) % block_size == 0):
+            # It's the end of the block, save its mean
+            block_means[n_block] = sum_block / block_size
+            n_block += 1
+            sum_block = 0.0
+
+    if last_block_size != 0:
+        block_means[n_blocks] = sum_block / last_block_size
+
+    mom = np.median(block_means)
+    return mom  # , blocks_means
+
 
 """
 `StateMOM` is a place-holder for the MOM estimator containing:
@@ -772,21 +1095,23 @@ def standard_catoni_estimator(x, eps=0.001):
 
 
 ################################################################
-# Holland Catoni (Holland et al.)
+# Catoni-Holland estimator (Holland et al.)
 ################################################################
 
-StateHollandCatoni = namedtuple(
-    "StateHollandCatoni", ["deriv_samples", "deriv_samples_outer_prods", "gradient"]
+
+StateCH = namedtuple(
+    "StateCH", ["deriv_samples", "deriv_samples_outer_prods", "gradient"]
 )
 
 
-class HollandCatoni(Estimator):
+class CH(Estimator):
+    """Catoni-Holland estimator"""
     def __init__(self, X, y, loss, fit_intercept, eps=0.001):
         Estimator.__init__(self, X, y, loss, fit_intercept)
         self.eps = eps
 
     def get_state(self):
-        return StateHollandCatoni(
+        return StateCH(
             deriv_samples=np.empty(self.n_samples, dtype=np_float),
             deriv_samples_outer_prods=np.empty(self.n_samples, dtype=np_float),
             gradient=np.empty(

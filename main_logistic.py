@@ -1,6 +1,7 @@
 import numpy as np
 from numpy.random.mtrand import multivariate_normal
 from scipy.linalg import toeplitz
+from scipy.sparse import csr_matrix, csc_matrix
 
 # from linlearn.model import Logistic
 # from linlearn.model.logistic import sigmoid
@@ -26,12 +27,22 @@ from linlearn._loss import (
 from sklearn.preprocessing import StandardScaler
 
 
-def simulate(n_samples, w0, b0=None):
+def simulate(n_samples, w0, b0=None, matrix_type="f", sparsify=True):
     n_features = w0.shape[0]
     cov = toeplitz(0.5 ** np.arange(0, n_features))
     X = multivariate_normal(np.zeros(n_features), cov, size=n_samples)
 
-    X = StandardScaler().fit_transform(X)
+    if sparsify:
+        X[X < 0.0] = 0.0
+    if matrix_type == "f":
+        X = np.asfortranarray(X)
+    elif matrix_type == "c":
+        X = np.ascontiguousarray(X)
+    elif matrix_type == "csc":
+        X = csc_matrix(X)
+    else:
+        X = csr_matrix(X)
+
     logits = X.dot(w0)
     if b0 is not None:
         logits += b0
@@ -42,10 +53,10 @@ def simulate(n_samples, w0, b0=None):
     return X, y
 
 
-n_samples = 100_000
-# n_samples = 1000
+# n_samples = 100_000
 # n_samples = 1_000
-n_features = 100
+n_samples = 1000
+n_features = 5
 fit_intercept = True
 
 coef0 = np.random.randn(n_features)
@@ -54,7 +65,7 @@ if fit_intercept:
 else:
     intercept0 = None
 
-X, y = simulate(n_samples, coef0, intercept0)
+X, y = simulate(n_samples, coef0, intercept0, matrix_type="csc", sparsify=True)
 
 # if fit_intercept:
 #     w = np.zeros(n_features + 1)
@@ -84,18 +95,18 @@ from sklearn.metrics import log_loss
 penalty = "l2"
 C = 10
 tol = 1e-13
-max_iter = 50
+max_iter = 100
 verbose = True
 
 args = {
     "loss": "logistic",
     # "estimator": "mom",
-    "estimator": "erm",
+    # "estimator": "erm",
     # "estimator": "tmean",
     # "estimator": "catoni",
     # "block_size": 0.5,
     # "percentage": 0.01,
-    "solver": "svrg",
+    "solver": "cgd",
     "penalty": penalty,
     "l1_ratio": 1.0,
     "tol": tol,
@@ -148,8 +159,8 @@ for estimator in estimators:
 # print(clf)
 # print(clf.intercept_, clf.coef_.ravel())
 
-from linlearn._solver import plot_history
-
-plot_history(
-    learners, x="epoch", y="obj", log_scale=True, labels=estimators, dist_min=True
-)
+# from linlearn._solver import plot_history
+#
+# plot_history(
+#     learners, x="epoch", y="obj", log_scale=True, labels=estimators, dist_min=True
+# )
