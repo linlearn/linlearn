@@ -18,19 +18,20 @@ from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import safe_sparse_dot
 
-from ._loss import Logistic, LeastSquares, steps_factory
+from ._loss import Logistic, LeastSquares, SquaredHinge, steps_factory
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
-from ._solver import CGD, GD, SGD, SVRG, SAGA, History
+from ._solver import CGD, GD, SGD, SVRG, SAGA, batch_GD, History
 from ._estimator import ERM, MOM, TMean, Implicit, GMOM, HollandCatoni
 
 
 # TODO: serialization
 
+
 class BaseLearner(ClassifierMixin, BaseEstimator):
-    _losses = ["logistic", "leastsquares"]
+    _losses = ["logistic", "leastsquares", "squaredhinge"]
     _penalties = ["none", "l2", "l1", "elasticnet"]
     _estimators = ["erm", "mom", "tmean", "implicit", "gmom", "holland_catoni"]
-    _solvers = ["cgd", "gd", "sgd", "svrg", "saga"]
+    _solvers = ["cgd", "gd", "sgd", "svrg", "saga", "batch_gd"]
 
     def __init__(
         self,
@@ -52,7 +53,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         warm_start=False,
         n_jobs=None,
         l1_ratio=0.5,
-        sgd_exponent=0.5
+        sgd_exponent=0.5,
+        cgd_IS=False,
     ):
         self.penalty = penalty
         self.C = C
@@ -72,6 +74,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         self.n_jobs = n_jobs
         self.l1_ratio = l1_ratio
         self.sgd_exponent = sgd_exponent
+        self.cgd_IS = cgd_IS
 
         self.history_ = None
         self.intercept_ = None
@@ -255,6 +258,17 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         else:
             self._sgd_exponent = float(val)
 
+    @property
+    def cgd_IS(self):
+        return self._cgd_IS
+
+    @cgd_IS.setter
+    def cgd_IS(self, val):
+        if not isinstance(val, bool):
+            raise ValueError("cgd_IS must be a boolean; got (cgd_IS=%r)" % val)
+        else:
+            self._cgd_IS = val
+
     # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None
 
     def check_estimator_solver_combination(self, estimator, solver):
@@ -290,6 +304,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return Logistic()
         elif self.loss == "leastsquares":
             return LeastSquares()
+        elif self.loss == "squaredhinge":
+            return SquaredHinge()
         else:
             raise ValueError("Loss unknown")
 
@@ -373,6 +389,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.random_state,
                 steps,
                 history,
+                importance_sampling=self.cgd_IS,
             )
 
         elif self.solver == "gd":
@@ -473,6 +490,37 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.random_state,
                 step,
                 history,
+            )
+        elif self.solver == "batch_gd":
+            # Get the gradient descent steps for each coordinate
+
+            steps_func = steps_factory(
+                fit_intercept=self.fit_intercept,
+                estimator=self.estimator,
+                percentage=self.percentage,
+                eps=self.eps,
+                n_samples_in_block=n_samples_in_block,
+            )
+            step = self.step_size * np.min(steps_func(loss.lip, X))
+            # Create an history object for the solver
+            history = History(
+                "batch_GD", self.max_iter, self.verbose, trackers=trackers
+            )
+            self.history_ = history
+
+            return batch_GD(
+                X,
+                y,
+                loss,
+                self.fit_intercept,
+                estimator,
+                penalty,
+                self.max_iter,
+                self.tol,
+                self.random_state,
+                step,
+                history,
+                batch_size=self.block_size,
             )
 
         else:
@@ -781,7 +829,8 @@ class BinaryClassifier(BaseLearner):
         verbose=0,
         warm_start=False,
         n_jobs=None,
-        l1_ratio=0.5
+        l1_ratio=0.5,
+        cgd_IS=False,
     ):
         super(BinaryClassifier, self).__init__(
             penalty=penalty,
@@ -801,6 +850,7 @@ class BinaryClassifier(BaseLearner):
             warm_start=warm_start,
             n_jobs=n_jobs,
             l1_ratio=l1_ratio,
+            cgd_IS=cgd_IS,
         )
 
         self.class_weight = class_weight
@@ -929,7 +979,8 @@ class Regressor(BaseLearner, RegressorMixin):
         verbose=0,
         warm_start=False,
         n_jobs=None,
-        l1_ratio=0.5
+        l1_ratio=0.5,
+        cgd_IS=False,
     ):
         super(Regressor, self).__init__(
             penalty=penalty,
@@ -949,6 +1000,7 @@ class Regressor(BaseLearner, RegressorMixin):
             warm_start=warm_start,
             n_jobs=n_jobs,
             l1_ratio=l1_ratio,
+            cgd_IS=cgd_IS,
         )
 
     def predict(self, X):

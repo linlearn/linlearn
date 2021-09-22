@@ -98,7 +98,7 @@ def steps_factory(
                     col_j_squared_norm = 0.0
                     for i in range(n_samples):
                         col_j_squared_norm += X[i, j - 1] ** 2
-                    steps[j] = n_samples / (lip_const * col_j_squared_norm)
+                    steps[j] = n_samples / (lip_const * max(col_j_squared_norm, 1e-8))
                 return steps
 
             return steps_func
@@ -112,7 +112,7 @@ def steps_factory(
                     col_j_squared_norm = 0.0
                     for i in range(n_samples):
                         col_j_squared_norm += X[i, j - 1] ** 2
-                    steps[j] = n_samples / (lip_const * col_j_squared_norm)
+                    steps[j] = n_samples / (lip_const * max(col_j_squared_norm, 1e-8))
                 return steps
 
             return steps_func
@@ -217,7 +217,12 @@ def steps_factory(
                     squared_coordinates.sort()
 
                     steps[j + 1] = 1 / (
-                        np.mean(squared_coordinates[n_excluded_tails:-n_excluded_tails])
+                        max(
+                            np.mean(
+                                squared_coordinates[n_excluded_tails:-n_excluded_tails]
+                            ),
+                            1e-8,
+                        )
                         * lip_const
                     )
 
@@ -238,7 +243,12 @@ def steps_factory(
                     squared_coordinates.sort()
 
                     steps[j] = 1 / (
-                        np.mean(squared_coordinates[n_excluded_tails:-n_excluded_tails])
+                        max(
+                            np.mean(
+                                squared_coordinates[n_excluded_tails:-n_excluded_tails]
+                            ),
+                            1e-8,
+                        )
                         * lip_const
                     )
 
@@ -374,6 +384,38 @@ class LeastSquares(Loss):
         @jit(**jit_kwargs)
         def deriv(y, z):
             return z - y
+
+        return deriv
+
+
+################################################################
+# Squared-Hinge loss
+################################################################
+
+
+class SquaredHinge(Loss):
+    def __init__(self):
+        self.lip = 1
+
+    def value_factory(self):
+        @jit(**jit_kwargs)
+        def value(y, z):
+            agreement = y * z
+            if agreement > 1:
+                return 0.0
+            else:
+                return 0.5 * (1 - agreement) ** 2
+
+        return value
+
+    def deriv_factory(self):
+        @jit(**jit_kwargs)
+        def deriv(y, z):
+            agreement = y * z
+            if agreement > 1:
+                return 0.0
+            else:
+                return -y * (1 - agreement)
 
         return deriv
 

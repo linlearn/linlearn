@@ -8,26 +8,16 @@ import sys
 import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
-<<<<<<< HEAD
-import time
-import os
-
-=======
 from collections import namedtuple
 import os
 
 
->>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
 def ensure_directory(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-<<<<<<< HEAD
-ensure_directory('exp_archives/')
-=======
 
 ensure_directory("exp_archives/")
->>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
 
 
 file_handler = logging.FileHandler(filename="exp_archives/linreg_exp.log")
@@ -41,39 +31,26 @@ logging.basicConfig(
     handlers=handlers,
 )
 
-save_results = False
+save_results = True
 save_fig = True
 
-logging.info(128 * "=")
+logging.info(48 * "=")
 logging.info("Running new experiment session")
-logging.info(128 * "=")
+logging.info(48 * "=")
 
 if not save_results:
     logging.info("WARNING : results will NOT be saved at the end of this session")
 
-<<<<<<< HEAD
-n_repeats = 10
-=======
 n_repeats = 30
->>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
 
-n_samples = 500
+n_samples = 1000
 n_features = 5
 
 fit_intercept = False
 
-n_outliers = 10
-outliers = False
+block_sizes = {"mom_cgd": 0.02, "implicit_gd": 0.02, "gmom_gd": 0.02}  # 555555}
 
-<<<<<<< HEAD
-MOMreg_block_size = 0.02
-=======
-MOMreg_block_size = 0.07
->>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
-
-prasad_delta = 0.01
-
-random_seed = 42
+random_seed = 43
 
 noise_sigma = {
     "gaussian": 20,
@@ -90,32 +67,23 @@ Sigma_X = np.diag(np.arange(1, n_features + 1))
 mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
 
 w_star_dist = "uniform"
-<<<<<<< HEAD
-noise_dist = "lognormal"
-
-step_size = 0.05
-T = 250
-=======
 noise_dist = "student"
 
 step_size = 0.05
 T = 150
->>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
+
+outlier_types = [5]
+outliers = True
 
 logging.info(
     "Lauching experiment with parameters : \n n_repeats = %d , n_samples = %d , n_features = %d , outliers = %r"
     % (n_repeats, n_samples, n_features, outliers)
 )
 if outliers:
-    logging.info("n_outliers = %d" % n_outliers)
-logging.info("block size for MOM_CGD is %f" % MOMreg_block_size)
+    logging.info("outlier types :  %r" % outlier_types)
+logging.info("block sizes are : %r" % block_sizes)
 logging.info(
-<<<<<<< HEAD
-    "random_seed = %d , mu_X = %r , Sigma_X = %r"
-    % (random_seed, mu_X, Sigma_X)
-=======
     "random_seed = %d , mu_X = %r , Sigma_X = %r" % (random_seed, mu_X, Sigma_X)
->>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
 )
 logging.info(
     "w_star_dist = %s , noise_dist = %s , sigma = %f"
@@ -125,30 +93,39 @@ logging.info("step_size = %f , T = %d" % (step_size, T))
 
 rng = np.random.RandomState(random_seed)  ## Global random generator
 
-<<<<<<< HEAD
-# def gmom(xs, tol=1e-7):
-#     y = np.average(xs, axis=0)
-#     eps = 1e-10
-#     delta = 1
-#     niter = 0
-#     while delta > tol:
-#         xsy = xs - y
-#         dists = np.linalg.norm(xsy, axis=1)
-#         inv_dists = 1 / dists
-#         mask = dists < eps
-#         inv_dists[mask] = 0
-#         nb_too_close = (mask).sum()
-#         ry = np.linalg.norm(np.dot(inv_dists, xsy))
-#         cst = nb_too_close / ry
-#         y_new = max(0, 1 - cst) * np.average(xs, axis=0, weights=inv_dists) + min(1, cst) * y
-#         delta = np.linalg.norm(y - y_new)
-#         y = y_new
-#         niter += 1
-#     # print(niter)
-#     return y
 
-=======
->>>>>>> db33ed04450be1678f384590a2526a9bda6b328c
+def generate_outliers(y, number=10, type=1):
+    dir = np.random.randn(n_features)
+    dir /= np.sqrt((dir * dir).sum())  # random direction
+    if type == 0:
+        X_out = np.max(Sigma_X) * np.ones((number, n_features))
+        y_out = 2 * np.ones(number) * np.max(np.abs(y))
+    elif type == 1:
+        X_out = 2 * np.max(Sigma_X) * dir + np.random.randn(number, n_features)
+        y_out = 2 * np.ones(number) * np.max(np.abs(y))
+    elif type == 2:
+        X_out = np.max(Sigma_X) * np.ones((number, n_features))
+        y_out = 2 * (2 * np.random.randint(2, size=number) - 1) * np.max(np.abs(y))
+    elif type == 3:
+        X_out = np.ones((number, n_features))
+        y_out = np.ones(number)
+    elif type == 4:
+        X_out = 100 * np.max(Sigma_X) * dir + np.random.randn(number, n_features)
+        y_out = np.random.randint(2, size=number)
+    elif type == 5:
+        X_out = np.random.randn(number, n_features)
+        X_out = (
+            100 * np.max(Sigma_X) * np.diag(1 / np.linalg.norm(X_out, axis=1)) @ X_out
+        )
+        y_out = np.max(np.abs(y)) * (
+            (2 * np.random.randint(2, size=number) - 1)
+            + (2 * np.random.rand(number) - 1) / 5
+        )
+    else:
+        raise Exception("Unknown outliers type")
+
+    return X_out, y_out
+
 
 def gen_w_star(d, dist="normal"):
     if dist == "normal":
@@ -185,7 +162,7 @@ def generate_pareto_noise_sample(n_samples, sigma=10, pareto=2.05):
     return noise, expect_noise, noise_2nd_moment
 
 
-def generate_student_noise_sample(n_samples, sigma=10, df=2.2):
+def generate_student_noise_sample(n_samples, sigma=10, df=2.1):
     noise = sigma * rng.standard_t(df, n_samples)
     expect_noise = 0
     noise_2nd_moment = expect_noise ** 2 + (sigma ** 2) * df / (df - 2)
@@ -263,17 +240,18 @@ Algorithm = StateHollandCatoni = namedtuple(
     "Algorithm", ["name", "solver", "estimator", "max_iter"]
 )
 
-algorithms = [Algorithm(name="erm_gd", solver="gd", estimator="erm", max_iter=T),
-              Algorithm(name="mom_cgd", solver="cgd", estimator="mom", max_iter=T),
-              Algorithm(name="catoni_cgd", solver="cgd", estimator="holland_catoni", max_iter=T),
-              Algorithm(name="tmean_cgd", solver="cgd", estimator="tmean", max_iter=T),
-              Algorithm(name="holland_gd", solver="gd", estimator="holland_catoni", max_iter=T),
-              Algorithm(name="gmom_gd", solver="gd", estimator="gmom", max_iter=T),
-              Algorithm(name="implicit_gd", solver="gd", estimator="implicit", max_iter=T),
-              #Algorithm(name="implicit_cgd", solver="cgd", estimator="implicit", max_iter=T),
-              #Algorithm(name="tmean_gd", solver="gd", estimator="tmean", max_iter=T),
-              #Algorithm(name="mom_gd", solver="gd", estimator="mom", max_iter=T),
-              ]
+algorithms = [
+    Algorithm(name="erm_gd", solver="gd", estimator="erm", max_iter=T),
+    Algorithm(name="mom_cgd", solver="cgd", estimator="mom", max_iter=T),
+    Algorithm(name="catoni_cgd", solver="cgd", estimator="holland_catoni", max_iter=T),
+    # Algorithm(name="tmean_cgd", solver="cgd", estimator="tmean", max_iter=T),
+    Algorithm(name="holland_gd", solver="gd", estimator="holland_catoni", max_iter=T),
+    Algorithm(name="gmom_gd", solver="gd", estimator="gmom", max_iter=T),
+    Algorithm(name="implicit_gd", solver="gd", estimator="implicit", max_iter=T),
+    # Algorithm(name="implicit_cgd", solver="cgd", estimator="implicit", max_iter=T),
+    # Algorithm(name="tmean_gd", solver="gd", estimator="tmean", max_iter=T),
+    # Algorithm(name="mom_gd", solver="gd", estimator="mom", max_iter=T),
+]
 
 
 for rep in range(n_repeats):
@@ -295,18 +273,10 @@ for rep in range(n_repeats):
 
     # outliers
     if outliers:
-        X = np.concatenate(
-            (X, np.max(Sigma_X) * np.ones((n_outliers, n_features))), axis=0
-        )
-        # y = np.concatenate((y, 10*np.ones(n_outliers)*np.max(np.abs(y))))
-        y = np.concatenate(
-            (
-                y,
-                2
-                * (2 * np.random.randint(2, size=n_outliers) - 1)  # np.ones(n_outliers)
-                * np.max(np.abs(y)),
-            )
-        )
+        for typ in outlier_types:
+            X_out, y_out = generate_outliers(y, type=typ)
+        X = np.concatenate((X, X_out), axis=0)
+        y = np.concatenate((y, y_out))
 
     logging.info("generating risks and gradients ...")
 
@@ -329,7 +299,9 @@ for rep in range(n_repeats):
     XXT = X.T @ X
     Xy = X.T @ y
 
-    Lip = np.linalg.eigh(XXT / X.shape[0])[0][-1]
+    # compute the Lipschitz constant for oracle GD without the outliers
+    XXT_clean = X[:n_samples, :].T @ X[:n_samples, :]
+    Lip = np.linalg.eigh(XXT_clean / n_samples)[0][-1]
 
     def empirical_gradient(w):
         return (XXT @ w - Xy) / n_samples
@@ -361,6 +333,9 @@ for rep in range(n_repeats):
             fit_intercept=fit_intercept,
             step_size=step_size,
             penalty="none",
+            block_size=block_sizes[algo.name]
+            if algo.name in block_sizes.keys()
+            else 0.07,
         )
         reg.fit(X, y, trackers=trackers)
         out[algo.name] = reg.history_.records
@@ -412,6 +387,7 @@ if save_results:
     now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
     ensure_directory("exp_archives/linreg")
     import subprocess
+
     # Get the commit number as a string
     commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
     commit = commit.decode("utf-8").strip()
@@ -426,7 +402,7 @@ logging.info("Plotting ...")
 
 line_width = 1.0
 
-g = sns.FacetGrid(data, col="metric", height=4, legend_out=True)
+g = sns.FacetGrid(data, col="metric", height=4, legend_out=True, sharey=False)
 g.map(sns.lineplot, "t", "value", "algo", lw=line_width, ci=None,).set(
     xlabel="", ylabel=""
 ).set(yscale="log")
@@ -440,28 +416,14 @@ axes[1].set_title("Excess risk")
 color_palette = []
 for line in axes[0].get_lines():
     color_palette.append(line.get_c())
-color_palette = color_palette[:7]
+color_palette = color_palette[: len(algorithms) + 1]
 
-# code_names = {
-#     "ERM": "erm",
-#     "empirical_gradient": "erm",
-#     "Holland_gradient": "holland",
-#     "true_gradient": "oracle",
-#     "mom_cgd": "mom_cgd",
-#     "Prasad_HeavyTail_gradient": "gmom_grad",
-#     "Lecue_gradient": "implicit",
-#     "catoni_cgd": "catoni_cgd",
-#     "tmean_cgd": "tmean_cgd",
-#     "Prasad_outliers_gradient": "Prasad_outliers_gradient",
-# }
 
 # plt.legend(
-axes[0].legend(
-    list(
-        data["algo"].unique()
-    ),  # [code_names[name] for name in data["algo"].unique()],
+axes[1].legend(
+    list(data["algo"].unique()),
     # bbox_to_anchor=(0.3, 0.7, 1.0, 0.0),
-    loc="lower left",
+    loc="lower left",  # "upper right",
     ncol=2,
     borderaxespad=0.2,
     columnspacing=1.0,
@@ -481,56 +443,57 @@ axes[0].legend(
 #     )
 # )
 
-# from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-#
-# axins = inset_axes(axes[-1], "40%", "30%", loc="lower left", borderpad=1)
-#
-# sns.lineplot(
-#     x="t",
-#     y="value",
-#     hue="algo",
-#     lw=line_width,
-#     ci=None,
-#     data=data.query(
-#         "t >= %d and metric=='excess_risk' and algo!='true_gradient'" % ((T * 4) // 5)
-#     ),
-#     ax=axins,
-#     legend=False,
-#     palette=color_palette[:-1],
-# ).set(
-#     yscale="log"
-# )  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
-#
-#
-# axes[-1].indicate_inset_zoom(axins, edgecolor="black")
-# axins.xaxis.set_visible(False)
-# axins.yaxis.set_visible(False)
-#
-# axins0 = inset_axes(axes[0], "40%", "30%", loc="lower left", borderpad=1)
-#
-# sns.lineplot(
-#     x="t",
-#     y="value",
-#     hue="algo",
-#     lw=line_width,
-#     ci=None,
-#     data=data.query(
-#         "t >= %d and metric=='excess_empirical_risk' and algo!='empirical_gradient'"
-#         % ((T * 4) // 5)
-#     ),
-#     ax=axins0,
-#     legend=False,
-#     palette=color_palette[1:],
-# ).set(
-#     yscale="log"
-# )  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
-# axes[0].indicate_inset_zoom(axins0, edgecolor="black")
-# axins0.xaxis.set_visible(False)
-# axins0.yaxis.set_visible(False)
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
-# for i, dataset in enumerate(df["dataset"].unique()):
-#     axes[i].set_xticklabels([0, 1, 2, 5, 10, 20, 50], fontsize=14)
-#     axes[i].set_title(dataset, fontsize=18)
+zoom_on_excess_empirical_risk = False
+zoom_on_excess_risk = False
+
+if zoom_on_excess_risk:
+    axins = inset_axes(axes[-1], "40%", "30%", loc="lower left", borderpad=1)
+
+    sns.lineplot(
+        x="t",
+        y="value",
+        hue="algo",
+        lw=line_width,
+        ci=None,
+        data=data.query(
+            "t >= %d and metric=='excess_risk' and algo!='oracle' and algo!='erm_gd'"
+            % ((T * 4) // 5)
+        ),
+        ax=axins,
+        legend=False,
+        palette=color_palette[2:],
+    ).set(
+        yscale="log"
+    )  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
+
+    axes[-1].indicate_inset_zoom(axins, edgecolor="black")
+    axins.xaxis.set_visible(False)
+    axins.yaxis.set_visible(False)
+
+if zoom_on_excess_empirical_risk:
+    axins0 = inset_axes(axes[0], "40%", "30%", loc="lower left", borderpad=1)
+
+    sns.lineplot(
+        x="t",
+        y="value",
+        hue="algo",
+        lw=line_width,
+        ci=None,
+        data=data.query(
+            "t >= %d and metric=='excess_empirical_risk' and algo!='erm_gd'"
+            % ((T * 4) // 5)
+        ),
+        ax=axins0,
+        legend=False,
+        palette=color_palette[:1] + color_palette[2:],
+    ).set(
+        yscale="log"
+    )  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
+    axes[0].indicate_inset_zoom(axins0, edgecolor="black")
+    axins0.xaxis.set_visible(False)
+    axins0.yaxis.set_visible(False)
 
 plt.tight_layout()
 plt.show()
@@ -542,7 +505,7 @@ if save_fig:
         n_repeats,
         noise_dist,
         noise_sigma[noise_dist],
-        MOMreg_block_size,
+        block_sizes["mom_cgd"],
         w_star_dist,
     )
     ensure_directory("exp_archives/linreg/")
