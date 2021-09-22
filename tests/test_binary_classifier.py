@@ -252,18 +252,22 @@ def test_tol():
     assert isinstance(clf.tol, float)
     assert clf.tol == 3.14e-3
 
-    for tol in [-1, complex(1.0, 1.0), "1.0"]:#, 0.0]:
+    for tol in [-1, complex(1.0, 1.0), "1.0"]:  # , 0.0]:
         with pytest.raises(ValueError) as exc_info:
             clf.tol = tol
         assert exc_info.type is ValueError
-        match = "Tolerance for stopping criteria must be non negative; got (tol=%r)" % tol
+        match = (
+            "Tolerance for stopping criteria must be non negative; got (tol=%r)" % tol
+        )
         assert exc_info.value.args[0] == match
 
-    for tol in [-1, complex(1.0, 1.0), "1.0"]:#, 0.0]:
+    for tol in [-1, complex(1.0, 1.0), "1.0"]:  # , 0.0]:
         with pytest.raises(ValueError) as exc_info:
             BinaryClassifier(tol=tol)
         assert exc_info.type is ValueError
-        match = "Tolerance for stopping criteria must be non negative; got (tol=%r)" % tol
+        match = (
+            "Tolerance for stopping criteria must be non negative; got (tol=%r)" % tol
+        )
         assert exc_info.value.args[0] == match
 
     setattr(clf, "tol", 3.14)
@@ -370,13 +374,16 @@ def simulate_linear(n_samples, random_state=2):
 
 
 penalties = BinaryClassifier._penalties
+# (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3)
+grid_C = (1e-3, 1.0, 1e3)
+grid_l1_ratio = (0.1, 0.5, 0.9)
 
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
 @pytest.mark.parametrize("penalty", penalties)
-@pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
-@pytest.mark.parametrize("l1_ratio", (0.1, 0.5, 0.9))
-@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))#, "sgd",))#
+@pytest.mark.parametrize("C", grid_C)
+@pytest.mark.parametrize("l1_ratio", grid_l1_ratio)
+@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))  # , "sgd",))
 def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, solver):
     """
     This is a test that checks on many combinations that BinaryClassifier gets the
@@ -452,9 +459,9 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, solver):
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
 @pytest.mark.parametrize("penalty", penalties)
-@pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
-@pytest.mark.parametrize("l1_ratio", (0.1, 0.5, 0.9))
-@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))#, "sgd",))#
+@pytest.mark.parametrize("C", grid_C)
+@pytest.mark.parametrize("l1_ratio", grid_l1_ratio)
+@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))  # , "sgd",))
 def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio, solver):
     """
     This is a test that checks on many combinations that BinaryClassifier gets the
@@ -510,9 +517,9 @@ def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio, solver):
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
 @pytest.mark.parametrize("penalty", penalties)
-@pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
-@pytest.mark.parametrize("l1_ratio", (0.1, 0.5, 0.9))
-@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))#, "sgd",))#
+@pytest.mark.parametrize("C", grid_C)
+@pytest.mark.parametrize("l1_ratio", grid_l1_ratio)
+@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))  # , "sgd",))#
 def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio, solver):
     """
     This is a test that checks on many combinations that BinaryClassifier gets the
@@ -569,7 +576,7 @@ def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio, solver):
 
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
-@pytest.mark.parametrize("C", (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3))
+@pytest.mark.parametrize("C", grid_C)
 @pytest.mark.parametrize("solver", ("cgd", "gd", "sgd", "svrg", "saga", "sgd"))
 def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C, solver):
     n_samples = 128

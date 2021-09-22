@@ -11,7 +11,7 @@ from collections import namedtuple
 # from linlearn.model.utils import inner_prods
 
 # from .strategy import grad_coordinate_erm, decision_function, strategy_classes
-from ._estimator import decision_function
+# from ._estimator import decision_function_
 from ._loss import decision_function_factory
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float, np_float
 
@@ -53,19 +53,20 @@ jit_kwargs = {
 # maxcvfloat
 # The maximum constraint violation.
 
+
 class Solver(ABC):
     def __init__(
-            self,
-            X,
-            y,
-            loss,
-            fit_intercept,
-            estimator,
-            penalty,
-            max_iter,
-            tol,
-            random_state,
-            history,
+        self,
+        X,
+        y,
+        loss,
+        fit_intercept,
+        estimator,
+        penalty,
+        max_iter,
+        tol,
+        random_state,
+        history,
     ):
         self.X = X
         self.y = y
@@ -116,7 +117,7 @@ class Solver(ABC):
         X = self.X
         fit_intercept = self.fit_intercept
         inner_products = np.empty(self.n_samples, dtype=np_float)
-        coordinates = np.arange(self.n_weights, dtype=np.uintp)
+        coordinates = np.arange(self.n_weights, dtype=np.intp)
         weights = np.empty(self.n_weights, dtype=np_float)
         tol = self.tol
         max_iter = self.max_iter
@@ -132,6 +133,7 @@ class Solver(ABC):
 
         random_state = self.random_state
         if random_state is not None:
+
             @jit(**jit_kwargs)
             def numba_seed_numpy(rnd_state):
                 np.random.seed(rnd_state)
@@ -151,9 +153,7 @@ class Solver(ABC):
         # TODO: First value for tolerance is 1.0 or NaN
         # history.update(epoch=0, obj=obj, tol=1.0, update_bar=True)
         if dummy_first_step:
-            cycle(
-                coordinates, weights, inner_products, state_estimator
-            )
+            cycle(coordinates, weights, inner_products, state_estimator)
             if w0 is not None:
                 weights[:] = w0
             else:
@@ -214,7 +214,7 @@ class CGD(Solver):
             max_iter=max_iter,
             tol=tol,
             random_state=random_state,
-            history=history
+            history=history,
         )
 
         # Automatic steps
@@ -322,20 +322,21 @@ class CGD(Solver):
 
             return cycle
 
+
 class GD(Solver):
     def __init__(
-            self,
-            X,
-            y,
-            loss,
-            fit_intercept,
-            estimator,
-            penalty,
-            max_iter,
-            tol,
-            random_state,
-            step,
-            history,
+        self,
+        X,
+        y,
+        loss,
+        fit_intercept,
+        estimator,
+        penalty,
+        max_iter,
+        tol,
+        random_state,
+        step,
+        history,
     ):
         super(GD, self).__init__(
             X=X,
@@ -347,7 +348,7 @@ class GD(Solver):
             max_iter=max_iter,
             tol=tol,
             random_state=random_state,
-            history=history
+            history=history,
         )
 
         # Automatic steps
@@ -376,9 +377,7 @@ class GD(Solver):
 
                 decision_function(weights, inner_products)
 
-                grad_estimator(
-                    inner_products, state_estimator
-                )
+                grad_estimator(inner_products, state_estimator)
                 grad = state_estimator.gradient
                 w_new = weights - step * grad
 
@@ -410,9 +409,7 @@ class GD(Solver):
                 max_abs_weight = 0.0
                 decision_function(weights, inner_products)
 
-                grad_estimator(
-                    inner_products, state_estimator
-                )
+                grad_estimator(inner_products, state_estimator)
                 grad = state_estimator.gradient
                 w_new = weights - step * grad
                 for j in coordinates:
@@ -431,6 +428,7 @@ class GD(Solver):
 
             return cycle
 
+
 class SGD(Solver):
     def __init__(
         self,
@@ -445,7 +443,7 @@ class SGD(Solver):
         random_state,
         step,
         history,
-        exponent=0.5
+        exponent=0.5,
     ):
         super(SGD, self).__init__(
             X=X,
@@ -457,7 +455,7 @@ class SGD(Solver):
             max_iter=max_iter,
             tol=tol,
             random_state=random_state,
-            history=history
+            history=history,
         )
 
         # Automatic steps
@@ -476,11 +474,11 @@ class SGD(Solver):
         deriv_loss = loss.deriv_factory()
 
         penalize = self.penalty.apply_one_unscaled_factory()
-        step = self.step #/ n_samples
+        step = self.step  # / n_samples
 
         # The learning rates scaled by the strength of the penalization (we use the
         # apply_one_unscaled penalization function)
-        scaled_step = self.penalty.strength * self.step #/ n_samples
+        scaled_step = self.penalty.strength * self.step  # / n_samples
 
         if fit_intercept:
 
@@ -498,7 +496,10 @@ class SGD(Solver):
 
                     w_new -= step * grad / ((1 + epoch * n_samples + i) ** exponent)
                     for j in range(1, n_weights):
-                        w_new[j] = penalize(w_new[j], scaled_step / ((1 + epoch * n_samples + i) ** exponent))
+                        w_new[j] = penalize(
+                            w_new[j],
+                            scaled_step / ((1 + epoch * n_samples + i) ** exponent),
+                        )
                 for j in range(n_weights):
                     # Update the maximum update change
                     abs_delta_j = fabs(w_new[j] - weights[j])
@@ -529,7 +530,10 @@ class SGD(Solver):
 
                     w_new -= step * grad / ((1 + epoch * n_samples + i) ** exponent)
                     for j in range(n_weights):
-                        w_new[j] = penalize(w_new[j], scaled_step / ((1 + epoch * n_samples + i) ** exponent))
+                        w_new[j] = penalize(
+                            w_new[j],
+                            scaled_step / ((1 + epoch * n_samples + i) ** exponent),
+                        )
                 for j in range(n_weights):
                     # Update the maximum update change
                     abs_delta_j = fabs(w_new[j] - weights[j])
@@ -559,6 +563,7 @@ class SGD(Solver):
 
         random_state = self.random_state
         if random_state is not None:
+
             @jit(**jit_kwargs)
             def numba_seed_numpy(rnd_state):
                 np.random.seed(rnd_state)
@@ -575,9 +580,7 @@ class SGD(Solver):
         # TODO: First value for tolerance is 1.0 or NaN
         # history.update(epoch=0, obj=obj, tol=1.0, update_bar=True)
         if dummy_first_step:
-            cycle(
-                weights, 0, state_estimator
-            )
+            cycle(weights, 0, state_estimator)
             if w0 is not None:
                 weights[:] = w0
             else:
@@ -586,9 +589,7 @@ class SGD(Solver):
         history.update(weights)
 
         for epoch in range(1, max_iter + 1):
-            max_abs_delta, max_abs_weight = cycle(
-                weights, epoch, state_estimator
-            )
+            max_abs_delta, max_abs_weight = cycle(weights, epoch, state_estimator)
             if max_abs_weight == 0.0:
                 current_tol = 0.0
             else:
@@ -635,7 +636,7 @@ class SVRG(Solver):
             max_iter=max_iter,
             tol=tol,
             random_state=random_state,
-            history=history
+            history=history,
         )
 
         # Automatic steps
@@ -650,7 +651,7 @@ class SVRG(Solver):
         n_weights = self.n_weights
         loss = self.loss
         deriv_loss = loss.deriv_factory()
-
+        decision_function = decision_function_factory(X, fit_intercept)
         penalize = self.penalty.apply_one_unscaled_factory()
         step = self.step / n_samples
 
@@ -668,7 +669,7 @@ class SVRG(Solver):
                 expanded_sample[0] = 1
                 mu = np.zeros(X.shape[1] + 1)
                 w_new = weights.copy()
-                decision_function(X, fit_intercept, weights, inner_products)
+                decision_function(weights, inner_products)
                 for i in range(n_samples):
                     derivative = deriv_loss(y[i], inner_products[i])
                     mu[0] += derivative
@@ -679,8 +680,10 @@ class SVRG(Solver):
                     ind = np.random.randint(n_samples)
                     expanded_sample[1:] = X[ind]
                     deriv_new = deriv_loss(y[ind], np.dot(X[ind], w_new[1:]) + w_new[0])
-                    deriv_tilde = deriv_loss(y[ind], np.dot(X[ind], weights[1:]) + weights[0])
-                    w_new -= step * ((deriv_new - deriv_tilde)*expanded_sample + mu)
+                    deriv_tilde = deriv_loss(
+                        y[ind], np.dot(X[ind], weights[1:]) + weights[0]
+                    )
+                    w_new -= step * ((deriv_new - deriv_tilde) * expanded_sample + mu)
 
                     for j in range(1, n_weights):
                         w_new[j] = penalize(w_new[j], scaled_step)
@@ -708,7 +711,7 @@ class SVRG(Solver):
                 mu = np.zeros(X.shape[1])
                 w_new = weights.copy()
 
-                decision_function(X, fit_intercept, weights, inner_products)
+                decision_function(weights, inner_products)
                 for i in range(n_samples):
                     mu += deriv_loss(y[i], inner_products[i]) * X[i]
                 mu /= n_samples
@@ -717,7 +720,7 @@ class SVRG(Solver):
                     ind = np.random.randint(n_samples)
                     deriv_new = deriv_loss(y[ind], np.dot(X[ind], w_new))
                     deriv_tilde = deriv_loss(y[ind], np.dot(X[ind], weights))
-                    w_new -= step * ((deriv_new - deriv_tilde)*X[ind] + mu)
+                    w_new -= step * ((deriv_new - deriv_tilde) * X[ind] + mu)
 
                     for j in range(n_weights):
                         w_new[j] = penalize(w_new[j], scaled_step)
@@ -736,20 +739,21 @@ class SVRG(Solver):
 
             return cycle
 
+
 class SAGA(Solver):
     def __init__(
-            self,
-            X,
-            y,
-            loss,
-            fit_intercept,
-            estimator,
-            penalty,
-            max_iter,
-            tol,
-            random_state,
-            step,
-            history,
+        self,
+        X,
+        y,
+        loss,
+        fit_intercept,
+        estimator,
+        penalty,
+        max_iter,
+        tol,
+        random_state,
+        step,
+        history,
     ):
         super(SAGA, self).__init__(
             X=X,
@@ -761,7 +765,7 @@ class SAGA(Solver):
             max_iter=max_iter,
             tol=tol,
             random_state=random_state,
-            history=history
+            history=history,
         )
 
         # Automatic steps
@@ -805,7 +809,9 @@ class SAGA(Solver):
                     new_j_inner_prod = np.dot(w_new[1:], X[j]) + w_new[0]
                     grad_update[0] = 1
                     grad_update[1:] = X[j]
-                    grad_update *= deriv_loss(y[j], new_j_inner_prod) - deriv_loss(y[j], inner_products[j])
+                    grad_update *= deriv_loss(y[j], new_j_inner_prod) - deriv_loss(
+                        y[j], inner_products[j]
+                    )
 
                     w_new -= step * (grad_update + mean_grad)
 
@@ -849,7 +855,10 @@ class SAGA(Solver):
                     j = np.random.randint(n_samples)
                     new_j_inner_prod = np.dot(w_new, X[j])
 
-                    grad_update[:] = (deriv_loss(y[j], new_j_inner_prod) - deriv_loss(y[j], inner_products[j])) * X[j]
+                    grad_update[:] = (
+                        deriv_loss(y[j], new_j_inner_prod)
+                        - deriv_loss(y[j], inner_products[j])
+                    ) * X[j]
                     inner_products[j] = new_j_inner_prod
 
                     w_new -= step * (grad_update + mean_grad)
@@ -898,6 +907,7 @@ class SAGA(Solver):
 
         random_state = self.random_state
         if random_state is not None:
+
             @jit(**jit_kwargs)
             def numba_seed_numpy(rnd_state):
                 np.random.seed(rnd_state)
@@ -915,15 +925,12 @@ class SAGA(Solver):
         # computations)
 
         if dummy_first_step:
-            cycle(
-                weights, inner_products, mean_grad, grad_update, True
-            )
+            cycle(weights, inner_products, mean_grad, grad_update, True)
             if w0 is not None:
                 weights[:] = w0
             else:
                 weights.fill(0.0)
             decision_function(weights, inner_products)
-
 
         # TODO: First value for tolerance is 1.0 or NaN
         # history.update(epoch=0, obj=obj, tol=1.0, update_bar=True)
@@ -955,211 +962,6 @@ class SAGA(Solver):
                 w=weights, n_iter=max_iter + 1, success=success, tol=tol, message=None
             )
 
-    # TODO: stopping criterion max(weigth difference) / max(weight) + duality gap
-    # TODO: and then use
-    # if w_max == 0.0 or d_w_max / w_max < d_w_tol or n_iter == max_iter - 1:
-    #     # the biggest coordinate update of this iteration was smaller than
-    #     # the tolerance: check the duality gap as ultimate stopping
-    #     # criterion
-    #
-    #     # XtA = np.dot(X.T, R) - l2_reg * W.T
-    #     for ii in range(n_features):
-    #         for jj in range(n_tasks):
-    #             XtA[ii, jj] = _dot(
-    #                 n_samples, X_ptr + ii * n_samples, 1, & R[0, jj], 1
-    #             ) - l2_reg * W[jj, ii]
-    #
-    #     # dual_norm_XtA = np.max(np.sqrt(np.sum(XtA ** 2, axis=1)))
-    #     dual_norm_XtA = 0.0
-    #     for ii in range(n_features):
-    #         # np.sqrt(np.sum(XtA ** 2, axis=1))
-    #         XtA_axis1norm = _nrm2(n_tasks, & XtA[ii, 0], 1)
-    #         if XtA_axis1norm > dual_norm_XtA:
-    #             dual_norm_XtA = XtA_axis1norm
-    #
-    #     # TODO: use squared L2 norm directly
-    #     # R_norm = linalg.norm(R, ord='fro')
-    #     # w_norm = linalg.norm(W, ord='fro')
-    #     R_norm = _nrm2(n_samples * n_tasks, & R[0, 0], 1)
-    #     w_norm = _nrm2(n_features * n_tasks, & W[0, 0], 1)
-    #     if (dual_norm_XtA > l1_reg):
-    #         const = l1_reg / dual_norm_XtA
-    #         A_norm = R_norm * const
-    #         gap = 0.5 * (R_norm ** 2 + A_norm ** 2)
-    #     else:
-    #         const = 1.0
-    #         gap = R_norm ** 2
-    #
-    #     # ry_sum = np.sum(R * y)
-    #     ry_sum = _dot(n_samples * n_tasks, & R[0, 0], 1, & Y[0, 0], 1)
-    #
-    #     # l21_norm = np.sqrt(np.sum(W ** 2, axis=0)).sum()
-    #     l21_norm = 0.0
-    #     for ii in range(n_features):
-    #         l21_norm += _nrm2(n_tasks, & W[0, ii], 1)
-    #
-    #         gap += l1_reg * l21_norm - const * ry_sum + \
-    #                0.5 * l2_reg * (1 + const ** 2) * (w_norm ** 2)
-    #
-    #         if gap < tol:
-    #             # return if we reached desired tolerance
-    #             break
-    #     else:
-    #         # for/else, runs if for doesn't end with a `break`
-    #         with gil:
-    #             warnings.warn("Objective did not converge. You might want to "
-    #                           "increase the number of iterations. Duality "
-    #                           "gap: {}, tolerance: {}".format(gap, tol),
-    #                           ConvergenceWarning)
-
-    # TODO: return more than just this... return an object that include for things than
-    #  this
-
-
-# Dans SAG critere d'arret :
-# if status == -1:
-#     break
-# # check if the stopping criteria is reached
-# max_change = 0.0
-# max_weight = 0.0
-# for idx in range(n_features * n_classes):
-#     max_weight = fmax
-#     {{name}}(max_weight, fabs(weights[idx]))
-#     max_change = fmax
-#     {{name}}(max_change,
-#              fabs(weights[idx] -
-#                   previous_weights[idx]))
-#     previous_weights[idx] = weights[idx]
-# if ((max_weight != 0 and max_change / max_weight <= tol)
-#         or max_weight == 0 and max_change == 0):
-#     if verbose:
-#         end_time = time(NULL)
-#         with gil:
-#             print("convergence after %d epochs took %d seconds" %
-#                   (n_iter + 1, end_time - start_time))
-#     break
-# elif verbose:
-#     printf('Epoch %d, change: %.8f\n', n_iter + 1,
-#            max_change / max_weight)
-
-
-# @njit
-# def gd(model, w, max_epochs, step):
-#     callback = History(True)
-#     obj = model.loss_batch(w)
-#     callback.update(obj)
-#     g = np.empty(w.shape)
-#     for epoch in range(max_epochs):
-#         model.grad_batch(w, out=g)
-#         w[:] = w[:] - step * g
-#         obj = model.loss_batch(w)
-#         callback.update(obj)
-#     return w
-
-#
-# # TODO: good default for tol when using duality gap
-# # TODO: step=float or {'best', 'auto'}
-# # TODO: random_state same thing as in scikit
-# # TODO:
-#
-#
-# @njit
-# def svrg_epoch(model, prox, w, w_old, gradient_memory, step, indices):
-#     # This implementation assumes dense data and a separable prox_old
-#     X = model.X
-#     n_samples, n_features = X.shape
-#     # TODO: indices.shape[0] == model.X.shape[0] == model.y.shape[0] ???
-#     for idx in range(n_samples):
-#         i = indices[idx]
-#         c_new = model.grad_sample_coef(i, w)
-#         c_old = model.grad_sample_coef(i, w_old)
-#         if model.fit_intercept:
-#             # Intercept is never penalized
-#             w[0] = w[0] - step * ((c_new - c_old) + gradient_memory[0])
-#             for j in range(1, n_features + 1):
-#                 w_j = w[j] - step * ((c_new - c_old) * X[i, j - 1] + gradient_memory[j])
-#                 w[j] = prox.call_single(w_j, step)
-#         else:
-#             for j in range(w.shape[0]):
-#                 w_j = w[j] - step * ((c_new - c_old) * X[i, j] + gradient_memory[j])
-#                 w[j] = prox.call_single(w_j, step)
-#     return w
-#
-#
-# class SVRG(object):
-#     def __init__(
-#         self,
-#         step="best",
-#         rand_type="unif",
-#         tol=1e-10,
-#         max_iter=10,
-#         verbose=True,
-#         print_every=1,
-#         random_state=-1,
-#     ):
-#         self.step = step
-#         self.rand_type = rand_type
-#         self.tol = tol
-#         self.max_iter = max_iter
-#         self.print_every = print_every
-#         self.random_state = random_state
-#         self.verbose = verbose
-#         self.history = History("SVRG", self.max_iter, self.verbose)
-#
-#     def set(self, model, prox):
-#         self.model = model
-#         self.prox = prox
-#         return self
-#
-#     # def loss_batch(self, w):
-#     #     return loss_batch(self.features, self.labels, self.loss, w)
-#     #
-#     # def grad_batch(self, w, out):
-#     #     grad_batch(self.features, self.labels, self.loss, w, out=out)
-#
-#     def solve(self, w):
-#         # TODO: check that set as been called
-#         # TODO: save gradient_memory, so that we can continue training later
-#
-#         gradient_memory = np.empty(w.shape)
-#         w_old = np.empty(w.shape)
-#
-#         model = self.model.no_python
-#         prox = self.prox.no_python
-#
-#         n_samples = model.n_samples
-#         obj = model.loss_batch(w) + prox.value(w)
-#
-#         history = self.history
-#         # features = self.features
-#         # labels = self.labels
-#         # loss = self.loss
-#         step = self.step
-#
-#         history.update(epoch=0, obj=obj, step=step, tol=0.0, update_bar=False)
-#
-#         for epoch in range(1, self.max_iter + 1):
-#             # At the beginning of each epoch we compute the full gradient
-#             # TODO: veriifer que c'est bien le cas... qu'il ne faut pas le
-#             #  faire a la fin de l'epoque
-#             w_old[:] = w
-#
-#             # Compute the full gradient
-#             model.grad_batch(w, gradient_memory)
-#             # grad_batch(self.features, self.labels, self.loss, w, out=gradient_memory)
-#
-#             # TODO: en fonction de rand_type...
-#             indices = np.random.randint(n_samples, size=n_samples)
-#
-#             # Launch the epoch pass
-#             svrg_epoch(model, prox, w, w_old, gradient_memory, step, indices)
-#
-#             obj = model.loss_batch(w) + prox.value(w)
-#             history.update(epoch=epoch, obj=obj, step=step, tol=0.0, update_bar=True)
-#
-#         history.close_bar()
-#         return w
-
 
 # License: BSD 3 clause
 from collections import defaultdict
@@ -1172,13 +974,20 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     from tqdm.autonotebook import trange
 
+
 class Record(object):
     def __init__(self, shape, capacity):
-        self.record = np.zeros(capacity) if shape == 1 else np.zeros(tuple([capacity] + list(shape)))
+        self.record = (
+            np.zeros(capacity)
+            if shape == 1
+            else np.zeros(tuple([capacity] + list(shape)))
+        )
         self.cursor = 0
+
     def update(self, value):
         self.record[self.cursor] = value
         self.cursor += 1
+
     def __len__(self):
         return self.record.shape[0]
 
@@ -1195,7 +1004,11 @@ class History(object):
         self.values = defaultdict(list)
         self.title = title
         self.trackers = [tracker[0] for tracker in trackers] if trackers else None
-        self.records = [Record(tracker[1], max_iter+1) for tracker in trackers] if trackers else None
+        self.records = (
+            [Record(tracker[1], max_iter + 1) for tracker in trackers]
+            if trackers
+            else None
+        )
         self.n_updates = 0
         # TODO: List all possible keys
         print_style = defaultdict(lambda: "%.2e")
@@ -1267,7 +1080,6 @@ class History(object):
         if self.trackers:
             for ind_tracker, tracker in enumerate(self.trackers):
                 self.records[ind_tracker].update(tracker(current_iterate))
-
 
     def close_bar(self):
         if self.bar is not None:

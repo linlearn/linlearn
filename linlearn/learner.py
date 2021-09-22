@@ -1,11 +1,9 @@
-"""
-Binary Classifier
-"""
-
-# Author: Stephane Gaiffas <stephane.gaiffas@gmail.com>
+# Authors: Stephane Gaiffas <stephane.gaiffas@gmail.com>
+#          Ibrahim Merad <imerad7@gmail.com>
+# License: BSD 3 clause
 
 # Parts of the code below are directly from scikit-learn, in particular from
-# https://github.com/scikit-learn/scikit-learn/blob/master/sklearn/linear_model/_logistic.py
+# sklearn/linear_model/_logistic.py
 
 from warnings import warn
 
@@ -20,7 +18,7 @@ from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import safe_sparse_dot
 
-from ._loss import steps_coordinate_descent, Logistic, LeastSquares, steps_factory
+from ._loss import Logistic, LeastSquares, steps_factory
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
 from ._solver import CGD, GD, SGD, SVRG, SAGA, History
 from ._estimator import ERM, MOM, TMean, Implicit, GMOM, HollandCatoni
@@ -29,7 +27,6 @@ from ._estimator import ERM, MOM, TMean, Implicit, GMOM, HollandCatoni
 # TODO: serialization
 
 class BaseLearner(ClassifierMixin, BaseEstimator):
-
     _losses = ["logistic", "leastsquares"]
     _penalties = ["none", "l2", "l1", "elasticnet"]
     _estimators = ["erm", "mom", "tmean", "implicit", "gmom", "holland_catoni"]
@@ -252,7 +249,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
     @sgd_exponent.setter
     def sgd_exponent(self, val):
         if not isinstance(val, numbers.Real) or val < 0.5 or val > 1:
-            raise ValueError("sgd_exponent must be between 0.5 and 1; got (sgd_exponent=%r)" % val)
+            raise ValueError(
+                "sgd_exponent must be between 0.5 and 1; got (sgd_exponent=%r)" % val
+            )
         else:
             self._sgd_exponent = float(val)
 
@@ -426,7 +425,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.random_state,
                 step,
                 history,
-                exponent=self.sgd_exponent
+                exponent=self.sgd_exponent,
             )
 
         elif self.solver == "svrg":
@@ -666,6 +665,102 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
 
 class BinaryClassifier(BaseLearner):
+    """
+    Binary classifier. The default is standard penalized logistic regression,
+    but it includes other learning algorithms, including very robust ones.
+    It allows to combine several ``loss``, ``estimator`` and ``penalty`` in order to
+    define a learning strategy.
+
+    - ``estimator`` can be 'erm' (empirical risk minimization, which is the
+      standard approach), 'mom' (median of means, which is a variant leading to
+      classifiers robust to both outliers and heavy-tails), among several others (see
+      below).
+
+    - ``solver`` can be 'cgd' (coordinate gradient descent), 'gd' (gradient descent),
+      'sgd' (stochastic gradient descent), 'svrg' (stochastic variance reduced
+      gradient descent) and 'saga' (?)
+
+    - ``penalty`` can be 'none' (no penalization), 'l2' (ridge penalization),
+      'l1' (L1 penalization) and 'elasticnet'.
+
+    Parameters
+    ----------
+    loss : {'logistic'}, default='logistic'
+        The loss used in the goodness-of-fit criterion. Defaults to logistic
+        regression loss.
+
+    estimator : {'erm', 'mom', 'tmean', 'implicit', 'gmom', 'holland_catoni'}, \
+              default='erm'
+        The estimator used to compute gradients or partial derivatives. Some of these
+        lead to a classifier that is very robust to outliers and/or heavy tails. A
+        choice leading to a nice computations/performance balance is ``estimator='cgd'``
+        together with  ``solver='cgd'``. Read more in the :ref:`User Guide
+        <robust_estimation>`.
+
+    penalty : {'l1', 'l2', 'elasticnet', 'none'}, default='l2'
+        Used to specify the norm used in the penalization. If 'none', no regularization
+         is applied.
+
+    C : float, default=1.0
+        Inverse of regularization strength; must be a positive float. Smaller values
+        specify stronger regularization.
+
+    tol : float, default=1e-4
+        Tolerance for stopping criteria.
+
+    fit_intercept : bool, default=True
+        Specifies if a constant (a.k.a. bias or intercept) should be
+        added to the decision function.
+
+    step_size : float, default=1.0
+        What the hell is this ? TODO
+
+    class_weight : dict or 'balanced', default=None
+        Weights associated with classes in the form ``{class_label: weight}``.
+        If not given, all classes are supposed to have weight one.
+
+        The "balanced" mode uses the values of y to automatically adjust
+        weights inversely proportional to class frequencies in the input data
+        as ``n_samples / (n_classes * np.bincount(y))``.
+
+        Note that these weights will be multiplied with sample_weight (passed
+        through the fit method) if sample_weight is specified.
+
+        .. versionadded:: 0.17
+           *class_weight='balanced'*
+
+    random_state : int, default=None
+        Used when the solver or the estimator involves random shuffling.
+
+    solver : {'cgd', 'gd', 'sgd', 'svrg', 'saga'}, default='cgd'
+        Algorithm to use in the optimization problem.
+
+        TODO: more blabla here
+
+    max_iter : int, default=100
+        Maximum number of iterations taken for the solvers to converge.
+
+    verbose : int, default=0
+        For the liblinear and lbfgs solvers set verbose to any positive
+        number for verbosity.
+
+    warm_start : bool, default=False
+        When set to True, reuse the solution of the previous call to fit as
+        initialization, otherwise, just erase the previous solution.
+        Useless for liblinear solver. See :term:`the Glossary <warm_start>`.
+
+        .. versionadded:: 0.17
+           *warm_start* to support *lbfgs*, *newton-cg*, *sag*, *saga* solvers.
+
+    l1_ratio : float, default=None
+        The Elastic-Net mixing parameter, with ``0 <= l1_ratio <= 1``. Only
+        used if ``penalty='elasticnet'``. Setting ``l1_ratio=0`` is equivalent
+        to using ``penalty='l2'``, while setting ``l1_ratio=1`` is equivalent
+        to using ``penalty='l1'``. For ``0 < l1_ratio <1``, the penalty is a
+        combination of L1 and L2.
+
+    """
+
     def __init__(
         self,
         *,

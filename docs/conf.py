@@ -12,14 +12,21 @@
 import os
 import sys
 
+# import sphinx_readable_theme
+# html_theme_path = [sphinx_readable_theme.get_html_theme_path()]
+# html_theme = 'readable'
+
+html_theme = 'sphinx_rtd_theme'
+
+# html_theme = 'python_docs_theme'
+
 sys.path.insert(0, os.path.abspath("."))
 sys.path.insert(0, os.path.abspath("../"))
 sys.path.insert(0, os.path.abspath("../.."))
 sys.path.insert(0, os.path.abspath("sphinx_ext"))
 
-from linlearn import *
-
-from github_link import make_linkcode_resolve
+# from linlearn import *
+# from github_link import make_linkcode_resolve
 
 # -- Project information -----------------------------------------------------
 
@@ -43,12 +50,24 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.ifconfig",
     "sphinx.ext.mathjax",
-    "sphinx.ext.linkcode",
+    # "sphinx.ext.linkcode",
     #    "sphinx_gallery.gen_gallery",
 ]
 
-autosummary_generate = True
-autodoc_default_options = {"members": None, "inherited-members": None}
+# autosummary_generate = True
+
+
+autoclass_content = "class"
+autodoc_inherit_docstrings = True
+
+autodoc_default_flags = "inherited-members"
+
+autodoc_default_options = {
+    # "members": None,
+    "member-order": "bysource",
+    # "inherited-members": None,
+    "autoclass_content": "class",
+}
 
 
 # sphinx_gallery_conf = {
@@ -62,12 +81,12 @@ autodoc_default_options = {"members": None, "inherited-members": None}
 # }
 
 
-linkcode_resolve = make_linkcode_resolve(
-    "linlearn",
-    u"https://github.com/linlearn/"
-    "linlearn/blob/{revision}/"
-    "{package}/{path}#L{lineno}",
-)
+# linkcode_resolve = make_linkcode_resolve(
+#     "linlearn",
+#     u"https://github.com/linlearn/"
+#     "linlearn/blob/{revision}/"
+#     "{package}/{path}#L{lineno}",
+# )
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -90,38 +109,39 @@ master_doc = "index"
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "alabaster"
+# html_theme = "press"
+# html_theme = "readable"
 
-html_sidebars = {
-    "**": ["about.html", "navigation.html", "searchbox.html"],
-    "auto_examples": ["index.html"],
-}
+# html_sidebars = {
+#     "**": ["about.html", "navigation.html", "searchbox.html"],
+#     "auto_examples": ["index.html"],
+# }
 html_theme_options = {
-    "description": "Linear methods in Python",
-    "github_user": "linlearn",
-    "github_repo": "linlearn",
-    "github_button": True,
-    "fixed_sidebar": True,
-    "travis_button": False,
-    "logo_text_align": "center",
-    "github_banner": True,
+    # "description": "Linear methods in Python",
+    # "github_user": "linlearn",
+    # "github_repo": "linlearn",
+    # "github_button": True,
+    # "fixed_sidebar": True,
+    # "travis_button": False,
+    # "logo_text_align": "center",
+    # "github_banner": True,
 }
 
-html_logo = "images/logo.png"
+# html_logo = "images/logo.png"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ["_static"]
 
-from datetime import datetime
+# from datetime import datetime
 
-now = datetime.now()
-html_show_copyright = copyright = (
-    str(now.year)
-    + ', <a href="https://github.com/linlearn/linlearn/graphs/contributors">linlearn developers</a>. Updated on '
-    + now.strftime("%B %d, %Y")
-)
+# now = datetime.now()
+# html_show_copyright = copyright = (
+#     str(now.year)
+#     + ', <a href="https://github.com/linlearn/linlearn/graphs/contributors">linlearn developers</a>. Updated on '
+#     + now.strftime("%B %d<, %Y")
+# )
 
 
 # intersphinx_mapping = {
