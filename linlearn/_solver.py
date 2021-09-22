@@ -1194,10 +1194,11 @@ class SAGA(Solver):
                     w=weights, n_iter=n_iter, success=True, tol=tol, message=None
                 )
 
-            history.close_bar()
-            return OptimizationResult(
-                w=weights, n_iter=max_iter + 1, success=False, tol=tol, message=None
-            )
+        history.close_bar()
+        return OptimizationResult(
+            w=weights, n_iter=max_iter + 1, success=False, tol=tol, message=None
+        )
+
 
 
 # License: BSD 3 clause
