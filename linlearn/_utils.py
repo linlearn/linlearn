@@ -65,3 +65,16 @@ def sample_without_replacement(pool, out):
         j = randint(population_size - i)
         out[i] = pool[j]
         pool[j] = pool[population_size - i - 1]
+
+
+@jit(
+    # void(uintp, float64[:], uintp[:]),
+    nopython=NOPYTHON,
+    nogil=NOGIL,
+    boundscheck=BOUNDSCHECK,
+    locals={"csum": float64[:], "i": uintp},
+)
+def rand_choice_nb(size, csum_probs, out):
+
+    for i in range(size):
+        out[i] = np.searchsorted(csum_probs, np.random.random(), side="right")

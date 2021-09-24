@@ -942,8 +942,8 @@ class Implicit(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i in sample_indices:
-                    objectives_sum_block += value_loss(y[i], inner_products[i])
+                for i, idx in enumerate(sample_indices):
+                    objectives_sum_block += value_loss(y[idx], inner_products[idx])
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                         block_means[counter] = objectives_sum_block / n_samples_in_block
                         counter += 1
@@ -980,8 +980,8 @@ class Implicit(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i in sample_indices:
-                    objectives_sum_block += value_loss(y[i], inner_products[i])
+                for i, idx in enumerate(sample_indices):
+                    objectives_sum_block += value_loss(y[idx], inner_products[idx])
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                         block_means[counter] = objectives_sum_block / n_samples_in_block
                         counter += 1
@@ -1037,8 +1037,8 @@ class Implicit(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i in sample_indices:
-                    objectives_sum_block += value_loss(y[i], inner_products[i])
+                for i, idx in enumerate(sample_indices):
+                    objectives_sum_block += value_loss(y[idx], inner_products[idx])
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                         block_means[counter] = objectives_sum_block / n_samples_in_block
                         counter += 1
@@ -1072,8 +1072,8 @@ class Implicit(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i in sample_indices:
-                    objectives_sum_block += value_loss(y[i], inner_products[i])
+                for i, idx in enumerate(sample_indices):
+                    objectives_sum_block += value_loss(y[idx], inner_products[idx])
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                         block_means[counter] = objectives_sum_block / n_samples_in_block
                         counter += 1
