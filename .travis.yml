@@ -1,8 +1,7 @@
+if: (type = push AND branch IN (master,)) OR (type = pull_request AND NOT branch =~ /no-ci/)
 language: python
 python:
-  - "3.6"
   - "3.7"
-  - "3.8"
 install:
   - pip install --upgrade pip
   - pip install poetry
