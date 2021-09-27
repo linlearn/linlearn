@@ -117,7 +117,7 @@ def steps_factory(
 
             return steps_func
 
-    elif estimator == "mom" or estimator == "gmom" or estimator == "implicit":
+    elif estimator == "mom" or estimator == "gmom" or estimator == "llm":
         if n_samples_in_block == 0:
             raise ValueError(
                 "You should provide n_samples_in_block for mom/gmom estimator"
@@ -160,7 +160,7 @@ def steps_factory(
 
             return steps_func
 
-    elif estimator == "holland_catoni":
+    elif estimator == "ch":
         if eps == 0.0:
             raise ValueError("you should provide eps for catoni/holland estimator")
         if fit_intercept:

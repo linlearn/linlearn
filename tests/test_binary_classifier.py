@@ -3,29 +3,15 @@
 
 # py.test -rA
 
-import numpy as np
-from numpy.random.mtrand import multivariate_normal
-from scipy.linalg import toeplitz
-from scipy.special import expit
-
 import pytest
-
-# from sklearn.datasets import make_moons
-# from sklearn.model_selection import train_test_split
-# from sklearn.metrics import roc_auc_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.datasets import make_moons, make_circles, make_classification
-
-# from . import parameter_test_with_min, parameter_test_with_type, approx
-
-import numbers
 from linlearn import BinaryClassifier
-from scipy.special import expit, logit
+
+from .utils import simulate_true_logistic, simulate_linear
 
 # TODO: va falloir furieusement tester plein de types de données d'entrée, avec labels
 #  non-contigus, et avec labels strings par exemple.
-
-# TODO: test the __repr__ (even if it's the one from sklearn
 
 
 def test_keyword_args_only():
@@ -340,39 +326,6 @@ def test_l1_ratio():
     assert getattr(clf, "l1_ratio") == 0.42
 
 
-def simulate_true_logistic(n_samples=150, n_features=5, fit_intercept=True, corr=0.5):
-    rng = np.random.RandomState(42)
-    coef0 = rng.randn(n_features)
-    if fit_intercept:
-        intercept0 = -2.0
-    else:
-        intercept0 = 0.0
-
-    cov = toeplitz(corr ** np.arange(0, n_features))
-    X = rng.multivariate_normal(np.zeros(n_features), cov, size=n_samples)
-    logits = X.dot(coef0)
-    logits += intercept0
-    p = expit(logits)
-    y = rng.binomial(1, p, size=n_samples)
-    return X, y
-
-
-# Turns out that random_state=1 is linearly separable while it is not for
-# random_state=2
-def simulate_linear(n_samples, random_state=2):
-    X, y = make_classification(
-        n_samples=n_samples,
-        n_features=2,
-        n_redundant=0,
-        n_informative=2,
-        random_state=random_state,
-        n_clusters_per_class=1,
-    )
-    rng = np.random.RandomState(2)
-    X += 2 * rng.uniform(size=X.shape)
-    return X, y
-
-
 penalties = BinaryClassifier._penalties
 # (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3)
 grid_C = (1e-3, 1.0, 1e3)
@@ -435,26 +388,35 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, solver):
     )
     clf_linlearn.fit(X, y)
 
+    if solver in ["svrg", "saga", "gd"] and fit_intercept:
+        abs_approx, rel_approx = 1e-4, 1e-4
+    else:
+        abs_approx, rel_approx = 1e-6, 1e-6
+
     # For some weird reason scikit's intercept_ does not match for "l1" and
     # "elasticnet" with intercept and for small C
     if not (penalty in ["l1", "elasticnet"] and fit_intercept and C < 1e-1):
         # Test the intercept_
-        assert clf_scikit.intercept_ == pytest.approx(clf_linlearn.intercept_, abs=1e-7)
+        assert clf_scikit.intercept_ == pytest.approx(
+            clf_linlearn.intercept_, abs=abs_approx, rel=rel_approx
+        )
         # And test prediction methods
         assert clf_scikit.decision_function(X) == pytest.approx(
-            clf_linlearn.decision_function(X), abs=1e-6
+            clf_linlearn.decision_function(X), abs=abs_approx, rel=rel_approx
         )
         assert clf_scikit.predict_proba(X) == pytest.approx(
-            clf_linlearn.predict_proba(X), abs=1e-6
+            clf_linlearn.predict_proba(X), abs=abs_approx, rel=rel_approx
         )
         assert clf_scikit.predict_log_proba(X) == pytest.approx(
-            clf_linlearn.predict_log_proba(X), abs=1e-6
+            clf_linlearn.predict_log_proba(X), abs=abs_approx, rel=rel_approx
         )
         assert (clf_scikit.predict(X) == clf_linlearn.predict(X)).any()
         assert clf_scikit.score(X, y) == clf_linlearn.score(X, y)
 
     # And always test the coef_
-    assert clf_scikit.coef_ == pytest.approx(clf_linlearn.coef_, abs=1e-7)
+    assert clf_scikit.coef_ == pytest.approx(
+        clf_linlearn.coef_, abs=abs_approx, rel=rel_approx
+    )
 
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
@@ -642,9 +604,6 @@ def test_that_array_conversion_is_ok():
     assert lr.predict_proba(X) == pytest.approx(br.predict_proba(X), abs=1e-4)
     assert lr.predict_log_proba(X) == pytest.approx(br.predict_log_proba(X), abs=1e-4)
     assert (lr.predict(X) == br.predict(X)).any()
-
-
-# TODO: test "mom" strategy works best with outlying data
 
 
 # def test_random_state_is_consistant(self):
