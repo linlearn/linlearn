@@ -2,7 +2,53 @@
 # License: BSD 3 clause
 
 import numpy as np
+from scipy.linalg import toeplitz
+from scipy.special import expit
+from sklearn.datasets import make_classification
 import pytest
+
+
+def simulate_true_logistic(
+    n_samples=150,
+    n_features=5,
+    fit_intercept=True,
+    corr=0.5,
+    random_state=0,
+    return_coef=False,
+):
+    rng = np.random.RandomState(random_state)
+    coef0 = rng.randn(n_features)
+    if fit_intercept:
+        intercept0 = -2.0
+    else:
+        intercept0 = 0.0
+
+    cov = toeplitz(corr ** np.arange(0, n_features))
+    X = rng.multivariate_normal(np.zeros(n_features), cov, size=n_samples)
+    logits = X.dot(coef0)
+    logits += intercept0
+    p = expit(logits)
+    y = rng.binomial(1, p, size=n_samples)
+    if return_coef:
+        return X, y, coef0, intercept0
+    else:
+        return X, y
+
+
+# Turns out that random_state=1 is linearly separable while it is not for
+# random_state=2
+def simulate_linear(n_samples, random_state=2):
+    X, y = make_classification(
+        n_samples=n_samples,
+        n_features=2,
+        n_redundant=0,
+        n_informative=2,
+        random_state=random_state,
+        n_clusters_per_class=1,
+    )
+    rng = np.random.RandomState(2)
+    X += 2 * rng.uniform(size=X.shape)
+    return X, y
 
 
 def approx(v, abs=1e-15):

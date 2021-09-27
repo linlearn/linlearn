@@ -48,7 +48,6 @@ class LLM(Estimator):
     def partial_deriv_factory(self):
         X = self.X
         y = self.y
-        deriv_loss = self.loss.deriv_factory()
         n_samples_in_block = self.n_samples_in_block
         loss = self.loss
         value_loss = loss.value_factory()
