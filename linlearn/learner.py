@@ -20,7 +20,7 @@ from sklearn.utils.extmath import safe_sparse_dot
 
 from ._loss import Logistic, LeastSquares, SquaredHinge, steps_factory
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
-from ._solver import CGD, GD, SGD, SVRG, SAGA, batch_GD, History
+from .solver import CGD, GD, SGD, SVRG, SAGA, batch_GD, History
 from ._estimator import ERM, MOM, TMean, Implicit, GMOM, HollandCatoni
 
 

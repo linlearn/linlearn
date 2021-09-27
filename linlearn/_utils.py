@@ -75,6 +75,5 @@ def sample_without_replacement(pool, out):
     locals={"csum": float64[:], "i": uintp},
 )
 def rand_choice_nb(size, csum_probs, out):
-
     for i in range(size):
         out[i] = np.searchsorted(csum_probs, np.random.random(), side="right")
