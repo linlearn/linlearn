@@ -21,7 +21,7 @@ from sklearn.utils.extmath import safe_sparse_dot
 from ._loss import Logistic, LeastSquares, SquaredHinge, steps_factory
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
 from .solver import CGD, GD, SGD, SVRG, SAGA, batch_GD, History
-from ._estimator import ERM, MOM, TMean, Implicit, GMOM, HollandCatoni
+from .estimator import ERM, MOM, TMean, LLM, GMOM, CH
 
 
 # TODO: serialization
@@ -30,7 +30,7 @@ from ._estimator import ERM, MOM, TMean, Implicit, GMOM, HollandCatoni
 class BaseLearner(ClassifierMixin, BaseEstimator):
     _losses = ["logistic", "leastsquares", "squaredhinge"]
     _penalties = ["none", "l2", "l1", "elasticnet"]
-    _estimators = ["erm", "mom", "tmean", "implicit", "gmom", "holland_catoni"]
+    _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch"]
     _solvers = ["cgd", "gd", "sgd", "svrg", "saga", "batch_gd"]
 
     def __init__(
@@ -318,10 +318,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return MOM(X, y, loss, self.fit_intercept, n_samples_in_block)
         elif self.estimator == "tmean":
             return TMean(X, y, loss, self.fit_intercept, self.percentage)
-        elif self.estimator == "holland_catoni":
-            return HollandCatoni(X, y, loss, self.fit_intercept, self.eps)
-        elif self.estimator == "implicit":
-            return Implicit(X, y, loss, self.fit_intercept, int(1 / self.block_size))
+        elif self.estimator == "ch":
+            return CH(X, y, loss, self.fit_intercept, self.eps)
+        elif self.estimator == "llm":
+            return LLM(X, y, loss, self.fit_intercept, int(1 / self.block_size))
         elif self.estimator == "gmom":
             n_samples = y.shape[0]
             n_samples_in_block = int(self.block_size * n_samples)

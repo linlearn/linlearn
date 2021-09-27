@@ -6,7 +6,7 @@ from math import exp, log
 import numpy as np
 from numba import jit, njit, vectorize, void, prange
 
-from ._estimator import holland_catoni_estimator
+from .estimator.ch import holland_catoni_estimator
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float
 
 
