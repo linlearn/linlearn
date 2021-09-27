@@ -27,7 +27,16 @@ from ._base import Estimator, jit_kwargs
 from .._utils import np_float
 
 
-StateMOM = namedtuple("StateMOM", ["block_means", "sample_indices", "gradient"])
+StateMOM = namedtuple(
+    "StateMOM",
+    [
+        "block_means",
+        "sample_indices",
+        "gradient",
+        "loss_derivative",
+        "partial_derivative",
+    ],
+)
 
 
 class MOM(Estimator):
@@ -75,8 +84,8 @@ class MOM(Estimator):
         Size of the last block
     """
 
-    def __init__(self, X, y, loss, fit_intercept, n_samples_in_block):
-        super().__init__(X, y, loss, fit_intercept)
+    def __init__(self, X, y, loss, n_classes, fit_intercept, n_samples_in_block):
+        super().__init__(X, y, loss, n_classes, fit_intercept)
         self.n_samples_in_block = n_samples_in_block
         self.n_blocks = self.n_samples // n_samples_in_block
         self.last_block_size = self.n_samples % n_samples_in_block
@@ -94,11 +103,16 @@ class MOM(Estimator):
         """
 
         return StateMOM(
-            block_means=np.empty(self.n_blocks, dtype=np_float),
-            sample_indices=np.empty(self.n_samples, dtype=np.intp),
-            gradient=np.empty(
-                self.X.shape[1] + int(self.fit_intercept), dtype=np_float
+            block_means=np.empty(
+                (self.n_blocks, self.n_classes), dtype=np_float, order="F"
             ),
+            sample_indices=np.arange(self.n_samples, dtype=np.intp),
+            gradient=np.empty(
+                (self.n_features + int(self.fit_intercept), self.n_classes),
+                dtype=np_float,
+            ),
+            loss_derivative=np.empty(self.n_classes, dtype=np_float),
+            partial_derivative=np.empty(self.n_classes, dtype=np_float),
         )
 
     def partial_deriv_factory(self):
@@ -113,7 +127,7 @@ class MOM(Estimator):
         X = self.X
         y = self.y
         deriv_loss = self.loss.deriv_factory()
-        n_samples = self.n_samples
+        n_classes = self.n_classes
         n_samples_in_block = self.n_samples_in_block
         last_block_size = self.last_block_size
 
@@ -146,39 +160,53 @@ class MOM(Estimator):
                 sample_indices = state.sample_indices
                 block_means = state.block_means
 
-                for i in range(n_samples):
-                    sample_indices[i] = i
+                # for i in range(n_samples):
+                #     sample_indices[i] = i
 
                 np.random.shuffle(sample_indices)
+                deriv = state.loss_derivative
                 # Cumulative sum in the block
-                derivatives_sum_block = 0.0
+                derivatives_sum_block = state.partial_derivative
+                for k in range(n_classes):
+                    derivatives_sum_block[k] = 0.0
                 # Block counter
                 n_block = 0
                 if j == 0:
                     for i, idx in enumerate(sample_indices):
-                        derivatives_sum_block += deriv_loss(y[idx], inner_products[idx])
+                        deriv_loss(y[idx], inner_products[idx], deriv)
+                        for k in range(n_classes):
+                            derivatives_sum_block[k] += deriv[k]
                         if (i != 0) and ((i + 1) % n_samples_in_block == 0):
-                            block_means[n_block] = (
-                                derivatives_sum_block / n_samples_in_block
-                            )
+                            for k in range(n_classes):
+                                block_means[n_block, k] = (
+                                    derivatives_sum_block[k] / n_samples_in_block
+                                )
+                                derivatives_sum_block[k] = 0.0
                             n_block += 1
-                            derivatives_sum_block = 0.0
                 else:
                     for i, idx in enumerate(sample_indices):
-                        derivatives_sum_block += (
-                            deriv_loss(y[idx], inner_products[idx]) * X[idx, j - 1]
-                        )
+                        deriv_loss(y[idx], inner_products[idx], deriv)
+                        Xij = X[idx, j - 1]
+                        for k in range(n_classes):
+                            derivatives_sum_block[k] += deriv[k] * Xij
+
                         if (i != 0) and ((i + 1) % n_samples_in_block == 0):
-                            block_means[n_block] = (
-                                derivatives_sum_block / n_samples_in_block
-                            )
+                            for k in range(n_classes):
+                                block_means[n_block, k] = (
+                                    derivatives_sum_block[k] / n_samples_in_block
+                                )
+                                derivatives_sum_block[k] = 0.0
                             n_block += 1
-                            derivatives_sum_block = 0.0
 
                 if last_block_size != 0:
-                    block_means[n_block] = derivatives_sum_block / last_block_size
+                    for k in range(n_classes):
+                        block_means[n_block, k] = (
+                            derivatives_sum_block[k] / last_block_size
+                        )
 
-                return np.median(block_means)
+                for k in range(n_classes):
+                    derivatives_sum_block[k] = np.median(block_means[:, k])
+                # return np.median(block_means)
 
             return partial_deriv
 
@@ -210,29 +238,40 @@ class MOM(Estimator):
                 """
                 sample_indices = state.sample_indices
                 block_means = state.block_means
-                for i in range(n_samples):
-                    sample_indices[i] = i
+                # for i in range(n_samples):
+                #     sample_indices[i] = i
 
                 np.random.shuffle(sample_indices)
+                deriv = state.loss_derivative
                 # Cumulative sum in the block
-                derivatives_sum_block = 0.0
+                derivatives_sum_block = state.partial_derivative
+                for k in range(n_classes):
+                    derivatives_sum_block[k] = 0.0
                 # Block counter
                 n_block = 0
                 for i, idx in enumerate(sample_indices):
-                    derivatives_sum_block += (
-                        deriv_loss(y[idx], inner_products[idx]) * X[idx, j]
-                    )
+                    deriv_loss(y[idx], inner_products[idx], deriv)
+                    Xij = X[idx, j]
+                    for k in range(n_classes):
+                        derivatives_sum_block[k] += deriv[k] * Xij
+
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
-                        block_means[n_block] = (
-                            derivatives_sum_block / n_samples_in_block
-                        )
+                        for k in range(n_classes):
+                            block_means[n_block, k] = (
+                                derivatives_sum_block[k] / n_samples_in_block
+                            )
+                            derivatives_sum_block[k] = 0.0
                         n_block += 1
-                        derivatives_sum_block = 0.0
 
                 if last_block_size != 0:
-                    block_means[n_block] = derivatives_sum_block / last_block_size
+                    for k in range(n_classes):
+                        block_means[n_block, k] = (
+                            derivatives_sum_block[k] / last_block_size
+                        )
 
-                return np.median(block_means)
+                for k in range(n_classes):
+                    derivatives_sum_block[k] = np.median(block_means[:, k])
+                # return np.median(block_means)
 
             return partial_deriv
 
@@ -245,7 +284,8 @@ class MOM(Estimator):
         output : function
             A jit-compiled function allowing to compute gradients.
         """
-        X = self.X
+        n_features = self.n_features
+        n_classes = self.n_classes
         fit_intercept = self.fit_intercept
         partial_deriv = self.partial_deriv_factory()
 
@@ -270,8 +310,11 @@ class MOM(Estimator):
                 A numpy array of shape (n_weights,) containing the gradient.
             """
             gradient = state.gradient
+            partial_derivative = state.partial_derivative
 
-            for j in range(X.shape[1] + int(fit_intercept)):
-                gradient[j] = partial_deriv(j, inner_products, state)
+            for j in range(n_features + int(fit_intercept)):
+                partial_deriv(j, inner_products, state)
+                for k in range(n_classes):
+                    gradient[j, k] = partial_derivative[k]
 
         return grad

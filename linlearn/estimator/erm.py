@@ -18,7 +18,7 @@ from numba import jit
 from ._base import Estimator, jit_kwargs
 from .._utils import np_float
 
-StateERM = namedtuple("StateERM", ["gradient"])
+StateERM = namedtuple("StateERM", ["gradient", "loss_derivative", "partial_derivative"])
 
 
 class ERM(Estimator):
@@ -56,8 +56,8 @@ class ERM(Estimator):
 
     """
 
-    def __init__(self, X, y, loss, fit_intercept):
-        Estimator.__init__(self, X, y, loss, fit_intercept)
+    def __init__(self, X, y, loss, n_classes, fit_intercept):
+        Estimator.__init__(self, X, y, loss, n_classes, fit_intercept)
 
     def get_state(self):
         """Returns the state of the ERM estimator, which is a place-holder used for
@@ -68,7 +68,14 @@ class ERM(Estimator):
         output : StateERM
             State of the ERM estimator
         """
-        return StateERM(gradient=np.empty(self.n_weights, dtype=np_float))
+        return StateERM(
+            gradient=np.empty(
+                (self.n_features + int(self.fit_intercept), self.n_classes),
+                dtype=np_float,
+            ),
+            loss_derivative=np.empty(self.n_classes, dtype=np_float),
+            partial_derivative=np.empty(self.n_classes, dtype=np_float),
+        )
 
     def partial_deriv_factory(self):
         """Partial derivatives factory. This returns a jit-compiled function allowing to
@@ -84,6 +91,7 @@ class ERM(Estimator):
         loss = self.loss
         deriv_loss = loss.deriv_factory()
         n_samples = self.n_samples
+        n_classes = self.n_classes
 
         if self.fit_intercept:
 
@@ -112,15 +120,24 @@ class ERM(Estimator):
                 output : float
                     The value of the partial derivative
                 """
-                deriv_sum = 0.0
+                deriv = state.loss_derivative
+                partial_derivative = state.partial_derivative
+                for k in range(n_classes):
+                    partial_derivative[k] = 0.0
                 if j == 0:
                     for i in range(n_samples):
-                        deriv_sum += deriv_loss(y[i], inner_products[i])
-                    return deriv_sum / n_samples
+                        deriv_loss(y[i], inner_products[i], deriv)
+                        for k in range(n_classes):
+                            partial_derivative[k] += deriv[k]
+                    for k in range(n_classes):
+                        partial_derivative[k] /= n_samples
                 else:
                     for i in range(n_samples):
-                        deriv_sum += deriv_loss(y[i], inner_products[i]) * X[i, j - 1]
-                    return deriv_sum / n_samples
+                        deriv_loss(y[i], inner_products[i], deriv)
+                        for k in range(n_classes):
+                            partial_derivative[k] += deriv[k] * X[i, j - 1]
+                    for k in range(n_classes):
+                        partial_derivative[k] /= n_samples
 
             return partial_deriv
         else:
@@ -150,10 +167,16 @@ class ERM(Estimator):
                 output : float
                     The value of the partial derivative
                 """
-                deriv_sum = 0.0
-                for i in range(y.shape[0]):
-                    deriv_sum += deriv_loss(y[i], inner_products[i]) * X[i, j]
-                return deriv_sum / n_samples
+                deriv = state.loss_derivative
+                partial_derivative = state.partial_derivative
+                for k in range(n_classes):
+                    partial_derivative[k] = 0.0
+                for i in range(n_samples):
+                    deriv_loss(y[i], inner_products[i], deriv)
+                    for k in range(n_classes):
+                        partial_derivative[k] += deriv[k] * X[i, j]
+                for k in range(n_classes):
+                    partial_derivative[k] /= n_samples
 
             return partial_deriv
 
@@ -171,6 +194,8 @@ class ERM(Estimator):
         loss = self.loss
         deriv_loss = loss.deriv_factory()
         n_samples = self.n_samples
+        n_features = self.n_features
+        n_classes = self.n_classes
 
         if self.fit_intercept:
 
@@ -196,12 +221,20 @@ class ERM(Estimator):
                     A numpy array of shape (n_weights,) containing the gradient.
                 """
                 gradient = state.gradient
-                gradient.fill(0.0)
+                deriv = state.loss_derivative
+                for j in range(n_features + 1):
+                    for k in range(n_classes):
+                        gradient[j, k] = 0.0
                 for i in range(n_samples):
-                    deriv = deriv_loss(y[i], inner_products[i])
-                    gradient[0] += deriv
-                    gradient[1:] += deriv * X[i]
-                gradient /= n_samples
+                    deriv_loss(y[i], inner_products[i], deriv)
+                    for k in range(n_classes):
+                        gradient[0, k] += deriv[k]
+                    for j in range(n_features):
+                        for k in range(n_classes):
+                            gradient[j + 1, k] += X[i, j] * deriv[k]
+                for j in range(n_features + 1):
+                    for k in range(n_classes):
+                        gradient[j, k] /= n_samples
 
             return grad
         else:
@@ -228,9 +261,18 @@ class ERM(Estimator):
                     A numpy array of shape (n_weights,) containing the gradient.
                 """
                 gradient = state.gradient
-                gradient.fill(0.0)
+                deriv = state.loss_derivative
+                for j in range(n_features):
+                    for k in range(n_classes):
+                        gradient[j, k] = 0.0
+
                 for i in range(n_samples):
-                    gradient += deriv_loss(y[i], inner_products[i]) * X[i]
-                gradient /= n_samples
+                    deriv_loss(y[i], inner_products[i], deriv)
+                    for j in range(n_features):
+                        for k in range(n_classes):
+                            gradient[j, k] += X[i, j] * deriv[k]
+                for j in range(n_features):
+                    for k in range(n_classes):
+                        gradient[j, k] /= n_samples
 
             return grad

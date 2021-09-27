@@ -6,9 +6,10 @@
 import pytest
 from sklearn.linear_model import LogisticRegression
 from sklearn.datasets import make_moons, make_circles, make_classification
-from linlearn import BinaryClassifier
-
 from .utils import simulate_true_logistic, simulate_linear
+
+from linlearn import Classifier
+from scipy.special import expit, logit
 
 # TODO: va falloir furieusement tester plein de types de données d'entrée, avec labels
 #  non-contigus, et avec labels strings par exemple.
@@ -16,17 +17,17 @@ from .utils import simulate_true_logistic, simulate_linear
 
 def test_keyword_args_only():
     with pytest.raises(TypeError) as exc_info:
-        _ = BinaryClassifier("l2")
+        _ = Classifier("l2")
     assert exc_info.type is TypeError
     match = "__init__() takes 1 positional argument but 2 were given"
     assert exc_info.value.args[0] == match
 
 
 def test_penalty():
-    clf = BinaryClassifier()
+    clf = Classifier()
     assert clf.penalty == "l2"
 
-    for penalty in BinaryClassifier._penalties:
+    for penalty in Classifier._penalties:
         clf.penalty = penalty
         assert clf.penalty == penalty
 
@@ -35,17 +36,17 @@ def test_penalty():
         clf.penalty = penalty
     assert exc_info.type is ValueError
     match = "penalty must be one of %r; got (penalty=%r)" % (
-        BinaryClassifier._penalties,
+        Classifier._penalties,
         penalty,
     )
     assert exc_info.value.args[0] == match
 
     penalty = "stuff"
     with pytest.raises(ValueError) as exc_info:
-        _ = BinaryClassifier(penalty=penalty)
+        _ = Classifier(penalty=penalty)
     assert exc_info.type is ValueError
     match = "penalty must be one of %r; got (penalty=%r)" % (
-        BinaryClassifier._penalties,
+        Classifier._penalties,
         penalty,
     )
     assert exc_info.value.args[0] == match
@@ -55,7 +56,7 @@ def test_penalty():
 
 
 def test_C():
-    clf = BinaryClassifier()
+    clf = Classifier()
     assert isinstance(clf.C, float)
     assert clf.C == 1.0
 
@@ -76,7 +77,7 @@ def test_C():
 
     for C in [-1, complex(1.0, 1.0), "1.0"]:
         with pytest.raises(ValueError) as exc_info:
-            BinaryClassifier(C=C)
+            Classifier(C=C)
         assert exc_info.type is ValueError
         match = "C must be a positive number; got (C=%r)" % C
         assert exc_info.value.args[0] == match
@@ -86,10 +87,10 @@ def test_C():
 
 
 def test_loss():
-    clf = BinaryClassifier()
+    clf = Classifier()
     assert clf.loss == "logistic"
 
-    for loss in BinaryClassifier._losses:
+    for loss in Classifier._losses:
         clf.loss = loss
         assert clf.loss == loss
 
@@ -97,14 +98,20 @@ def test_loss():
     with pytest.raises(ValueError) as exc_info:
         clf.loss = loss
     assert exc_info.type is ValueError
-    match = "loss must be one of %r; got (loss=%r)" % (BinaryClassifier._losses, loss,)
+    match = "loss must be one of %r; got (loss=%r)" % (
+        Classifier._losses,
+        loss,
+    )
     assert exc_info.value.args[0] == match
 
     loss = "stuff"
     with pytest.raises(ValueError) as exc_info:
-        _ = BinaryClassifier(loss=loss)
+        _ = Classifier(loss=loss)
     assert exc_info.type is ValueError
-    match = "loss must be one of %r; got (loss=%r)" % (BinaryClassifier._losses, loss,)
+    match = "loss must be one of %r; got (loss=%r)" % (
+        Classifier._losses,
+        loss,
+    )
     assert exc_info.value.args[0] == match
 
     setattr(clf, "loss", "logistic")
@@ -112,7 +119,7 @@ def test_loss():
 
 
 def test_fit_intercept():
-    clf = BinaryClassifier()
+    clf = Classifier()
     assert isinstance(clf.fit_intercept, bool)
     assert clf.fit_intercept is True
 
@@ -129,7 +136,7 @@ def test_fit_intercept():
 
     for fit_intercept in [0, 1, -1, complex(1.0, 1.0), "1.0", "true"]:
         with pytest.raises(ValueError) as exc_info:
-            BinaryClassifier(fit_intercept=fit_intercept)
+            Classifier(fit_intercept=fit_intercept)
         assert exc_info.type is ValueError
         match = "fit_intercept must be True or False; got (C=%r)" % fit_intercept
         assert exc_info.value.args[0] == match
@@ -139,10 +146,10 @@ def test_fit_intercept():
 
 
 def test_estimator():
-    clf = BinaryClassifier()
+    clf = Classifier()
     assert clf.estimator == "erm"
 
-    for estimator in BinaryClassifier._estimators:
+    for estimator in Classifier._estimators:
         clf.estimator = estimator
         assert clf.estimator == estimator
 
@@ -151,17 +158,17 @@ def test_estimator():
         clf.estimator = estimator
     assert exc_info.type is ValueError
     match = "estimator must be one of %r; got (estimator=%r)" % (
-        BinaryClassifier._estimators,
+        Classifier._estimators,
         estimator,
     )
     assert exc_info.value.args[0] == match
 
     estimator = "stuff"
     with pytest.raises(ValueError) as exc_info:
-        _ = BinaryClassifier(estimator=estimator)
+        _ = Classifier(estimator=estimator)
     assert exc_info.type is ValueError
     match = "estimator must be one of %r; got (estimator=%r)" % (
-        BinaryClassifier._estimators,
+        Classifier._estimators,
         estimator,
     )
     assert exc_info.value.args[0] == match
@@ -171,7 +178,7 @@ def test_estimator():
 
 
 def test_block_size():
-    clf = BinaryClassifier()
+    clf = Classifier()
     assert isinstance(clf.block_size, float)
     assert clf.block_size == 0.07
 
@@ -188,7 +195,7 @@ def test_block_size():
 
     for block_size in [-1, complex(1.0, 1.0), "1.0", 0.0, -1.0, 1.1]:
         with pytest.raises(ValueError) as exc_info:
-            _ = BinaryClassifier(block_size=block_size)
+            _ = Classifier(block_size=block_size)
         assert exc_info.type is ValueError
         match = "block_size must be in (0, 1]; got (block_size=%r)" % block_size
         assert exc_info.value.args[0] == match
@@ -198,10 +205,10 @@ def test_block_size():
 
 
 def test_solver():
-    clf = BinaryClassifier()
+    clf = Classifier()
     assert clf.solver == "cgd"
 
-    for solver in BinaryClassifier._solvers:
+    for solver in Classifier._solvers:
         clf.solver = solver
         assert clf.solver == solver
 
@@ -210,17 +217,17 @@ def test_solver():
         clf.solver = solver
     assert exc_info.type is ValueError
     match = "solver must be one of %r; got (solver=%r)" % (
-        BinaryClassifier._solvers,
+        Classifier._solvers,
         solver,
     )
     assert exc_info.value.args[0] == match
 
     solver = "stuff"
     with pytest.raises(ValueError) as exc_info:
-        _ = BinaryClassifier(solver=solver)
+        _ = Classifier(solver=solver)
     assert exc_info.type is ValueError
     match = "solver must be one of %r; got (solver=%r)" % (
-        BinaryClassifier._solvers,
+        Classifier._solvers,
         solver,
     )
     assert exc_info.value.args[0] == match
@@ -230,7 +237,7 @@ def test_solver():
 
 
 def test_tol():
-    clf = BinaryClassifier()
+    clf = Classifier()
     assert isinstance(clf.tol, float)
     assert clf.tol == 1e-4
 
@@ -249,7 +256,7 @@ def test_tol():
 
     for tol in [-1, complex(1.0, 1.0), "1.0"]:  # , 0.0]:
         with pytest.raises(ValueError) as exc_info:
-            BinaryClassifier(tol=tol)
+            Classifier(tol=tol)
         assert exc_info.type is ValueError
         match = (
             "Tolerance for stopping criteria must be non negative; got (tol=%r)" % tol
@@ -261,7 +268,7 @@ def test_tol():
 
 
 def test_max_iter():
-    clf = BinaryClassifier()
+    clf = Classifier()
     assert isinstance(clf.max_iter, int)
     assert clf.max_iter == 100
 
@@ -280,7 +287,7 @@ def test_max_iter():
 
     for max_iter in [-1, 0.0, complex(1.0, 1.0), "1.0"]:
         with pytest.raises(ValueError) as exc_info:
-            BinaryClassifier(max_iter=max_iter)
+            Classifier(max_iter=max_iter)
         assert exc_info.type is ValueError
         match = (
             "Maximum number of iteration must be positive; got (max_iter=%r)" % max_iter
@@ -292,7 +299,7 @@ def test_max_iter():
 
 
 def test_l1_ratio():
-    clf = BinaryClassifier()
+    clf = Classifier()
     assert isinstance(clf.l1_ratio, float)
     assert clf.l1_ratio == 0.5
 
@@ -317,7 +324,7 @@ def test_l1_ratio():
 
     for l1_ratio in [-1, complex(1.0, 1.0), "1.0", -1.0, 1.1]:
         with pytest.raises(ValueError) as exc_info:
-            _ = BinaryClassifier(l1_ratio=l1_ratio)
+            _ = Classifier(l1_ratio=l1_ratio)
         assert exc_info.type is ValueError
         match = "l1_ratio must be in (0, 1]; got (l1_ratio=%r)" % l1_ratio
         assert exc_info.value.args[0] == match
@@ -326,20 +333,22 @@ def test_l1_ratio():
     assert getattr(clf, "l1_ratio") == 0.42
 
 
-penalties = BinaryClassifier._penalties
+penalties = Classifier._penalties
+
 # (1e-3, 1e-2, 1e-1, 1.0, 1e1, 1e2, 1e3)
 grid_C = (1e-3, 1.0, 1e3)
 grid_l1_ratio = (0.1, 0.5, 0.9)
+solvers = ("cgd", "gd", "svrg", "saga")  # , "sgd",)
 
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
 @pytest.mark.parametrize("penalty", penalties)
 @pytest.mark.parametrize("C", grid_C)
 @pytest.mark.parametrize("l1_ratio", grid_l1_ratio)
-@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))  # , "sgd",))
+@pytest.mark.parametrize("solver", solvers)
 def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, solver):
     """
-    This is a test that checks on many combinations that BinaryClassifier gets the
+    This is a test that checks on many combinations that Classifier gets the
     same coef_ and intercept_ as scikit-learn on simulated data
     """
     n_samples = 128
@@ -349,7 +358,9 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, solver):
     verbose = False
 
     X, y = simulate_true_logistic(
-        n_samples=n_samples, n_features=n_features, fit_intercept=fit_intercept,
+        n_samples=n_samples,
+        n_features=n_features,
+        fit_intercept=fit_intercept,
     )
 
     args = {
@@ -383,7 +394,7 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, solver):
     clf_scikit.fit(X, y)
     # We compare with saga since it supports all penalties
     # clf_scikit = LogisticRegression(solver="saga", **args).fit(X, y)
-    clf_linlearn = BinaryClassifier(
+    clf_linlearn = Classifier(
         penalty=penalty, C=C, l1_ratio=l1_ratio, solver=solver, **args
     )
     clf_linlearn.fit(X, y)
@@ -423,10 +434,10 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, solver):
 @pytest.mark.parametrize("penalty", penalties)
 @pytest.mark.parametrize("C", grid_C)
 @pytest.mark.parametrize("l1_ratio", grid_l1_ratio)
-@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))  # , "sgd",))
+@pytest.mark.parametrize("solver", solvers)
 def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio, solver):
     """
-    This is a test that checks on many combinations that BinaryClassifier gets the
+    This is a test that checks on many combinations that Classifier gets the
     same coef_ and intercept_ as scikit-learn on simulated data
     """
     n_samples = 150
@@ -465,7 +476,7 @@ def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio, solver):
         raise ValueError("Weird penalty %r" % penalty)
 
     clf_scikit.fit(X, y)
-    clf_linlearn = BinaryClassifier(
+    clf_linlearn = Classifier(
         penalty=penalty, C=C, l1_ratio=l1_ratio, solver=solver, **args
     )
     clf_linlearn.fit(X, y)
@@ -481,10 +492,10 @@ def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio, solver):
 @pytest.mark.parametrize("penalty", penalties)
 @pytest.mark.parametrize("C", grid_C)
 @pytest.mark.parametrize("l1_ratio", grid_l1_ratio)
-@pytest.mark.parametrize("solver", ("cgd", "gd", "svrg", "saga"))  # , "sgd",))#
+@pytest.mark.parametrize("solver", solvers)
 def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio, solver):
     """
-    This is a test that checks on many combinations that BinaryClassifier gets the
+    This is a test that checks on many combinations that Classifier gets the
     same coef_ and intercept_ as scikit-learn on simulated data
     """
     n_samples = 150
@@ -526,7 +537,7 @@ def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio, solver):
         raise ValueError("Weird penalty %r" % penalty)
 
     clf_scikit.fit(X, y)
-    clf_linlearn = BinaryClassifier(
+    clf_linlearn = Classifier(
         penalty=penalty, C=C, l1_ratio=l1_ratio, solver=solver, **args
     )
     clf_linlearn.fit(X, y)
@@ -539,7 +550,7 @@ def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio, solver):
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
 @pytest.mark.parametrize("C", grid_C)
-@pytest.mark.parametrize("solver", ("cgd", "gd", "sgd", "svrg", "saga", "sgd"))
+@pytest.mark.parametrize("solver", (*solvers, "sgd"))
 def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C, solver):
     n_samples = 128
     n_features = 5
@@ -548,7 +559,9 @@ def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C, solver):
     verbose = False
 
     X, y = simulate_true_logistic(
-        n_samples=n_samples, n_features=n_features, fit_intercept=fit_intercept,
+        n_samples=n_samples,
+        n_features=n_features,
+        fit_intercept=fit_intercept,
     )
 
     args = {
@@ -563,20 +576,20 @@ def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C, solver):
         return pytest.approx(v, abs=1e-7)
 
     # Test that elasticnet with l1_ratio=0.0 is the same as penalty="l2"
-    clf_elasticnet = BinaryClassifier(
+    clf_elasticnet = Classifier(
         penalty="elasticnet", C=C, l1_ratio=0.0, solver=solver, **args
     )
-    clf_l2 = BinaryClassifier(penalty="l2", C=C, solver=solver, **args)
+    clf_l2 = Classifier(penalty="l2", C=C, solver=solver, **args)
     clf_elasticnet.fit(X, y)
     clf_l2.fit(X, y)
     assert clf_elasticnet.intercept_ == approx(clf_l2.intercept_)
     assert clf_elasticnet.coef_ == approx(clf_l2.coef_)
 
     # Test that elasticnet with l1_ratio=1.0 is the same as penalty="l1"
-    clf_elasticnet = BinaryClassifier(
+    clf_elasticnet = Classifier(
         penalty="elasticnet", C=C, l1_ratio=1.0, solver=solver, **args
     )
-    clf_l1 = BinaryClassifier(penalty="l1", C=C, l1_ratio=0.0, solver=solver, **args)
+    clf_l1 = Classifier(penalty="l1", C=C, l1_ratio=0.0, solver=solver, **args)
     clf_elasticnet.fit(X, y)
     clf_l1.fit(X, y)
     assert clf_elasticnet.intercept_ == approx(clf_l1.intercept_)
@@ -593,7 +606,7 @@ def test_that_array_conversion_is_ok():
     weird = {0: "neg", 1: "pos"}
     y_weird = [weird[yi] for yi in y]
 
-    br = BinaryClassifier(tol=1e-17, max_iter=200).fit(X_df, y_weird)
+    br = Classifier(tol=1e-17, max_iter=200).fit(X_df, y_weird)
     lr = LogisticRegression(tol=1e-17, max_iter=200).fit(X_df, y_weird)
 
     assert br.intercept_ == pytest.approx(lr.intercept_, abs=1e-4)

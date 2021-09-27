@@ -21,13 +21,37 @@ from numba import jit
 from ._base import Estimator, jit_kwargs
 from .._utils import np_float
 
-StateLLM = namedtuple("StateLLM", ["block_means", "sample_indices", "gradient"])
+
+# Better implementation of argmedian ??
+@jit(**jit_kwargs)
+def argmedian(x):
+    med = np.median(x)
+    id = 0
+    for a in x:
+        if a == med:
+            return id
+        id += 1
+    raise ValueError("Failed argmedian")
+
+    # return np.argpartition(x, len(x) // 2)[len(x) // 2]
+
+
+StateLLM = namedtuple(
+    "StateLLM",
+    [
+        "block_means",
+        "sample_indices",
+        "gradient",
+        "loss_derivative",
+        "partial_derivative",
+    ],
+)
 
 
 class LLM(Estimator):
-    def __init__(self, X, y, loss, fit_intercept, n_blocks):
+    def __init__(self, X, y, loss, n_classes, fit_intercept, n_blocks):
         # assert n_blocks % 2 == 1
-        super().__init__(X, y, loss, fit_intercept)
+        super().__init__(X, y, loss, n_classes, fit_intercept)
         # n_blocks must be uneven
         self.n_blocks = n_blocks + ((n_blocks + 1) % 2)
         self.n_samples_in_block = self.n_samples // n_blocks
@@ -41,8 +65,11 @@ class LLM(Estimator):
             block_means=np.empty(self.n_blocks, dtype=np_float),
             sample_indices=np.arange(self.n_samples, dtype=np.uintp),
             gradient=np.empty(
-                self.X.shape[1] + int(self.fit_intercept), dtype=np_float
+                (self.n_features + int(self.fit_intercept), self.n_classes),
+                dtype=np_float,
             ),
+            loss_derivative=np.empty(self.n_classes, dtype=np_float),
+            partial_derivative=np.empty(self.n_classes, dtype=np_float),
         )
 
     def partial_deriv_factory(self):
@@ -50,21 +77,9 @@ class LLM(Estimator):
         y = self.y
         n_samples_in_block = self.n_samples_in_block
         loss = self.loss
+        n_classes = self.n_classes
         value_loss = loss.value_factory()
         deriv_loss = loss.deriv_factory()
-
-        # Better implementation of argmedian ??
-        @jit(**jit_kwargs)
-        def argmedian(x):
-            med = np.median(x)
-            id = 0
-            for a in x:
-                if a == med:
-                    return id
-                id += 1
-            raise ValueError("Failed argmedian")
-
-            # return np.argpartition(x, len(x) // 2)[len(x) // 2]
 
         if self.fit_intercept:
 
@@ -87,20 +102,28 @@ class LLM(Estimator):
 
                 argmed = argmedian(block_means)
 
-                deriv = 0.0
+                deriv = state.loss_derivative
+                partial_derivative = state.partial_derivative
+                for k in range(n_classes):
+                    partial_derivative[k] = 0.0
+
                 if j == 0:
                     for i in sample_indices[
                         argmed * n_samples_in_block : (argmed + 1) * n_samples_in_block
                     ]:
-                        deriv += deriv_loss(y[i], inner_products[i])
+                        deriv_loss(y[i], inner_products[i], deriv)
+                        for k in range(n_classes):
+                            partial_derivative[k] += deriv[k]
                 else:
                     for i in sample_indices[
                         argmed * n_samples_in_block : (argmed + 1) * n_samples_in_block
                     ]:
-                        deriv += deriv_loss(y[i], inner_products[i]) * X[i, j - 1]
+                        deriv_loss(y[i], inner_products[i], deriv)
+                        for k in range(n_classes):
+                            partial_derivative[k] += deriv[k] * X[i, j - 1]
 
-                deriv /= n_samples_in_block
-                return deriv
+                for k in range(n_classes):
+                    partial_derivative[k] /= n_samples_in_block
 
             return partial_deriv
 
@@ -125,14 +148,19 @@ class LLM(Estimator):
 
                 argmed = argmedian(block_means)
 
-                deriv = 0.0
+                deriv = state.loss_derivative
+                partial_derivative = state.partial_derivative
+                for k in range(n_classes):
+                    partial_derivative[k] = 0.0
                 for i in sample_indices[
                     argmed * n_samples_in_block : (argmed + 1) * n_samples_in_block
                 ]:
-                    deriv += deriv_loss(y[i], inner_products[i]) * X[i, j]
+                    deriv_loss(y[i], inner_products[i], deriv)
+                    for k in range(n_classes):
+                        partial_derivative[k] += deriv[k] * X[i, j]
 
-                deriv /= n_samples_in_block
-                return deriv
+                for k in range(n_classes):
+                    partial_derivative[k] /= n_samples_in_block
 
             return partial_deriv
 
@@ -143,20 +171,9 @@ class LLM(Estimator):
         value_loss = loss.value_factory()
         deriv_loss = loss.deriv_factory()
         n_samples_in_block = self.n_samples_in_block
+        n_classes = self.n_classes
+        n_features = self.n_features
         n_blocks = self.n_blocks
-
-        # Better implementation of argmedian ??
-        @jit(**jit_kwargs)
-        def argmedian(x):
-            med = np.median(x)
-            id = 0
-            for a in x:
-                if a == med:
-                    return id
-                id += 1
-            raise ValueError("Failed argmedian")
-
-            # return np.argpartition(x, len(x) // 2)[len(x) // 2]
 
         if self.fit_intercept:
 
@@ -182,15 +199,25 @@ class LLM(Estimator):
 
                 argmed = argmedian(block_means)
 
-                gradient.fill(0.0)
-                deriv = 0.0
+                for j in range(n_features + 1):
+                    for k in range(n_classes):
+                        gradient[j, k] = 0.0
+
+                deriv = state.loss_derivative
                 for i in sample_indices[
                     argmed * n_samples_in_block : (argmed + 1) * n_samples_in_block
                 ]:
-                    deriv = deriv_loss(y[i], inner_products[i])
-                    gradient[0] += deriv
-                    gradient[1:] += deriv * X[i]
-                gradient /= n_samples_in_block
+                    deriv_loss(y[i], inner_products[i], deriv)
+                    for k in range(n_classes):
+                        gradient[0, k] += deriv[k]
+                        for j in range(n_features):
+                            gradient[j + 1, k] += (
+                                deriv[k] * X[i, j]
+                            )  # np.outer(X[i], deriv)
+
+                for j in range(n_features + 1):
+                    for k in range(n_classes):
+                        gradient[j, k] /= n_samples_in_block
 
             return grad
         else:
@@ -217,11 +244,22 @@ class LLM(Estimator):
 
                 argmed = argmedian(block_means)
 
-                gradient.fill(0.0)
+                for j in range(n_features):
+                    for k in range(n_classes):
+                        gradient[j, k] = 0.0
+                deriv = state.loss_derivative
                 for i in sample_indices[
                     argmed * n_samples_in_block : (argmed + 1) * n_samples_in_block
                 ]:
-                    gradient += deriv_loss(y[i], inner_products[i]) * X[i]
-                gradient /= n_samples_in_block
+                    deriv_loss(y[i], inner_products[i], deriv)
+                    for j in range(n_features):
+                        for k in range(n_classes):
+                            gradient[j, k] += (
+                                deriv[k] * X[i, j]
+                            )  # np.outer(X[i], deriv)
+
+                for j in range(n_features):
+                    for k in range(n_classes):
+                        gradient[j, k] /= n_samples_in_block
 
             return grad

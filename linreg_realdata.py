@@ -54,7 +54,7 @@ block_sizes = {"mom_cgd": 0.07, "implicit_gd": 0.07, "gmom_gd": 0.07}  # 555555}
 random_seed = 44
 test_size = 0.3
 
-dataset = "used_car"#"CaliforniaHousing"#"Boston"#"Diabetes"  #
+dataset = "used_car"  # "CaliforniaHousing"#"Boston"#"Diabetes"  #
 
 
 def load_used_car():
@@ -149,7 +149,7 @@ for dat in [X_train, X_test, y_train, y_test]:
 n_samples, n_features = X_train.shape
 
 step_size = 0.05
-max_iter = 2*50
+max_iter = 2 * 50
 
 
 def risk(X, y, w, fit_intercept=fit_intercept, meantype="ordinary"):
@@ -188,7 +188,7 @@ def test_risk(w, algo_name=""):
     return risk(X_test, y_test, w, fit_intercept=fit_intercept, meantype="ordinary")
 
 
-penalty = "l2"#None  # "l1"#
+penalty = "l2"  # None  # "l1"#
 lamda = 0.1  # 1/np.sqrt(X_train.shape[0])
 
 
@@ -235,34 +235,25 @@ logging.info("step_size = %f , max_iter = %d" % (step_size, max_iter))
 
 # rng = np.random.RandomState(random_seed)  ## Global random generator
 
-metrics = [train_risk, test_risk]  # , "gradient_error"]
+metrics = ["train_risk", "test_risk"]  # , "gradient_error"]
 
-trackers = [
-    (lambda w: w, (X_train.shape[1] + int(fit_intercept),)),
-    (lambda _: time.time(), 1),
-]
 
 Algorithm = namedtuple("Algorithm", ["name", "solver", "estimator", "max_iter"])
 
 algorithms = [
+    Algorithm(name="holland_gd", solver="gd", estimator="ch", max_iter=max_iter),
     Algorithm(name="saga", solver="saga", estimator="erm", max_iter=3 * max_iter),
     Algorithm(name="mom_cgd", solver="cgd", estimator="mom", max_iter=2 * max_iter),
     Algorithm(name="erm_cgd", solver="cgd", estimator="erm", max_iter=3 * max_iter),
-    Algorithm(
-        name="catoni_cgd", solver="cgd", estimator="holland_catoni", max_iter=max_iter
-    ),
+    Algorithm(name="catoni_cgd", solver="cgd", estimator="ch", max_iter=max_iter),
     # Algorithm(name="tmean_cgd", solver="cgd", estimator="tmean", max_iter=max_iter),
     Algorithm(name="gmom_gd", solver="gd", estimator="gmom", max_iter=3 * max_iter),
-    Algorithm(
-        name="implicit_gd", solver="gd", estimator="implicit", max_iter=18 * max_iter
-    ),
+    Algorithm(name="implicit_gd", solver="gd", estimator="llm", max_iter=18 * max_iter),
     Algorithm(name="erm_gd", solver="gd", estimator="erm", max_iter=5 * max_iter),
-    Algorithm(
-        name="holland_gd", solver="gd", estimator="holland_catoni", max_iter=max_iter
-    ),
     Algorithm(name="svrg", solver="svrg", estimator="erm", max_iter=2 * max_iter),
     Algorithm(name="sgd", solver="sgd", estimator="erm", max_iter=4 * max_iter),
 ]
+
 
 def run_repetition(rep):
     if not save_results:
@@ -276,8 +267,8 @@ def run_repetition(rep):
 
     outputs = {}
 
-    def announce(x):
-        logging.info(str(rep) + " : " + x + " done")
+    def announce(x, status):
+        logging.info(str(rep) + " : " + x + " " + status)
 
     def run_algorithm(algo, out):
         clf = Regressor(
@@ -293,24 +284,28 @@ def run_repetition(rep):
             penalty=penalty or "none",
             C=1 / (n_samples * lamda) if penalty else 1.0,
         )
-        clf.fit(X_train, y_train, trackers=trackers, dummy_first_step=True)
-        out[algo.name] = clf.history_.records
-        announce(algo.name)
+        clf.fit(X_train, y_train, dummy_first_step=True)
+        announce(algo.name, "fitted")
+        clf.compute_objective_history(X_train, y_train)
+        clf.compute_objective_history(X_test, y_test)
+        announce(algo.name, "computed history")
+        out[algo.name] = clf.history_.records[1:]
 
     logging.info("Running algorithms ...")
 
     for algo in algorithms:
         run_algorithm(algo, outputs)
 
-    logging.info("computing objective history")
     for alg in outputs.keys():
         for ind_metric, metric in enumerate(metrics):
-            for i in range(max_iter):
+            for i in range(len(outputs[alg][0])):
                 col_try.append(rep)
                 col_algo.append(alg)
-                col_metric.append(metric.__name__)
-                col_val.append(metric(outputs[alg][0].record[i]))
-                col_time.append(outputs[alg][1].record[i] - outputs[alg][1].record[0])
+                col_metric.append(metric)
+                col_val.append(outputs[alg][ind_metric + 1].record[i])
+                col_time.append(
+                    outputs[alg][0].record[i] - outputs[alg][0].record[0]
+                )  # i)#
     logging.info("repetition done")
     return col_try, col_algo, col_metric, col_val, col_time
 
@@ -334,10 +329,10 @@ data = pd.DataFrame(
     }
 )
 
-indexNames = data[ data['value'] > 1e8 ].index
+indexNames = data[data["value"] > 1e8].index
 # Delete these row indexes from dataFrame
 logging.info("droping %d rows" % len(indexNames))
-data.drop(indexNames , inplace=True)
+data.drop(indexNames, inplace=True)
 
 if save_results:
     now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
@@ -362,7 +357,17 @@ line_width = 1.0
 g = sns.FacetGrid(data, col="metric", height=4, legend_out=True, sharey=False)
 g.map(sns.lineplot, "time", "value", "algo", lw=line_width).set(xlabel="", ylabel="")
 
-g.set(ylim=(None, risk(X_test, y_test, np.zeros(n_features + int(fit_intercept)), fit_intercept=fit_intercept)))
+g.set(
+    ylim=(
+        None,
+        risk(
+            X_test,
+            y_test,
+            np.zeros(n_features + int(fit_intercept)),
+            fit_intercept=fit_intercept,
+        ),
+    )
+)
 # g.set_titles(col_template="{col_name}")
 
 axes = g.axes.flatten()

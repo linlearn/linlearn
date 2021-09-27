@@ -9,7 +9,8 @@ from warnings import warn
 
 import numbers
 import numpy as np
-from scipy.special import expit
+from scipy.special import expit, softmax
+from numba import jit
 
 from sklearn.base import ClassifierMixin, RegressorMixin, BaseEstimator
 from sklearn.preprocessing import LabelEncoder
@@ -18,17 +19,39 @@ from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
 from sklearn.utils.extmath import safe_sparse_dot
 
-from ._loss import Logistic, LeastSquares, SquaredHinge, steps_factory
+from ._loss import (
+    Logistic,
+    MultiLogistic,
+    LeastSquares,
+    SquaredHinge,
+    MultiSquaredHinge,
+    steps_factory,
+    decision_function_factory,
+)
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
 from .solver import CGD, GD, SGD, SVRG, SAGA, batch_GD, History
 from .estimator import ERM, MOM, TMean, LLM, GMOM, CH
+from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float
+
+jit_kwargs = {
+    "nopython": NOPYTHON,
+    "nogil": NOGIL,
+    "boundscheck": BOUNDSCHECK,
+    "fastmath": FASTMATH,
+}
 
 
 # TODO: serialization
 
 
 class BaseLearner(ClassifierMixin, BaseEstimator):
-    _losses = ["logistic", "leastsquares", "squaredhinge"]
+    _losses = [
+        "logistic",
+        "leastsquares",
+        "multilogistic",
+        "squaredhinge",
+        "multisquaredhinge",
+    ]
     _penalties = ["none", "l2", "l1", "elasticnet"]
     _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch"]
     _solvers = ["cgd", "gd", "sgd", "svrg", "saga", "batch_gd"]
@@ -304,28 +327,40 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return Logistic()
         elif self.loss == "leastsquares":
             return LeastSquares()
+        elif self.loss == "multilogistic":
+            return MultiLogistic(self.n_classes)
         elif self.loss == "squaredhinge":
             return SquaredHinge()
+        elif self.loss == "multisquaredhinge":
+            return MultiSquaredHinge(self.n_classes)
         else:
             raise ValueError("Loss unknown")
 
     def _get_estimator(self, X, y, loss):
         if self.estimator == "erm":
-            return ERM(X, y, loss, self.fit_intercept)
+            return ERM(X, y, loss, self.n_classes, self.fit_intercept)
         elif self.estimator == "mom":
             n_samples = y.shape[0]
             n_samples_in_block = int(self.block_size * n_samples)
-            return MOM(X, y, loss, self.fit_intercept, n_samples_in_block)
+            return MOM(
+                X, y, loss, self.n_classes, self.fit_intercept, n_samples_in_block
+            )
         elif self.estimator == "tmean":
-            return TMean(X, y, loss, self.fit_intercept, self.percentage)
+            return TMean(
+                X, y, loss, self.n_classes, self.fit_intercept, self.percentage
+            )
         elif self.estimator == "ch":
-            return CH(X, y, loss, self.fit_intercept, self.eps)
+            return CH(X, y, loss, self.n_classes, self.fit_intercept, self.eps)
         elif self.estimator == "llm":
-            return LLM(X, y, loss, self.fit_intercept, int(1 / self.block_size))
+            return LLM(
+                X, y, loss, self.n_classes, self.fit_intercept, int(1 / self.block_size)
+            )
         elif self.estimator == "gmom":
             n_samples = y.shape[0]
             n_samples_in_block = int(self.block_size * n_samples)
-            return GMOM(X, y, loss, self.fit_intercept, n_samples_in_block)
+            return GMOM(
+                X, y, loss, self.n_classes, self.fit_intercept, n_samples_in_block
+            )
         else:
             raise ValueError("Unknown estimator")
 
@@ -344,7 +379,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         else:
             raise ValueError("Unknown penalty")
 
-    def _get_solver(self, X, y, trackers=None):
+    def _get_solver(self, X, y):
         n_samples, n_features = X.shape
 
         # # Get the loss object
@@ -374,13 +409,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
             steps = self.step_size * steps_func(loss.lip, X)
             # Create an history object for the solver
-            history = History("CGD", self.max_iter, self.verbose, trackers=trackers)
+            history = History("CGD", self.max_iter, self.verbose)
             self.history_ = history
 
             return CGD(
                 X,
                 y,
                 loss,
+                self.n_classes,
                 self.fit_intercept,
                 estimator,
                 penalty,
@@ -404,13 +440,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
             step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
-            history = History("GD", self.max_iter, self.verbose, trackers=trackers)
+            history = History("GD", self.max_iter, self.verbose)
             self.history_ = history
 
             return GD(
                 X,
                 y,
                 loss,
+                self.n_classes,
                 self.fit_intercept,
                 estimator,
                 penalty,
@@ -427,13 +464,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
             step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
-            history = History("SGD", self.max_iter, self.verbose, trackers=trackers)
+            history = History("SGD", self.max_iter, self.verbose)
             self.history_ = history
 
             return SGD(
                 X,
                 y,
                 loss,
+                self.n_classes,
                 self.fit_intercept,
                 estimator,
                 penalty,
@@ -452,13 +490,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
             step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
-            history = History("SVRG", self.max_iter, self.verbose, trackers=trackers)
+            history = History("SVRG", self.max_iter, self.verbose)
             self.history_ = history
 
             return SVRG(
                 X,
                 y,
                 loss,
+                self.n_classes,
                 self.fit_intercept,
                 estimator,
                 penalty,
@@ -475,13 +514,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
             step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
-            history = History("SAGA", self.max_iter, self.verbose, trackers=trackers)
+            history = History("SAGA", self.max_iter, self.verbose)
             self.history_ = history
 
             return SAGA(
                 X,
                 y,
                 loss,
+                self.n_classes,
                 self.fit_intercept,
                 estimator,
                 penalty,
@@ -503,15 +543,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
             step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
-            history = History(
-                "batch_GD", self.max_iter, self.verbose, trackers=trackers
-            )
+            history = History("batch_GD", self.max_iter, self.verbose)
             self.history_ = history
 
             return batch_GD(
                 X,
                 y,
                 loss,
+                self.n_classes,
                 self.fit_intercept,
                 estimator,
                 penalty,
@@ -530,12 +569,94 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         # Deal with warm-starting here
         n_samples, n_features = X.shape
         if self.fit_intercept:
-            w = np.zeros(n_features + 1)
+            w = np.zeros(
+                (n_features + int(self.fit_intercept), self.n_classes),
+                dtype=X.dtype,
+                order="F",
+            )
         else:
-            w = np.zeros(n_features)
+            w = np.zeros((n_features, self.n_classes), dtype=X.dtype, order="F")
         return w
 
-    def fit(self, X, y, sample_weight=None, trackers=None, dummy_first_step=False):
+    def _check_multiclass_loss(self):
+        if self.loss == "logistic":
+            # if we are in the multiclass case switch to multiclass loss
+            self.loss = "multilogistic"
+        elif self.loss == "multilogistic":
+            pass
+        elif self.loss == "squaredhinge":
+            # if we are in the multiclass case switch to multiclass loss
+            self.loss = "multisquaredhinge"
+        elif self.loss == "multisquaredhinge":
+            pass
+        else:
+            raise ValueError(
+                "You should specify a classification loss, got loss=%s" % self.loss
+            )
+
+    def _check_binary_loss(self):
+        if self.loss == "multilogistic":
+            self.loss = "logistic"
+        elif self.loss == "logistic":
+            pass
+        elif self.loss == "multisquaredhinge":
+            self.loss = "squaredhinge"
+        elif self.loss == "squaredhinge":
+            pass
+        else:
+            raise ValueError(
+                "You should specify a classification loss, got loss=%s" % self.loss
+            )
+
+    def _check_regression_loss(self):
+        if self.loss != "leastsquares":
+            raise ValueError(
+                "You should specify a regression loss, got loss=%s" % self.loss
+            )
+
+    def objective_factory(self, y):
+
+        value_loss = self._get_loss().value_batch_factory()
+        value_penalty = (self._get_penalty(len(y))).value_factory()
+        if self.fit_intercept:
+
+            @jit(**jit_kwargs)
+            def objective(weights, inner_products):
+                obj = value_loss(y, inner_products)
+                obj += value_penalty(weights[1:])
+                return obj
+
+            return objective
+        else:
+
+            @jit(**jit_kwargs)
+            def objective(weights, inner_products):
+                obj = value_loss(y, inner_products)
+                obj += value_penalty(weights)
+                return obj
+
+            return objective
+
+    def compute_objective_history(self, X, y):
+        self.history_.allocate_record(1)
+        new_record = self.history_.records[-1]
+        fit_intercept = self.fit_intercept
+        inner_products = np.empty((X.shape[0], self.n_classes), dtype=np_float)
+
+        # decision function
+        decision_function = decision_function_factory(X, fit_intercept)
+
+        # Get the objective function
+        objective = self.objective_factory(y)
+        parameter_record = self.history_.records[0]
+        total_iter = parameter_record.cursor
+
+        for i in range(total_iter):  # totalitaire
+            weights = parameter_record.record[i]
+            decision_function(weights, inner_products)
+            new_record.update(objective(weights, inner_products))
+
+    def fit(self, X, y, sample_weight=None, dummy_first_step=False):
         """
         Fit the model according to the given training data.
 
@@ -575,7 +696,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             accept_large_sparse = False
 
         estimator_name = self.__class__.__name__
-        is_classifier = estimator_name == "BinaryClassifier"
+        is_classifier = estimator_name == "Classifier"
         X = check_array(
             X,
             order=order,
@@ -589,30 +710,36 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
         if is_classifier:
             y = check_array(y, ensure_2d=False, dtype=None, estimator=estimator_name)
+            check_consistent_length(X, y)
             # Ensure that the label type is binary
             y_type = type_of_target(y)
-            # if y_type not in ["binary", "multiclass", "multilabel-indicator"]:
-            #     raise ValueError("Unknown label type: %r" % y_type)
-            if y_type != "binary":
+            if y_type not in ["binary", "multiclass", "multilabel-indicator"]:
                 raise ValueError("Unknown label type: %r" % y_type)
             # TODO: random_state = check_random_state(random_state)
             # This replaces the target modalities by elements in {0, 1}
             le = LabelEncoder()
-            # if y_type =="multilabel-indicator":
-            #     y_encoded = le.fit_transform(np.argmax(y, axis=1))
-            # else:
-            #     y_encoded = le.fit_transform(y)
-            y_encoded = le.fit_transform(y)
+            if y_type == "multilabel-indicator":
+                y_encoded = le.fit_transform(np.argmax(y, axis=1))
+            else:
+                y_encoded = le.fit_transform(y)
             # Keep track of the classes
             self.classes_ = le.classes_
-            # We need to put the targets in {-1, 1}
-            y_encoded[y_encoded == 0] = -1.0
+            self.n_classes = len(self.classes_)
+            if y_type == "binary":
+                # We need to put the targets in {-1, 1}
+                y_encoded = 2 * y_encoded - 1.0
+                self.n_classes = 1
+                self._check_binary_loss()
+            else:
+                self._check_multiclass_loss()
 
         else:
             y = check_array(
                 y, ensure_2d=False, dtype="numeric", estimator=estimator_name
             )
             y_encoded = y
+            self.n_classes = 1
+            self._check_regression_loss()
 
         # TODO: sample weights stuff, later...
         # # If sample weights exist, convert them to array (support for lists)
@@ -658,7 +785,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         #     )
 
         #######
-        solver = self._get_solver(X, y_encoded, trackers=trackers)
+        solver = self._get_solver(X, y_encoded)
         w = self._get_initial_iterate(X, y_encoded)
         optimization_result = solver.solve(w, dummy_first_step=dummy_first_step)
 
@@ -668,11 +795,11 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         w = optimization_result.w
 
         if self.fit_intercept:
-            self.intercept_ = np.array([w[0]])
-            self.coef_ = w[np.newaxis, 1:].copy()
+            self.intercept_ = np.array([w[0]]).reshape(self.n_classes)
+            self.coef_ = w[1:].T.copy()
         else:
-            self.intercept_ = np.zeros(1)
-            self.coef_ = w[np.newaxis, :].copy()
+            self.intercept_ = np.zeros(self.n_classes)
+            self.coef_ = w[:].T.copy()
 
         return self
 
@@ -700,7 +827,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
         # For now, no sparse arrays
         # X = check_array(X, accept_sparse="csr")
-        X = check_array(X, accept_sparse=False, estimator="BinaryClassifier")
+        X = check_array(X, accept_sparse=False, estimator=self.__class__.__name__)
 
         n_features = self.coef_.shape[1]
         if X.shape[1] != n_features:
@@ -709,10 +836,13 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
 
         scores = safe_sparse_dot(X, self.coef_.T, dense_output=True) + self.intercept_
-        return scores.ravel()
+        if self.n_classes == 1:
+            return scores.ravel()
+        else:
+            return scores
 
 
-class BinaryClassifier(BaseLearner):
+class Classifier(BaseLearner):
     """
     Binary classifier. The default is standard penalized logistic regression,
     but it includes other learning algorithms, including very robust ones.
@@ -832,7 +962,7 @@ class BinaryClassifier(BaseLearner):
         l1_ratio=0.5,
         cgd_IS=False,
     ):
-        super(BinaryClassifier, self).__init__(
+        super(Classifier, self).__init__(
             penalty=penalty,
             C=C,
             step_size=step_size,
@@ -883,9 +1013,17 @@ class BinaryClassifier(BaseLearner):
             where classes are ordered as they are in ``self.classes_``.
         """
         check_is_fitted(self)
+        if self.loss not in ["logistic", "multilogistic"]:
+            raise ValueError("Classification probabilities can only be computed for logistic classification but loss is : %s" % self.loss)
+
         prob = self.decision_function(X)
-        expit(prob, out=prob)
-        return np.vstack([1 - prob, prob]).T
+        if self.n_classes == 1:
+            expit(prob, out=prob)
+            return np.vstack([1 - prob, prob]).T
+        else:
+            return softmax(prob, axis=1)
+
+
 
     def predict_log_proba(self, X):
         """

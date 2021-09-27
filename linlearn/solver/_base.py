@@ -55,6 +55,7 @@ class Solver(ABC):
         X,
         y,
         loss,
+        n_classes,
         fit_intercept,
         estimator,
         penalty,
@@ -66,6 +67,7 @@ class Solver(ABC):
         self.X = X
         self.y = y
         self.loss = loss
+        self.n_classes = n_classes
         self.fit_intercept = fit_intercept
         self.estimator = estimator
         self.penalty = penalty
@@ -74,35 +76,15 @@ class Solver(ABC):
         self.random_state = random_state
         self.n_samples, self.n_features = self.X.shape
         if self.fit_intercept:
-            self.n_weights = self.n_features + 1
+            self.n_weights = (self.n_features + 1) * self.n_classes
+            self.weights_shape = (self.n_features + 1, self.n_classes)
         else:
-            self.n_weights = self.n_features
+            self.n_weights = self.n_features * self.n_classes
+            self.weights_shape = (self.n_features, self.n_classes)
 
         self.history = history
-
-    def objective_factory(self):
-
-        value_loss = self.loss.value_batch_factory()
-        value_penalty = self.penalty.value_factory()
-        y = self.y
-        if self.fit_intercept:
-
-            @jit(**jit_kwargs)
-            def objective(weights, inner_products):
-                obj = value_loss(y, inner_products)
-                obj += value_penalty(weights[1:])
-                return obj
-
-            return objective
-        else:
-
-            @jit(**jit_kwargs)
-            def objective(weights, inner_products):
-                obj = value_loss(y, inner_products)
-                obj += value_penalty(weights)
-                return obj
-
-            return objective
+        self.history.allocate_record(self.weights_shape)
+        self.history.allocate_record(1)
 
     @abstractmethod
     def cycle_factory(self):
@@ -111,9 +93,9 @@ class Solver(ABC):
     def solve(self, w0=None, dummy_first_step=False):
         X = self.X
         fit_intercept = self.fit_intercept
-        inner_products = np.empty(self.n_samples, dtype=np_float)
-        coordinates = np.arange(self.n_weights, dtype=np.intp)
-        weights = np.empty(self.n_weights, dtype=np_float)
+        inner_products = np.empty((self.n_samples, self.n_classes), dtype=np_float)
+        coordinates = np.arange(self.weights_shape[0], dtype=np.intp)
+        weights = np.empty(self.weights_shape, dtype=np_float)
         tol = self.tol
         max_iter = self.max_iter
         history = self.history

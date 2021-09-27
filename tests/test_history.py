@@ -4,6 +4,8 @@ import pytest
 
 def test_history():
     history = History("Truc", 4, verbose=False)
+    history.allocate_record(1)  # param
+    history.allocate_record(1)  # time
     history.update(0, n_iter=0, obj=1.2, tol=3.2, blabla=4, update_bar=False)
     history.update(0, n_iter=1, obj=1.2, tol=3.2, blabla=4)
     history.update(0, n_iter=2, obj=1.2, tol=3.2, blabla=4)

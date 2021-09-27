@@ -35,14 +35,14 @@ def decision_function_factory(X, fit_intercept):
 
     if fit_intercept:
 
-        @jit(void(nb_float[::1], nb_float[::1]), **jit_kwargs)
+        @jit(**jit_kwargs)  # void(nb_float[::1], nb_float[::1]),
         def decision_function(w, out):
             out[:] = X.dot(w[1:])
             out += w[0]
 
     else:
 
-        @jit(void(nb_float[::1], nb_float[::1]), **jit_kwargs)
+        @jit(**jit_kwargs)  # void(nb_float[::1], nb_float[::1]),
         def decision_function(w, out):
             out[:] = X.dot(w)
 
@@ -348,7 +348,7 @@ class Logistic(Loss):
     def value_factory(self):
         @jit(**jit_kwargs)
         def value(y, z):
-            agreement = y * z
+            agreement = y * z[0]
             if agreement > 0:
                 return log(1 + exp(-agreement))
             else:
@@ -358,8 +358,59 @@ class Logistic(Loss):
 
     def deriv_factory(self):
         @jit(**jit_kwargs)
-        def deriv(y, z):
-            return -y * sigmoid(-y * z)
+        def deriv(y, z, out):
+            out[0] = -y * sigmoid(-y * z[0])
+
+        return deriv
+
+
+################################################################
+# Multiclass Logistic regression loss
+################################################################
+
+
+class MultiLogistic(Loss):
+    def __init__(self, n_classes):
+        self.lip = 0.25
+        self.n_classes = n_classes
+
+    def value_factory(self):
+        n_classes = self.n_classes
+        @jit(**jit_kwargs)
+        def value(y, z):
+            max_z = z[0]
+            for k in range(1, n_classes):
+                if z[k] > max_z:
+                    max_z = z[k]
+            exponentiated = np.empty_like(z)
+            norm = 0.0
+            for k in range(n_classes):
+                exponentiated[k] = exp(z[k] - max_z)
+                norm += exponentiated[k]
+            return -log(exponentiated[y]/norm)
+
+        return value
+
+    def deriv_factory(self):
+        n_classes = self.n_classes
+        @jit(**jit_kwargs)
+        def deriv(y, z, out):
+            # TODO : unrolling loops makes the code much faster but less precise ...
+            max_z = z[0]
+            for k in range(1, n_classes):
+                if z[k] > max_z:
+                    max_z = z[k]
+
+            # np.exp(z - np.max(z), out)
+            norm = 0.0
+            for k in range(n_classes):
+                out[k] = np.exp(z[k] - max_z) # not much speed difference between exp and np.exp
+                norm += out[k]
+            for k in range(n_classes):
+                out[k] /= norm
+            # out /= out.sum()
+
+            out[y] -= 1
 
         return deriv
 
@@ -376,14 +427,57 @@ class LeastSquares(Loss):
     def value_factory(self):
         @jit(**jit_kwargs)
         def value(y, z):
-            return 0.5 * (y - z) ** 2
+            return 0.5 * (y - z[0]) ** 2
 
         return value
 
     def deriv_factory(self):
         @jit(**jit_kwargs)
-        def deriv(y, z):
-            return z - y
+        def deriv(y, z, out):
+            out[0] = z[0] - y
+
+        return deriv
+
+
+################################################################
+# Multiclass Squared-Hinge loss
+################################################################
+
+
+class MultiSquaredHinge(Loss):
+    def __init__(self, n_classes):
+        self.lip = 1
+        self.n_classes = n_classes
+
+    def value_factory(self):
+        n_classes = self.n_classes
+        @jit(**jit_kwargs)
+        def value(y, z):
+            val = 0.0
+            for i in range(n_classes):
+                if z[i] > -1:
+                    val += 0.5 * (1 + z[i]) ** 2
+            if z[y] > 1:
+                val -= 0.5 * (1 + z[y]) ** 2
+            else:
+                val -= 2 * z[y]
+            return val
+
+        return value
+
+    def deriv_factory(self):
+        n_classes = self.n_classes
+        @jit(**jit_kwargs)
+        def deriv(y, z, out):
+            for i in range(n_classes):
+                if z[i] < 1:
+                    out[i] = 0.0
+                else:
+                    out[i] = z[i] - 1
+            if z[y] < 1:
+                out[y] = z[y] - 1
+            else:
+                out[y] = 0.0
 
         return deriv
 
@@ -400,7 +494,7 @@ class SquaredHinge(Loss):
     def value_factory(self):
         @jit(**jit_kwargs)
         def value(y, z):
-            agreement = y * z
+            agreement = y * z[0]
             if agreement > 1:
                 return 0.0
             else:
@@ -410,12 +504,12 @@ class SquaredHinge(Loss):
 
     def deriv_factory(self):
         @jit(**jit_kwargs)
-        def deriv(y, z):
-            agreement = y * z
+        def deriv(y, z, out):
+            agreement = y * z[0]
             if agreement > 1:
-                return 0.0
+                out[0] = 0.0
             else:
-                return -y * (1 - agreement)
+                out[0] = -y * (1 - agreement)
 
         return deriv
 

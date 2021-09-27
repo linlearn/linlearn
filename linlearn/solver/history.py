@@ -10,6 +10,7 @@ history of solvers and their plots.
 from collections import defaultdict
 import warnings
 import numpy as np
+import time
 
 # We want to import the tqdm.autonotebook but don't want to see the warning...
 with warnings.catch_warnings():
@@ -30,6 +31,9 @@ class Record(object):
         self.record[self.cursor] = value
         self.cursor += 1
 
+    def clear(self):
+        self.cursor = 0
+
     def __len__(self):
         return self.record.shape[0]
 
@@ -37,18 +41,13 @@ class Record(object):
 class History(object):
     """"""
 
-    def __init__(self, title, max_iter, verbose, trackers=None):
+    def __init__(self, title, max_iter, verbose):
         self.max_iter = max_iter
         self.verbose = verbose
         self.keys = None
         self.values = defaultdict(list)
         self.title = title
-        self.trackers = [tracker[0] for tracker in trackers] if trackers else None
-        self.records = (
-            [Record(tracker[1], max_iter + 1) for tracker in trackers]
-            if trackers
-            else None
-        )
+        self.records = []
         self.n_updates = 0
         # TODO: List all possible keys
         print_style = defaultdict(lambda: "%.2e")
@@ -117,9 +116,11 @@ class History(object):
             self.bar.set_postfix_str(postfix)
             self.bar.update(1)
 
-        if self.trackers:
-            for ind_tracker, tracker in enumerate(self.trackers):
-                self.records[ind_tracker].update(tracker(current_iterate))
+        self.records[0].update(current_iterate)
+        self.records[1].update(time.time())
+
+    def allocate_record(self, shape):
+        self.records.append(Record(shape, self.max_iter + 1))
 
     def close_bar(self):
         if self.bar is not None:
@@ -130,6 +131,8 @@ class History(object):
         self.values = defaultdict(list)
         self.keys = None
         self.n_updates = 0
+        for rec in self.records:
+            rec.clear()
 
     def print(self):
         keys = self.keys

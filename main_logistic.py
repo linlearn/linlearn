@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.random.mtrand import multivariate_normal
 from scipy.linalg import toeplitz
-
+import time
 # from linlearn.model import Logistic
 # from linlearn.model.logistic import sigmoid
 # from linlearn.solver_old import SVRG
@@ -84,7 +84,7 @@ from sklearn.metrics import log_loss
 penalty = "l2"
 C = 10
 tol = 1e-13
-max_iter = 50
+max_iter = 500
 verbose = True
 
 args = {
@@ -95,7 +95,7 @@ args = {
     # "estimator": "catoni",
     # "block_size": 0.5,
     # "percentage": 0.01,
-    "solver": "svrg",
+    "solver": "cgd",
     "penalty": penalty,
     "l1_ratio": 1.0,
     "tol": tol,
@@ -125,7 +125,7 @@ args = {
 # print("clf.n_iter_: ", clf.n_iter_)
 # print("clf.n_iter_: ", clf.n_iter_)
 
-from linlearn.learner import BinaryClassifier
+from linlearn.learner import Classifier
 
 # TOD0: pour l1on arrete trop trop les iterations...a cause du critere d'arret
 # args["tol"] = 0.0
@@ -133,12 +133,15 @@ from linlearn.learner import BinaryClassifier
 learners = []
 
 # estimators = ["erm", "mom", "catoni", "tmean"]
-estimators = ["erm"]
+estimators = ["mom"]
 
 for estimator in estimators:
     args["estimator"] = estimator
-    clf = BinaryClassifier(**args).fit(X, y)
+    t0 = time.time()
+    clf = Classifier(**args).fit(X, y)
+    t = time.time() - t0
     print("estimator:", estimator)
+    print("fitted in ", t)
     print(clf.intercept_, clf.coef_.ravel())
     learners.append(clf)
 
@@ -148,8 +151,8 @@ for estimator in estimators:
 # print(clf)
 # print(clf.intercept_, clf.coef_.ravel())
 
-from linlearn._solver import plot_history
-
-plot_history(
-    learners, x="epoch", y="obj", log_scale=True, labels=estimators, dist_min=True
-)
+# from linlearn._solver import plot_history
+#
+# plot_history(
+#     learners, x="epoch", y="obj", log_scale=True, labels=estimators, dist_min=True
+# )

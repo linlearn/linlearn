@@ -21,6 +21,7 @@ class CGD(Solver):
         X,
         y,
         loss,
+        n_classes,
         fit_intercept,
         estimator,
         penalty,
@@ -35,6 +36,7 @@ class CGD(Solver):
             X=X,
             y=y,
             loss=loss,
+            n_classes=n_classes,
             fit_intercept=fit_intercept,
             estimator=estimator,
             penalty=penalty,
@@ -53,7 +55,8 @@ class CGD(Solver):
         X = self.X
         fit_intercept = self.fit_intercept
         n_samples = self.estimator.n_samples
-        n_weights = self.n_weights
+        n_classes = self.n_classes
+        weights_dim1 = self.weights_shape[0]
         partial_deriv_estimator = self.estimator.partial_deriv_factory()
         penalize = self.penalty.apply_one_unscaled_factory()
         steps = self.steps
@@ -69,7 +72,7 @@ class CGD(Solver):
 
             @jit(**jit_kwargs)
             def prepare_coordinates(coords):
-                rand_choice_nb(n_weights, coord_csum_probas, coords)
+                rand_choice_nb(weights_dim1, coord_csum_probas, coords)
 
         else:
 
@@ -90,40 +93,41 @@ class CGD(Solver):
                 #     coordinates[idx] = idx
                 prepare_coordinates(coordinates)
                 # np.random.shuffle(coordinates)
-
+                w_j_new = state_estimator.loss_derivative
+                delta_j = state_estimator.partial_derivative
                 for j in coordinates:
-                    partial_deriv_j = partial_deriv_estimator(
-                        j, inner_products, state_estimator
-                    )
+                    partial_deriv_estimator(j, inner_products, state_estimator)
 
-                    if j == 0:
-                        # It's the intercept, so we don't penalize
-                        w_j_new = weights[j] - steps[j] * partial_deriv_j
-                    else:
-                        # It's not the intercept
-                        w_j_new = weights[j] - steps[j] * partial_deriv_j
+                    for k in range(n_classes):
+                        w_j_new[k] = weights[j, k] - steps[j] * delta_j[k]
+                    if j != 0:
+                        # It's not the intercept so we penalize
                         # TODO: compute the
-                        w_j_new = penalize(w_j_new, scaled_steps[j])
+                        for k in range(n_classes):
+                            w_j_new[k] = penalize(w_j_new[k], scaled_steps[j])
 
                     # Update the inner products
-                    delta_j = w_j_new - weights[j]
-                    # Update the maximum update change
-                    abs_delta_j = fabs(delta_j)
+                    for k in range(n_classes):
+                        delta_j[k] = w_j_new[k] - weights[j, k]
+                        # Update the maximum update change
+                        abs_delta_j = fabs(delta_j[k])
 
-                    if abs_delta_j > max_abs_delta:
-                        max_abs_delta = abs_delta_j
-                    # Update the maximum weight
-                    abs_w_j_new = fabs(w_j_new)
-                    if abs_w_j_new > max_abs_weight:
-                        max_abs_weight = abs_w_j_new
+                        if abs_delta_j > max_abs_delta:
+                            max_abs_delta = abs_delta_j
+                        # Update the maximum weight
+                        abs_w_j_new = fabs(w_j_new[k])
+                        if abs_w_j_new > max_abs_weight:
+                            max_abs_weight = abs_w_j_new
 
-                    if j == 0:
-                        for i in range(n_samples):
-                            inner_products[i] += delta_j
-                    else:
-                        for i in range(n_samples):
-                            inner_products[i] += delta_j * X[i, j - 1]
-                    weights[j] = w_j_new
+                        if j == 0:
+                            for i in range(n_samples):
+                                inner_products[i, k] += delta_j[k]
+                        else:
+                            for i in range(n_samples):
+                                inner_products[i, k] += delta_j[k] * X[i, j - 1]
+
+                    for k in range(n_classes):
+                        weights[j, k] = w_j_new[k]
 
                 return max_abs_delta, max_abs_weight
 
@@ -139,29 +143,34 @@ class CGD(Solver):
                 #     coordinates[idx] = idx
                 prepare_coordinates(coordinates)
                 # np.random.shuffle(coordinates)
-
+                # use available place holders in estimator state to avoid allocation
+                w_j_new = state_estimator.loss_derivative
+                delta_j = state_estimator.partial_derivative
                 for j in coordinates:
 
-                    partial_deriv_j = partial_deriv_estimator(
-                        j, inner_products, state_estimator
-                    )
-                    w_j_new = weights[j] - steps[j] * partial_deriv_j
-                    w_j_new = penalize(w_j_new, scaled_steps[j])
+                    partial_deriv_estimator(j, inner_products, state_estimator)
+                    for k in range(n_classes):
+                        w_j_new[k] = weights[j, k] - steps[j] * delta_j[k]
+                        w_j_new[k] = penalize(w_j_new[k], scaled_steps[j])
+
                     # Update the inner products
-                    delta_j = w_j_new - weights[j]
-                    # Update the maximum update change
-                    abs_delta_j = fabs(delta_j)
-                    if abs_delta_j > max_abs_delta:
-                        max_abs_delta = abs_delta_j
-                    # Update the maximum weight
-                    abs_w_j_new = fabs(w_j_new)
-                    if abs_w_j_new > max_abs_weight:
-                        max_abs_weight = abs_w_j_new
+                    for k in range(n_classes):
+                        delta_j[k] = w_j_new[k] - weights[j, k]
+                        # Update the maximum update change
+                        abs_delta_j = fabs(delta_j[k])
 
-                    for i in range(n_samples):
-                        inner_products[i] += delta_j * X[i, j]
+                        if abs_delta_j > max_abs_delta:
+                            max_abs_delta = abs_delta_j
+                        # Update the maximum weight
+                        abs_w_j_new = fabs(w_j_new[k])
+                        if abs_w_j_new > max_abs_weight:
+                            max_abs_weight = abs_w_j_new
 
-                    weights[j] = w_j_new
+                        for i in range(n_samples):
+                            inner_products[i, k] += delta_j[k] * X[i, j]
+
+                    for k in range(n_classes):
+                        weights[j, k] = w_j_new[k]
                 return max_abs_delta, max_abs_weight
 
             return cycle

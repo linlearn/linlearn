@@ -13,7 +13,7 @@ import pytest
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score
 
-from linlearn import BinaryClassifier
+from linlearn import Classifier
 from .utils import simulate_true_logistic
 
 
@@ -50,7 +50,7 @@ def test_estimators_on_simple_data(estimator, solver, fit_intercept):
         "verbose": verbose,
         "random_state": random_state,
     }
-    clf = BinaryClassifier(**kwargs).fit(X_train, y_train)
+    clf = Classifier(**kwargs).fit(X_train, y_train)
     y_score = clf.predict_proba(X_test)[:, 1]
     assert roc_auc_score(y_test, y_score) >= 0.8
     assert coef0 == pytest.approx(clf.coef_.ravel(), abs=0.5, rel=0.5)

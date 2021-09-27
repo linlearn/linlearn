@@ -23,6 +23,7 @@ class SAGA(Solver):
         X,
         y,
         loss,
+        n_classes,
         fit_intercept,
         estimator,
         penalty,
@@ -36,6 +37,7 @@ class SAGA(Solver):
             X=X,
             y=y,
             loss=loss,
+            n_classes=n_classes,
             fit_intercept=fit_intercept,
             estimator=estimator,
             penalty=penalty,
@@ -55,6 +57,8 @@ class SAGA(Solver):
         fit_intercept = self.fit_intercept
         n_samples = X.shape[0]
         n_weights = self.n_weights
+        n_features = self.n_features
+        n_classes = self.n_classes
 
         deriv_loss = self.loss.deriv_factory()
         penalize = self.penalty.apply_one_unscaled_factory()
@@ -67,47 +71,72 @@ class SAGA(Solver):
         if fit_intercept:
 
             @jit(**jit_kwargs)
-            def cycle(weights, inner_products, mean_grad, grad_update, init):
+            def cycle(
+                weights,
+                inner_products,
+                mean_grad,
+                grad_update,
+                loss_derivative,
+                inner_prod,
+                init,
+            ):
                 max_abs_delta = 0.0
                 max_abs_weight = 0.0
 
                 if init:
-                    mean_grad.fill(0.0)
+                    for k in range(n_classes):
+                        for j in range(n_features + 1):
+                            mean_grad[j, k] = 0.0
                     for i in range(n_samples):
-                        deriv = deriv_loss(y[i], inner_products[i])
-                        mean_grad[0] += deriv
-                        mean_grad[1:] += deriv * X[i]
-                    mean_grad /= n_samples
+                        deriv_loss(y[i], inner_products[i], loss_derivative)
+                        for k in range(n_classes):
+                            mean_grad[0, k] += loss_derivative[k]
+                            for j in range(n_features):
+                                mean_grad[j + 1, k] += (
+                                    X[i, j] * loss_derivative[k]
+                                )  # np.outer(X[i], loss_derivative)
+                    for k in range(n_classes):
+                        for j in range(n_features + 1):
+                            mean_grad[j, k] /= n_samples
 
                 w_new = weights.copy()
                 for i in range(n_samples):
 
-                    j = np.random.randint(n_samples)
-                    new_j_inner_prod = np.dot(w_new[1:], X[j]) + w_new[0]
-                    grad_update[0] = 1
-                    grad_update[1:] = X[j]
-                    grad_update *= deriv_loss(y[j], new_j_inner_prod) - deriv_loss(
-                        y[j], inner_products[j]
-                    )
+                    ind = np.random.randint(n_samples)
+                    for k in range(n_classes):
+                        inner_prod[k] = w_new[0, k]
+                        for j in range(n_features):
+                            inner_prod[k] += X[ind, j] * w_new[j + 1, k]
 
-                    w_new -= step * (grad_update + mean_grad)
+                    deriv_loss(y[ind], inner_prod, grad_update[0])
+                    deriv_loss(y[ind], inner_products[ind], loss_derivative)
 
-                    mean_grad += grad_update / n_samples
-                    inner_products[j] = new_j_inner_prod
+                    for k in range(n_classes):
+                        grad_update[0, k] -= loss_derivative[k]
+                        w_new[0, k] -= step * (grad_update[0, k] + mean_grad[0, k])
+                        mean_grad[0, k] += grad_update[0, k] / n_samples
+                        for j in range(n_features):
+                            grad_update[j + 1, k] = grad_update[0, k] * X[ind, j]
+                            w_new[j + 1, k] -= step * (
+                                grad_update[j + 1, k] + mean_grad[j + 1, k]
+                            )
+                            w_new[j + 1, k] = penalize(w_new[j + 1, k], scaled_step)
+                            mean_grad[j + 1, k] += grad_update[j + 1, k] / n_samples
 
-                    for j in range(1, n_weights):
-                        w_new[j] = penalize(w_new[j], scaled_step)
-                for j in range(n_weights):
-                    # Update the maximum update change
-                    abs_delta_j = fabs(w_new[j] - weights[j])
-                    if abs_delta_j > max_abs_delta:
-                        max_abs_delta = abs_delta_j
-                    # Update the maximum weight
-                    abs_w_j_new = fabs(w_new[j])
-                    if abs_w_j_new > max_abs_weight:
-                        max_abs_weight = abs_w_j_new
+                        inner_products[ind, k] = inner_prod[k]
 
-                weights[:] = w_new
+                for k in range(n_classes):
+                    for j in range(n_features + 1):
+                        # Update the maximum update change
+                        abs_delta_j = fabs(w_new[j, k] - weights[j, k])
+                        if abs_delta_j > max_abs_delta:
+                            max_abs_delta = abs_delta_j
+                        # Update the maximum weight
+                        abs_w_j_new = fabs(w_new[j, k])
+                        if abs_w_j_new > max_abs_weight:
+                            max_abs_weight = abs_w_j_new
+
+                        weights[j, k] = w_new[j, k]
 
                 return max_abs_delta, max_abs_weight
 
@@ -116,44 +145,65 @@ class SAGA(Solver):
         else:
             # There is no intercept, so the code changes slightly
             @jit(**jit_kwargs)
-            def cycle(weights, inner_products, mean_grad, grad_update, init):
+            def cycle(
+                weights,
+                inner_products,
+                mean_grad,
+                grad_update,
+                loss_derivative,
+                inner_prod,
+                init,
+            ):
                 max_abs_delta = 0.0
                 max_abs_weight = 0.0
 
                 if init:
-                    mean_grad.fill(0.0)
+                    for k in range(n_classes):
+                        for j in range(n_features):
+                            mean_grad[j, k] = 0.0
                     for i in range(n_samples):
-                        mean_grad += deriv_loss(y[i], inner_products[i]) * X[i]
-                    mean_grad /= n_samples
+                        deriv_loss(y[i], inner_products[i], loss_derivative)
+                        for k in range(n_classes):
+                            for j in range(n_features):
+                                mean_grad[j, k] += (
+                                    X[i, j] * loss_derivative[k]
+                                )  # np.outer(X[i], loss_derivative)
+                    for k in range(n_classes):
+                        for j in range(n_features):
+                            mean_grad[j, k] /= n_samples
 
                 w_new = weights.copy()
                 for i in range(n_samples):
+                    ind = np.random.randint(n_samples)
+                    for k in range(n_classes):
+                        inner_prod[k] = 0.0
+                        for j in range(n_features):
+                            inner_prod[k] += X[ind, j] * w_new[j, k]
 
-                    j = np.random.randint(n_samples)
-                    new_j_inner_prod = np.dot(w_new, X[j])
+                    deriv_loss(y[ind], inner_prod, grad_update[0])
+                    deriv_loss(y[ind], inner_products[ind], loss_derivative)
+                    for k in range(n_classes):
+                        loss_derivative[k] = grad_update[0, k] - loss_derivative[k]
+                        for j in range(n_features):
+                            grad_update[j, k] = loss_derivative[k] * X[ind, j]
+                            w_new[j, k] -= step * (grad_update[j, k] + mean_grad[j, k])
+                            w_new[j, k] = penalize(w_new[j, k], scaled_step)
+                            mean_grad[j, k] += grad_update[j, k] / n_samples
 
-                    grad_update[:] = (
-                        deriv_loss(y[j], new_j_inner_prod)
-                        - deriv_loss(y[j], inner_products[j])
-                    ) * X[j]
-                    inner_products[j] = new_j_inner_prod
+                        inner_products[ind, k] = inner_prod[k]
 
-                    w_new -= step * (grad_update + mean_grad)
-                    mean_grad += grad_update / n_samples
+                for k in range(n_classes):
+                    for j in range(n_features):
+                        # Update the maximum update change
+                        abs_delta_j = fabs(w_new[j, k] - weights[j, k])
+                        if abs_delta_j > max_abs_delta:
+                            max_abs_delta = abs_delta_j
+                        # Update the maximum weight
+                        abs_w_j_new = fabs(w_new[j, k])
+                        if abs_w_j_new > max_abs_weight:
+                            max_abs_weight = abs_w_j_new
 
-                    for j in range(n_weights):
-                        w_new[j] = penalize(w_new[j], scaled_step)
-                for j in range(n_weights):
-                    # Update the maximum update change
-                    abs_delta_j = fabs(w_new[j] - weights[j])
-                    if abs_delta_j > max_abs_delta:
-                        max_abs_delta = abs_delta_j
-                    # Update the maximum weight
-                    abs_w_j_new = fabs(w_new[j])
-                    if abs_w_j_new > max_abs_weight:
-                        max_abs_weight = abs_w_j_new
-
-                weights[:] = w_new
+                        weights[j, k] = w_new[j, k]
 
                 return max_abs_delta, max_abs_weight
 
@@ -162,14 +212,16 @@ class SAGA(Solver):
     def solve(self, w0=None, dummy_first_step=False):
         X = self.X
         fit_intercept = self.fit_intercept
-        inner_products = np.empty(self.n_samples, dtype=np_float)
+        inner_products = np.empty((self.n_samples, self.n_classes), dtype=np_float)
         # We use intp and not uintp since j-1 is np.float64 when j has type np.uintp
         # (namely np.uint64 on most machines), and this fails in nopython mode for
         # coverage analysis
 
-        weights = np.empty(self.n_weights, dtype=np_float)
-        mean_grad = np.empty(self.n_weights, dtype=np_float)
-        grad_update = np.empty(self.n_weights, dtype=np_float)
+        weights = np.empty(self.weights_shape, dtype=np_float)
+        mean_grad = np.empty(self.weights_shape, dtype=np_float)
+        grad_update = np.empty(self.weights_shape, dtype=np_float)
+        loss_derivative = np.empty(self.n_classes, dtype=np_float)
+        inner_prod = np.empty(self.n_classes, dtype=np_float)
         tol = self.tol
         max_iter = self.max_iter
         history = self.history
@@ -202,7 +254,15 @@ class SAGA(Solver):
         # computations)
 
         if dummy_first_step:
-            cycle(weights, inner_products, mean_grad, grad_update, True)
+            cycle(
+                weights,
+                inner_products,
+                mean_grad,
+                grad_update,
+                loss_derivative,
+                inner_prod,
+                True,
+            )
             if w0 is not None:
                 weights[:] = w0
             else:
@@ -216,7 +276,13 @@ class SAGA(Solver):
 
         for n_iter in range(1, max_iter + 1):
             max_abs_delta, max_abs_weight = cycle(
-                weights, inner_products, mean_grad, grad_update, init
+                weights,
+                inner_products,
+                mean_grad,
+                grad_update,
+                loss_derivative,
+                inner_prod,
+                init,
             )
             init = False
             # Compute the new value of objective

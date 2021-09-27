@@ -31,7 +31,7 @@ logging.basicConfig(
     handlers=handlers,
 )
 
-save_results = True
+save_results = False
 save_fig = True
 
 logging.info(48 * "=")
@@ -41,9 +41,9 @@ logging.info(48 * "=")
 if not save_results:
     logging.info("WARNING : results will NOT be saved at the end of this session")
 
-n_repeats = 30
+n_repeats = 10
 
-n_samples = 1000
+n_samples = 500
 n_features = 5
 
 fit_intercept = False
@@ -62,18 +62,18 @@ noise_sigma = {
     "loglogistic": 10,
 }
 
-X_centered = True
+X_centered = False # True #
 Sigma_X = np.diag(np.arange(1, n_features + 1))
 mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
 
 w_star_dist = "uniform"
-noise_dist = "student"
+noise_dist = "gaussian"#"student"
 
 step_size = 0.05
 T = 150
 
 outlier_types = [5]
-outliers = True
+outliers = False
 
 logging.info(
     "Lauching experiment with parameters : \n n_repeats = %d , n_samples = %d , n_features = %d , outliers = %r"
@@ -243,11 +243,11 @@ Algorithm = StateHollandCatoni = namedtuple(
 algorithms = [
     Algorithm(name="erm_gd", solver="gd", estimator="erm", max_iter=T),
     Algorithm(name="mom_cgd", solver="cgd", estimator="mom", max_iter=T),
-    Algorithm(name="catoni_cgd", solver="cgd", estimator="holland_catoni", max_iter=T),
-    # Algorithm(name="tmean_cgd", solver="cgd", estimator="tmean", max_iter=T),
-    Algorithm(name="holland_gd", solver="gd", estimator="holland_catoni", max_iter=T),
+    Algorithm(name="catoni_cgd", solver="cgd", estimator="ch", max_iter=T),
+    Algorithm(name="tmean_cgd", solver="cgd", estimator="tmean", max_iter=T),
+    Algorithm(name="holland_gd", solver="gd", estimator="ch", max_iter=T),
     Algorithm(name="gmom_gd", solver="gd", estimator="gmom", max_iter=T),
-    Algorithm(name="implicit_gd", solver="gd", estimator="implicit", max_iter=T),
+    Algorithm(name="implicit_gd", solver="gd", estimator="llm", max_iter=T),
     # Algorithm(name="implicit_cgd", solver="cgd", estimator="implicit", max_iter=T),
     # Algorithm(name="tmean_gd", solver="gd", estimator="tmean", max_iter=T),
     # Algorithm(name="mom_gd", solver="gd", estimator="mom", max_iter=T),
@@ -337,7 +337,7 @@ for rep in range(n_repeats):
             if algo.name in block_sizes.keys()
             else 0.07,
         )
-        reg.fit(X, y, trackers=trackers)
+        reg.fit(X, y)
         out[algo.name] = reg.history_.records
 
     for algo in algorithms:

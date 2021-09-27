@@ -21,6 +21,7 @@ class SGD(Solver):
         X,
         y,
         loss,
+        n_classes,
         fit_intercept,
         estimator,
         penalty,
@@ -35,6 +36,7 @@ class SGD(Solver):
             X=X,
             y=y,
             loss=loss,
+            n_classes=n_classes,
             fit_intercept=fit_intercept,
             estimator=estimator,
             penalty=penalty,
@@ -54,6 +56,8 @@ class SGD(Solver):
         y = self.y
         fit_intercept = self.fit_intercept
         n_samples = self.estimator.n_samples
+        n_features = self.n_features
+        n_classes = self.n_classes
         n_weights = self.n_weights
         exponent = self.exponent
         loss = self.loss
@@ -64,44 +68,61 @@ class SGD(Solver):
 
         # The learning rates scaled by the strength of the penalization (we use the
         # apply_one_unscaled penalization function)
-        scaled_step = self.penalty.strength * self.step  # / n_samples
-
+        penalty_strength = self.penalty.strength
         if fit_intercept:
 
             @jit(**jit_kwargs)
-            def cycle(weights, epoch, state_estimator):
+            def cycle(weights, epoch, state_estimator, inner_prod):
                 max_abs_delta = 0.0
                 max_abs_weight = 0.0
-                grad = state_estimator.gradient
+                # grad = state_estimator.gradient
+                derivative = state_estimator.loss_derivative
                 w_new = weights.copy()
                 for i in range(n_samples):
                     ind = np.random.randint(n_samples)
-                    grad[0] = 1
-                    grad[1:] = X[ind]
-                    grad *= deriv_loss(y[ind], np.dot(X[ind], weights[1:]) + weights[0])
-
-                    w_new -= (
-                        step
-                        * grad
-                        / max(n_samples, (1 + epoch * n_samples + i) ** exponent)
+                    iter_step = step / max(
+                        n_samples, (1 + epoch * n_samples + i) ** exponent
                     )
-                    for j in range(1, n_weights):
-                        w_new[j] = penalize(
-                            w_new[j],
-                            scaled_step
-                            / (max(n_samples, (1 + epoch * n_samples + i) ** exponent)),
-                        )
-                for j in range(n_weights):
-                    # Update the maximum update change
-                    abs_delta_j = fabs(w_new[j] - weights[j])
+                    scaled_iter_step = iter_step * penalty_strength
+
+                    for k in range(n_classes):
+                        inner_prod[k] = weights[0, k]
+                        for j in range(n_features):
+                            inner_prod[k] += X[ind, j] * weights[j + 1, k]
+
+                    deriv_loss(y[ind], inner_prod, derivative)
+
+                    # np.outer(X[ind], grad[0], grad[1:])
+
+                    for k in range(n_classes):
+                        w_new[0, k] -= iter_step * derivative[k]
+                        for j in range(n_features):
+                            w_new[j + 1, k] -= iter_step * X[ind, j] * derivative[k]
+                            w_new[j + 1, k] = penalize(
+                                w_new[j + 1, k], scaled_iter_step
+                            )
+
+                for k in range(n_classes):
+                    abs_delta_j = fabs(w_new[0, k] - weights[0, k])
                     if abs_delta_j > max_abs_delta:
                         max_abs_delta = abs_delta_j
                     # Update the maximum weight
-                    abs_w_j_new = fabs(w_new[j])
+                    abs_w_j_new = fabs(w_new[0, k])
                     if abs_w_j_new > max_abs_weight:
                         max_abs_weight = abs_w_j_new
 
-                weights[:] = w_new
+                    weights[0, k] = w_new[0, k]
+                    for j in range(n_features):
+                        # Update the maximum update change
+                        abs_delta_j = fabs(w_new[j + 1, k] - weights[j + 1, k])
+                        if abs_delta_j > max_abs_delta:
+                            max_abs_delta = abs_delta_j
+                        # Update the maximum weight
+                        abs_w_j_new = fabs(w_new[j + 1, k])
+                        if abs_w_j_new > max_abs_weight:
+                            max_abs_weight = abs_w_j_new
+
+                        weights[j + 1, k] = w_new[j + 1, k]
 
                 return max_abs_delta, max_abs_weight
 
@@ -110,37 +131,43 @@ class SGD(Solver):
         else:
             # There is no intercept, so the code changes slightly
             @jit(**jit_kwargs)
-            def cycle(weights, epoch, state_estimator):
+            def cycle(weights, epoch, state_estimator, inner_prod):
                 max_abs_delta = 0.0
                 max_abs_weight = 0.0
-                grad = state_estimator.gradient
+                # grad = state_estimator.gradient
+                loss_derivative = state_estimator.loss_derivative
                 w_new = weights.copy()
                 for i in range(n_samples):
                     ind = np.random.randint(n_samples)
-                    grad[:] = deriv_loss(y[ind], np.dot(X[ind], weights)) * X[ind]
+                    for k in range(n_classes):
+                        inner_prod[k] = 0.0
+                        for j in range(n_features):
+                            inner_prod[k] += X[ind, j] * weights[j, k]
 
-                    w_new -= (
-                        step
-                        * grad
-                        / max(n_samples, (1 + epoch * n_samples + i) ** exponent)
+                    deriv_loss(y[ind], inner_prod, loss_derivative)
+                    # np.outer(X[ind], loss_derivative, grad)
+                    iter_step = step / max(
+                        n_samples, (1 + epoch * n_samples + i) ** exponent
                     )
-                    for j in range(n_weights):
-                        w_new[j] = penalize(
-                            w_new[j],
-                            scaled_step
-                            / max(n_samples, (1 + epoch * n_samples + i) ** exponent),
-                        )
-                for j in range(n_weights):
-                    # Update the maximum update change
-                    abs_delta_j = fabs(w_new[j] - weights[j])
-                    if abs_delta_j > max_abs_delta:
-                        max_abs_delta = abs_delta_j
-                    # Update the maximum weight
-                    abs_w_j_new = fabs(w_new[j])
-                    if abs_w_j_new > max_abs_weight:
-                        max_abs_weight = abs_w_j_new
+                    scaled_iter_step = iter_step * penalty_strength
 
-                weights[:] = w_new
+                    for k in range(n_classes):
+                        for j in range(n_features):
+                            w_new[j, k] -= iter_step * loss_derivative[k] * X[ind, j]
+                            w_new[j, k] = penalize(w_new[j, k], scaled_iter_step)
+
+                for k in range(n_classes):
+                    for j in range(n_features):
+                        # Update the maximum update change
+                        abs_delta_j = fabs(w_new[j, k] - weights[j, k])
+                        if abs_delta_j > max_abs_delta:
+                            max_abs_delta = abs_delta_j
+                        # Update the maximum weight
+                        abs_w_j_new = fabs(w_new[j, k])
+                        if abs_w_j_new > max_abs_weight:
+                            max_abs_weight = abs_w_j_new
+
+                        weights[j, k] = w_new[j, k]
 
                 return max_abs_delta, max_abs_weight
 
@@ -148,9 +175,10 @@ class SGD(Solver):
 
     def solve(self, w0=None, dummy_first_step=False):
 
-        weights = np.empty(self.n_weights, dtype=np_float)
+        weights = np.empty(self.weights_shape, dtype=np_float)
         tol = self.tol
         max_iter = self.max_iter
+        inner_prod = np.empty(self.n_classes, dtype=np_float)
         history = self.history
         if w0 is not None:
             weights[:] = w0
@@ -176,7 +204,7 @@ class SGD(Solver):
         # TODO: First value for tolerance is 1.0 or NaN
         # history.update(epoch=0, obj=obj, tol=1.0, update_bar=True)
         if dummy_first_step:
-            cycle(weights, 0, state_estimator)
+            cycle(weights, 0, state_estimator, inner_prod)
             if w0 is not None:
                 weights[:] = w0
             else:
@@ -185,7 +213,9 @@ class SGD(Solver):
         history.update(weights)
 
         for epoch in range(1, max_iter + 1):
-            max_abs_delta, max_abs_weight = cycle(weights, epoch, state_estimator)
+            max_abs_delta, max_abs_weight = cycle(
+                weights, epoch, state_estimator, inner_prod
+            )
             if max_abs_weight == 0.0:
                 current_tol = 0.0
             else:

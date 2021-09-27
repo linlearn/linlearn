@@ -22,6 +22,7 @@ class GD(Solver):
         X,
         y,
         loss,
+        n_classes,
         fit_intercept,
         estimator,
         penalty,
@@ -35,6 +36,7 @@ class GD(Solver):
             X=X,
             y=y,
             loss=loss,
+            n_classes=n_classes,
             fit_intercept=fit_intercept,
             estimator=estimator,
             penalty=penalty,
@@ -51,8 +53,9 @@ class GD(Solver):
 
         X = self.X
         fit_intercept = self.fit_intercept
-        n_samples = self.estimator.n_samples
-        n_weights = self.n_weights
+
+        n_features = self.n_features
+        n_classes = self.n_classes
         grad_estimator = self.estimator.grad_factory()
         decision_function = decision_function_factory(X, fit_intercept)
 
@@ -67,28 +70,39 @@ class GD(Solver):
 
             @jit(**jit_kwargs)
             def cycle(coordinates, weights, inner_products, state_estimator):
+                max_abs_delta = 0.0
+                max_abs_weight = 0.0
 
                 decision_function(weights, inner_products)
 
                 grad_estimator(inner_products, state_estimator)
                 grad = state_estimator.gradient
+                # TODO : allocate w_new somewhere ?
                 w_new = weights - step * grad
 
-                max_abs_delta = fabs(w_new[0] - weights[0])
-                max_abs_weight = fabs(w_new[0])
-
-                for j in range(1, n_weights):
-                    w_new[j] = penalize(w_new[j], scaled_step)
-                    # Update the maximum update change
-                    abs_delta_j = fabs(w_new[j] - weights[j])
+                for k in range(n_classes):
+                    abs_delta_j = fabs(w_new[0, k] - weights[0, k])
                     if abs_delta_j > max_abs_delta:
                         max_abs_delta = abs_delta_j
                     # Update the maximum weight
-                    abs_w_j_new = fabs(w_new[j])
+                    abs_w_j_new = fabs(w_new[0, k])
                     if abs_w_j_new > max_abs_weight:
                         max_abs_weight = abs_w_j_new
 
-                weights[:] = w_new
+                    weights[0, k] = w_new[0, k]
+                    for j in range(n_features):
+
+                        w_new[j + 1, k] = penalize(w_new[j + 1, k], scaled_step)
+                        # Update the maximum update change
+                        abs_delta_j = fabs(w_new[j + 1, k] - weights[j + 1, k])
+                        if abs_delta_j > max_abs_delta:
+                            max_abs_delta = abs_delta_j
+                        # Update the maximum weight
+                        abs_w_j_new = fabs(w_new[j + 1, k])
+                        if abs_w_j_new > max_abs_weight:
+                            max_abs_weight = abs_w_j_new
+
+                        weights[j + 1, k] = w_new[j + 1, k]
 
                 return max_abs_delta, max_abs_weight
 
@@ -104,19 +118,24 @@ class GD(Solver):
 
                 grad_estimator(inner_products, state_estimator)
                 grad = state_estimator.gradient
+                # TODO : allocate w_new somewhere ?
                 w_new = weights - step * grad
-                for j in coordinates:
-                    w_new[j] = penalize(w_new[j], scaled_step)
-                    # Update the maximum update change
-                    abs_delta_j = fabs(w_new[j] - weights[j])
-                    if abs_delta_j > max_abs_delta:
-                        max_abs_delta = abs_delta_j
-                    # Update the maximum weight
-                    abs_w_j_new = fabs(w_new[j])
-                    if abs_w_j_new > max_abs_weight:
-                        max_abs_weight = abs_w_j_new
 
-                weights[:] = w_new
+                for k in range(n_classes):
+                    for j in range(n_features):
+
+                        w_new[j, k] = penalize(w_new[j, k], scaled_step)
+                        # Update the maximum update change
+                        abs_delta_j = fabs(w_new[j, k] - weights[j, k])
+                        if abs_delta_j > max_abs_delta:
+                            max_abs_delta = abs_delta_j
+                        # Update the maximum weight
+                        abs_w_j_new = fabs(w_new[j, k])
+                        if abs_w_j_new > max_abs_weight:
+                            max_abs_weight = abs_w_j_new
+
+                        weights[j, k] = w_new[j, k]
+
                 return max_abs_delta, max_abs_weight
 
             return cycle
@@ -128,6 +147,7 @@ class batch_GD(Solver):
         X,
         y,
         loss,
+        n_classes,
         fit_intercept,
         estimator,
         penalty,
@@ -136,12 +156,13 @@ class batch_GD(Solver):
         random_state,
         step,
         history,
-        batch_size=1,
+        batch_size=1.0,
     ):
         super(batch_GD, self).__init__(
             X=X,
             y=y,
             loss=loss,
+            n_classes=n_classes,
             fit_intercept=fit_intercept,
             estimator=estimator,
             penalty=penalty,
@@ -161,7 +182,8 @@ class batch_GD(Solver):
         y = self.y
         fit_intercept = self.fit_intercept
         n_samples = self.estimator.n_samples
-        n_weights = self.n_weights
+        n_classes = self.n_classes
+        n_features = self.n_features
         deriv_loss = self.loss.deriv_factory()
         decision_function = decision_function_factory(X, fit_intercept)
 
@@ -177,35 +199,57 @@ class batch_GD(Solver):
 
             @jit(**jit_kwargs)
             def cycle(sample_indices, weights, inner_products, state_estimator):
+                max_abs_delta = 0.0
+                max_abs_weight = 0.0
+
                 np.random.shuffle(sample_indices)
 
                 decision_function(weights, inner_products)
 
                 grad = state_estimator.gradient
-                grad.fill(0.0)
-                for i in range(n_samples_batch):
-                    deriv = deriv_loss(y[i], inner_products[i])
-                    grad[0] += deriv
-                    grad[1:] += deriv * X[i]
-                grad /= n_samples
+                deriv = state_estimator.loss_derivative
 
+                for k in range(n_classes):
+                    for j in range(n_features + 1):
+                        grad[j, k] = 0.0
+                for i in range(n_samples_batch):
+                    ind = sample_indices[i]
+                    deriv_loss(y[ind], inner_products[ind], deriv)
+                    for k in range(n_classes):
+                        grad[0, k] += deriv[k]
+                        for j in range(n_features):
+                            grad[j + 1, k] += (
+                                deriv[k] * X[ind, j]
+                            )  # np.outer(X[i], deriv)
+                for k in range(n_classes):
+                    for j in range(n_features + 1):
+                        grad[j, k] /= n_samples_batch
+                # TODO : allocate w_new somewhere ?
                 w_new = weights - step * grad
 
-                max_abs_delta = fabs(w_new[0] - weights[0])
-                max_abs_weight = fabs(w_new[0])
-
-                for j in range(1, n_weights):
-                    w_new[j] = penalize(w_new[j], scaled_step)
-                    # Update the maximum update change
-                    abs_delta_j = fabs(w_new[j] - weights[j])
+                for k in range(n_classes):
+                    abs_delta_j = fabs(w_new[0, k] - weights[0, k])
                     if abs_delta_j > max_abs_delta:
                         max_abs_delta = abs_delta_j
                     # Update the maximum weight
-                    abs_w_j_new = fabs(w_new[j])
+                    abs_w_j_new = fabs(w_new[0, k])
                     if abs_w_j_new > max_abs_weight:
                         max_abs_weight = abs_w_j_new
 
-                weights[:] = w_new
+                    weights[0, k] = w_new[0, k]
+                    for j in range(n_features):
+
+                        w_new[j + 1, k] = penalize(w_new[j + 1, k], scaled_step)
+                        # Update the maximum update change
+                        abs_delta_j = fabs(w_new[j + 1, k] - weights[j + 1, k])
+                        if abs_delta_j > max_abs_delta:
+                            max_abs_delta = abs_delta_j
+                        # Update the maximum weight
+                        abs_w_j_new = fabs(w_new[j + 1, k])
+                        if abs_w_j_new > max_abs_weight:
+                            max_abs_weight = abs_w_j_new
+
+                        weights[j + 1, k] = w_new[j + 1, k]
 
                 return max_abs_delta, max_abs_weight
 
@@ -222,24 +266,37 @@ class batch_GD(Solver):
                 decision_function(weights, inner_products)
 
                 grad = state_estimator.gradient
-                grad.fill(0.0)
+                deriv = state_estimator.loss_derivative
+                for k in range(n_classes):
+                    for j in range(n_features):
+                        grad[j, k] = 0.0
+
                 for i in range(n_samples_batch):
-                    grad += deriv_loss(y[i], inner_products[i]) * X[i]
-                grad /= n_samples
+                    ind = sample_indices[i]
+                    deriv_loss(y[ind], inner_products[ind], deriv)
+                    for k in range(n_classes):
+                        for j in range(n_features):
+                            grad[j, k] += deriv[k] * X[ind, j]  # np.outer(X[i], deriv)
+                for k in range(n_classes):
+                    for j in range(n_features):
+                        grad[j, k] /= n_samples_batch
 
                 w_new = weights - step * grad
-                for j in range(n_weights):
-                    w_new[j] = penalize(w_new[j], scaled_step)
-                    # Update the maximum update change
-                    abs_delta_j = fabs(w_new[j] - weights[j])
-                    if abs_delta_j > max_abs_delta:
-                        max_abs_delta = abs_delta_j
-                    # Update the maximum weight
-                    abs_w_j_new = fabs(w_new[j])
-                    if abs_w_j_new > max_abs_weight:
-                        max_abs_weight = abs_w_j_new
 
-                weights[:] = w_new
+                for k in range(n_classes):
+                    for j in range(n_features):
+                        w_new[j, k] = penalize(w_new[j, k], scaled_step)
+                        # Update the maximum update change
+                        abs_delta_j = fabs(w_new[j, k] - weights[j, k])
+                        if abs_delta_j > max_abs_delta:
+                            max_abs_delta = abs_delta_j
+                        # Update the maximum weight
+                        abs_w_j_new = fabs(w_new[j, k])
+                        if abs_w_j_new > max_abs_weight:
+                            max_abs_weight = abs_w_j_new
+
+                        weights[j, k] = w_new[j, k]
+
                 return max_abs_delta, max_abs_weight
 
             return cycle
@@ -247,9 +304,8 @@ class batch_GD(Solver):
     def solve(self, w0=None, dummy_first_step=False):
         X = self.X
         fit_intercept = self.fit_intercept
-        inner_products = np.empty(self.n_samples, dtype=np_float)
-        coordinates = np.arange(self.n_weights, dtype=np.uintp)
-        weights = np.empty(self.n_weights, dtype=np_float)
+        inner_products = np.empty((self.n_samples, self.n_classes), dtype=np_float)
+        weights = np.empty(self.weights_shape, dtype=np_float)
         sample_indices = np.arange(self.n_samples, dtype=np.uintp)
         tol = self.tol
         max_iter = self.max_iter
@@ -285,7 +341,7 @@ class batch_GD(Solver):
         # TODO: First value for tolerance is 1.0 or NaN
         # history.update(epoch=0, obj=obj, tol=1.0, update_bar=True)
         if dummy_first_step:
-            cycle(coordinates, weights, inner_products, state_estimator)
+            cycle(sample_indices, weights, inner_products, state_estimator)
             if w0 is not None:
                 weights[:] = w0
             else:
