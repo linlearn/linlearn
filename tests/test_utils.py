@@ -110,12 +110,11 @@ def test_sum_sq(mtype, sparsify, axis):
         X = csc_matrix(X)
     else:
         X = csr_matrix(X)
-
     if axis == 0:
         out = np.empty(n_features)
     else:
         out = np.empty(n_samples)
-
     sum_sq(X, axis=axis, out=out)
-    assert norms == pytest.approx(out, abs=1e-12)
-    assert norms == pytest.approx(sum_sq(X, axis=axis), abs=1e-12)
+    tol = 1e-12
+    assert norms == pytest.approx(out, abs=tol, rel=tol)
+    assert norms == pytest.approx(sum_sq(X, axis=axis), abs=tol, rel=tol)

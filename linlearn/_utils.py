@@ -18,6 +18,7 @@ NOPYTHON = True
 NOGIL = True
 BOUNDSCHECK = False
 FASTMATH = True
+PARALLEL = False
 
 jit_kwargs = {
     "nopython": NOPYTHON,
@@ -163,7 +164,7 @@ def matrix_type(X):
             raise ValueError("Only C and F-major numpy arrays are supported.")
 
 
-@jit(**jit_kwargs, parallel=True)
+@jit(**jit_kwargs, parallel=PARALLEL)
 def col_sq_sum_f(X, out):
     """Computes the sums of squares of the columns of the F-major matrix X.
 
@@ -183,7 +184,7 @@ def col_sq_sum_f(X, out):
         out[j] = col_j_squared_norm
 
 
-@jit(**jit_kwargs, parallel=True)
+@jit(**jit_kwargs, parallel=PARALLEL)
 def col_sq_sum_c(X, out):
     """Computes the sums of squares of the columns of the C-major matrix X.
 
@@ -204,7 +205,7 @@ def col_sq_sum_c(X, out):
     return out
 
 
-@jit(**jit_kwargs, parallel=True)
+@jit(**jit_kwargs, parallel=PARALLEL)
 def col_sq_sum_csc(n_samples, n_features, X_indptr, X_indices, X_data, out):
     """Computes the sums of squares of the columns of a sparse CSC matrix X.
 
@@ -237,7 +238,7 @@ def col_sq_sum_csc(n_samples, n_features, X_indptr, X_indices, X_data, out):
         out[j] = col_j_squared_norm
 
 
-@jit(**jit_kwargs, parallel=True)
+@jit(**jit_kwargs, parallel=PARALLEL)
 def col_sq_sum_csr(n_samples, n_features, X_indptr, X_indices, X_data, out):
     """Computes the sums of squares of the columns of a sparse CSR matrix X.
 
@@ -270,7 +271,7 @@ def col_sq_sum_csr(n_samples, n_features, X_indptr, X_indices, X_data, out):
             out[j] += X_data[idx] ** 2
 
 
-@jit(**jit_kwargs, parallel=True)
+@jit(**jit_kwargs, parallel=PARALLEL)
 def row_sq_sum_f(X, out):
     """Computes the sums of squares of the rows of the F-major matrix X.
 
@@ -289,7 +290,7 @@ def row_sq_sum_f(X, out):
             out[i] += X[i, j] ** 2
 
 
-@jit(**jit_kwargs, parallel=True)
+@jit(**jit_kwargs, parallel=PARALLEL)
 def row_sq_sum_c(X, out):
     """Computes the sums of squares of the rows of the C-major matrix X.
 
@@ -311,7 +312,7 @@ def row_sq_sum_c(X, out):
     return out
 
 
-@jit(**jit_kwargs, parallel=True)
+@jit(**jit_kwargs, parallel=PARALLEL)
 def row_sq_sum_csc(n_samples, n_features, X_indptr, X_indices, X_data, out):
     """Computes the sums of squares of the rows of a sparse CSC matrix X.
 
@@ -344,7 +345,7 @@ def row_sq_sum_csc(n_samples, n_features, X_indptr, X_indices, X_data, out):
             out[i] += X_data[idx] ** 2
 
 
-@jit(**jit_kwargs, parallel=True)
+@jit(**jit_kwargs, parallel=PARALLEL)
 def row_sq_sum_csr(n_samples, n_features, X_indptr, X_indices, X_data, out):
     """Computes the sums of squares of the rows of a sparse CSR matrix X.
 
