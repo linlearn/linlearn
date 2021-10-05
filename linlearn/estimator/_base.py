@@ -63,12 +63,13 @@ class Estimator(ABC):
         This is `n_features` if `fit_intercept=False` and `n_features` otherwise.
     """
 
-    def __init__(self, X, y, loss, fit_intercept):
+    def __init__(self, X, y, loss, n_classes, fit_intercept):
         self.X = X
         self.y = y
         self.loss = loss
         self.fit_intercept = fit_intercept
         self.n_samples, self.n_features = X.shape
+        self.n_classes = n_classes
         self.n_weights = self.n_features + int(self.fit_intercept)
 
     @abstractmethod

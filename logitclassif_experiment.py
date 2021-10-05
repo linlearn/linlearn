@@ -1,4 +1,4 @@
-from linlearn import BinaryClassifier
+from linlearn import Classifier
 import numpy as np
 import logging
 import pickle
@@ -42,7 +42,7 @@ logging.info(64 * "=")
 logging.info("Running new experiment session")
 logging.info(64 * "=")
 
-loss = "squaredhinge"
+loss = "logistic"
 step_size = 0.1
 
 random_state = 43
@@ -57,7 +57,7 @@ test_loss_meantype = "ordinary"
 if not save_results:
     logging.info("WARNING : results will NOT be saved at the end of this session")
 
-dataset = "Stroke"  # "Bank"#"Adult"  # "Heart"#"weatherAUS"#
+dataset = "Heart"#"Stroke"  # "Bank"#"Adult"  # "weatherAUS"#
 
 logging.info("loading dataset %s" % dataset)
 
@@ -432,16 +432,16 @@ algorithms = [
     # Algorithm(name="mom_cgd_IS", solver="cgd", estimator="mom", max_iter=2 * max_iter),
     Algorithm(name="erm_cgd", solver="cgd", estimator="erm", max_iter=3 * max_iter),
     # Algorithm(
-    #    name="catoni_cgd", solver="cgd", estimator="holland_catoni", max_iter=max_iter
+    #    name="catoni_cgd", solver="cgd", estimator="ch", max_iter=max_iter
     # ),
     # Algorithm(name="tmean_cgd", solver="cgd", estimator="tmean", max_iter=max_iter),
     # Algorithm(name="gmom_gd", solver="gd", estimator="gmom", max_iter=3 * max_iter),
     Algorithm(
-        name="implicit_gd", solver="gd", estimator="implicit", max_iter=9 * max_iter
+        name="implicit_gd", solver="gd", estimator="llm", max_iter=9 * max_iter
     ),
     Algorithm(name="erm_gd", solver="gd", estimator="erm", max_iter=5 * max_iter),
     # Algorithm(
-    #    name="holland_gd", solver="gd", estimator="holland_catoni", max_iter=max_iter
+    #    name="holland_gd", solver="gd", estimator="ch", max_iter=max_iter
     # ),
     # Algorithm(name="svrg", solver="svrg", estimator="erm", max_iter=2 * max_iter),
     Algorithm(name="sgd", solver="sgd", estimator="erm", max_iter=4 * max_iter),
@@ -453,45 +453,29 @@ def run_repetition(rep):
 
     outputs = {}
 
-    def announce(x):
-        logging.info(str(rep) + " : " + x + " done")
+    def announce(x, status):
+        logging.info(str(rep)+" : "+x+" " +status)
 
     def run_algorithm(algo, out):
-        clf = BinaryClassifier(
-            tol=0,
-            max_iter=algo.max_iter,
-            solver=algo.solver,
-            loss=loss,
-            estimator=algo.estimator,
-            fit_intercept=fit_intercept,
-            block_size=block_sizes[algo.name]
-            if algo.name in block_sizes.keys()
-            else 0.07,
-            step_size=step_size,
-            penalty=penalty or "none",
-            C=1 / (X_train.shape[0] * lamda) if penalty else 1.0,
-            cgd_IS="_IS" in algo.name,
-        )
-        clf.fit(X_train, y_train, trackers=trackers, dummy_first_step=True)
-        out[algo.name] = clf.history_.records
-        announce(algo.name)
+        clf = Classifier(tol=0, max_iter=algo.max_iter, solver=algo.solver, loss=loss, estimator=algo.estimator, fit_intercept=fit_intercept, step_size=step_size, penalty=penalty or "none")
+        clf.fit(X_train, y_train, dummy_first_step=True)
+        announce(algo.name, "fitted")
+        clf.compute_objective_history(X_train, y_train)
+        clf.compute_objective_history(X_test, y_test)
+        announce(algo.name, "computed history")
+        out[algo.name] = clf.history_.records[1:]
 
     for algo in algorithms:
         run_algorithm(algo, outputs)
 
-    logging.info("computing objective history")
     for alg in outputs.keys():
         for ind_metric, metric in enumerate(metrics):
-            for i in range(len(outputs[alg][0].record)):
+            for i in range(len(outputs[alg][0])):
                 col_try.append(rep)
                 col_algo.append(alg)
-                col_metric.append(metric.__name__)
-                col_val.append(metric(outputs[alg][0].record[i]))
-                col_time.append(
-                    outputs[alg][1].record[i] - outputs[alg][1].record[0]
-                )  # i)#
-        announce(alg)
-
+                col_metric.append(metric)
+                col_val.append(outputs[alg][ind_metric+1].record[i])
+                col_time.append(outputs[alg][0].record[i] - outputs[alg][0].record[0])#i)#
     logging.info("repetition done")
     return col_try, col_algo, col_metric, col_val, col_time
 

@@ -81,22 +81,32 @@ def standard_catoni_estimator(x, eps=0.001):
 
 
 StateCH = namedtuple(
-    "StateCH", ["deriv_samples", "deriv_samples_outer_prods", "gradient"]
+    "StateCH",
+    [
+        "deriv_samples",
+        "deriv_samples_outer_prods",
+        "gradient",
+        "loss_derivative",
+        "partial_derivative",
+    ],
 )
 
 
 class CH(Estimator):
-    def __init__(self, X, y, loss, fit_intercept, eps=0.001):
-        Estimator.__init__(self, X, y, loss, fit_intercept)
+    def __init__(self, X, y, loss, n_classes, fit_intercept, eps=0.001):
+        Estimator.__init__(self, X, y, loss, n_classes, fit_intercept)
         self.eps = eps
 
     def get_state(self):
         return StateCH(
-            deriv_samples=np.empty(self.n_samples, dtype=np_float),
+            deriv_samples=np.empty((self.n_samples, self.n_classes), dtype=np_float),
             deriv_samples_outer_prods=np.empty(self.n_samples, dtype=np_float),
             gradient=np.empty(
-                self.X.shape[1] + int(self.fit_intercept), dtype=np_float
+                (self.n_features + int(self.fit_intercept), self.n_classes),
+                dtype=np_float,
             ),
+            loss_derivative=np.empty(self.n_classes, dtype=np_float),
+            partial_derivative=np.empty(self.n_classes, dtype=np_float),
         )
 
     def partial_deriv_factory(self):
@@ -105,6 +115,7 @@ class CH(Estimator):
         loss = self.loss
         deriv_loss = loss.deriv_factory()
         n_samples = self.n_samples
+        n_classes = self.n_classes
         eps = self.eps
 
         if self.fit_intercept:
@@ -112,16 +123,19 @@ class CH(Estimator):
             @jit(**jit_kwargs)
             def partial_deriv(j, inner_products, state):
                 deriv_samples = state.deriv_samples
+                partial_derivative = state.partial_derivative
                 if j == 0:
                     for i in range(n_samples):
-                        deriv_samples[i] = deriv_loss(y[i], inner_products[i])
+                        deriv_loss(y[i], inner_products[i], deriv_samples[i])
                 else:
                     for i in range(n_samples):
-                        deriv_samples[i] = (
-                            deriv_loss(y[i], inner_products[i]) * X[i, j - 1]
-                        )
-
-                return holland_catoni_estimator(deriv_samples, eps)
+                        deriv_loss(y[i], inner_products[i], deriv_samples[i])
+                        for k in range(n_classes):
+                            deriv_samples[i, k] *= X[i, j - 1]
+                for k in range(n_classes):
+                    partial_derivative[k] = holland_catoni_estimator(
+                        deriv_samples[:, k], eps
+                    )
 
             return partial_deriv
         else:
@@ -129,10 +143,16 @@ class CH(Estimator):
             @jit(**jit_kwargs)
             def partial_deriv(j, inner_products, state):
                 deriv_samples = state.deriv_samples
+                partial_derivative = state.partial_derivative
                 for i in range(n_samples):
-                    deriv_samples[i] = deriv_loss(y[i], inner_products[i]) * X[i, j]
+                    deriv_loss(y[i], inner_products[i], deriv_samples[i])
+                    for k in range(n_classes):
+                        deriv_samples[i, k] *= X[i, j]
 
-                return holland_catoni_estimator(deriv_samples, eps)
+                for k in range(n_classes):
+                    partial_derivative[k] = holland_catoni_estimator(
+                        deriv_samples[:, k], eps
+                    )
 
             return partial_deriv
 
@@ -142,6 +162,8 @@ class CH(Estimator):
         loss = self.loss
         deriv_loss = loss.deriv_factory()
         n_samples = self.n_samples
+        n_features = self.n_features
+        n_classes = self.n_classes
         eps = self.eps
 
         if self.fit_intercept:
@@ -152,15 +174,23 @@ class CH(Estimator):
                 deriv_samples_outer_prods = state.deriv_samples_outer_prods
                 gradient = state.gradient
 
-                gradient.fill(0.0)
+                # gradient.fill(0.0)
                 for i in range(n_samples):
-                    deriv_samples[i] = deriv_loss(y[i], inner_products[i])
-                gradient[0] = holland_catoni_estimator(deriv_samples, eps)
-                for j in range(X.shape[1]):
-                    deriv_samples_outer_prods[:] = deriv_samples * X[:, j]
-                    gradient[j + 1] = holland_catoni_estimator(
-                        deriv_samples_outer_prods, eps
-                    )
+                    deriv_loss(y[i], inner_products[i], deriv_samples[i])
+
+                # gradient[0] = holland_catoni_estimator(deriv_samples, eps)
+
+                for k in range(n_classes):
+                    gradient[0, k] = holland_catoni_estimator(deriv_samples[:, k], eps)
+
+                for j in range(n_features):
+                    for k in range(n_classes):
+                        for i in range(n_samples):
+                            deriv_samples_outer_prods[i] = X[i, j] * deriv_samples[i, k]
+
+                        gradient[j + 1, k] = holland_catoni_estimator(
+                            deriv_samples_outer_prods, eps
+                        )
 
             return grad
         else:
@@ -171,13 +201,17 @@ class CH(Estimator):
                 deriv_samples_outer_prods = state.deriv_samples_outer_prods
                 gradient = state.gradient
 
-                gradient.fill(0.0)
+                # gradient.fill(0.0)
                 for i in range(n_samples):
-                    deriv_samples[i] = deriv_loss(y[i], inner_products[i])
-                for j in range(X.shape[1]):
-                    deriv_samples_outer_prods[:] = deriv_samples * X[:, j]
-                    gradient[j] = holland_catoni_estimator(
-                        deriv_samples_outer_prods, eps
-                    )
+                    deriv_loss(y[i], inner_products[i], deriv_samples[i])
+
+                for j in range(n_features):
+                    for k in range(n_classes):
+                        for i in range(n_samples):
+                            deriv_samples_outer_prods[i] = X[i, j] * deriv_samples[i, k]
+
+                        gradient[j, k] = holland_catoni_estimator(
+                            deriv_samples_outer_prods, eps
+                        )
 
             return grad

@@ -42,8 +42,9 @@ class Penalty(ABC):
         @jit(**jit_kwargs)
         def value(w):
             val = 0.0
-            for w_j in w:
-                val += value_one_unscaled(w_j)
+            for j1 in range(w.shape[0]):
+                for j2 in range(w.shape[1]):
+                    val += value_one_unscaled(w[j1, j2])
             return strength * val
 
         return value
@@ -55,8 +56,9 @@ class Penalty(ABC):
         @jit(**jit_kwargs)
         def apply(w, t, out):
             thresh = strength * t
-            for j in range(w.shape[0]):
-                out[j] = apply_one_unscaled(w[j], thresh)
+            for j1 in range(w.shape[0]):
+                for j2 in range(w.shape[1]):
+                    out[j1, j2] = apply_one_unscaled(w[j1, j2], thresh)
 
         return apply
 
