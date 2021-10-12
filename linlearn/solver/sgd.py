@@ -8,6 +8,7 @@ This module contains the ``SAGA`` class, for stochastic gradient descent solver.
 
 import numpy as np
 from math import fabs
+from warnings import warn
 from numpy.random import permutation
 from numba import jit
 
@@ -232,6 +233,8 @@ class SGD(Solver):
                 )
 
         history.close_bar()
+        if tol > 0:
+            warn("Maximum iteration number reached, solver may have not converged")
         return OptimizationResult(
             w=weights, n_iter=max_iter + 1, success=False, tol=tol, message=None
         )

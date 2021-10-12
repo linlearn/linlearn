@@ -10,7 +10,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from collections import namedtuple
 import os
-
+from noise_generators import gaussian, frechet, loglogistic, lognormal, weibull, student, pareto
+import argparse
 
 def ensure_directory(directory):
     if not os.path.exists(directory):
@@ -18,9 +19,11 @@ def ensure_directory(directory):
 
 
 ensure_directory("exp_archives/")
+experiment_logfile = "exp_archives/linreg_exp.log"
+experiment_name = "linreg"
 
 
-file_handler = logging.FileHandler(filename="exp_archives/linreg_exp.log")
+file_handler = logging.FileHandler(filename=experiment_logfile)
 stdout_handler = logging.StreamHandler(sys.stdout)
 handlers = [file_handler, stdout_handler]
 
@@ -31,26 +34,46 @@ logging.basicConfig(
     handlers=handlers,
 )
 
-save_results = False
-save_fig = True
+parser = argparse.ArgumentParser()
+
+parser.add_argument("--n_samples", type=int, default=1000)
+parser.add_argument("--n_features", type=int, default=5)
+parser.add_argument("--random_seed", type=int, default=43)
+parser.add_argument("--n_repeats", type=int, default=10)
+parser.add_argument("--outlier_types", nargs="+", type=int, default=[])
+parser.add_argument("--max_iter", type=int, default=150)
+parser.add_argument("--step_size", type=float, default=0.05)
+parser.add_argument("--confidence", type=float, default=0.01)
+parser.add_argument("--noise_dist", type=str, default="gaussian", choices=["gaussian", "student", "weibull", "loglogistic", "lognormal", "pareto"])
+parser.add_argument('--X_centered', dest='X_centered', action='store_true')
+parser.add_argument('--X_not_centered', dest='X_centered', action='store_false')
+parser.set_defaults(X_centered=True)
+parser.add_argument('--save_results', dest='save_results', action='store_true')
+parser.set_defaults(save_results=False)
+args = parser.parse_args()
+
 
 logging.info(48 * "=")
 logging.info("Running new experiment session")
 logging.info(48 * "=")
 
+n_repeats = args.n_repeats
+n_samples = args.n_samples
+n_features = args.n_features
+save_results = args.save_results
+
 if not save_results:
     logging.info("WARNING : results will NOT be saved at the end of this session")
 
-n_repeats = 10
-
-n_samples = 500
-n_features = 5
-
 fit_intercept = False
 
-block_sizes = {"mom_cgd": 0.02, "implicit_gd": 0.02, "gmom_gd": 0.02}  # 555555}
+confidence = args.confidence
+random_seed = args.random_seed
 
-random_seed = 43
+percentage = np.log(4/confidence)/n_samples
+block_size = 18*np.log(1/confidence)/n_samples
+logging.info("percentage is %.2f"%percentage)
+logging.info("block size is :  %.2f"%block_size)
 
 noise_sigma = {
     "gaussian": 20,
@@ -62,34 +85,27 @@ noise_sigma = {
     "loglogistic": 10,
 }
 
-X_centered = False # True #
+X_centered = args.X_centered
+noise_dist = args.noise_dist
+step_size = args.step_size
+T = args.max_iter
+outlier_types = args.outlier_types
+
 Sigma_X = np.diag(np.arange(1, n_features + 1))
 mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
 
 w_star_dist = "uniform"
-noise_dist = "gaussian"#"student"
-
-step_size = 0.05
-T = 150
-
-outlier_types = [5]
-outliers = False
 
 logging.info(
-    "Lauching experiment with parameters : \n n_repeats = %d , n_samples = %d , n_features = %d , outliers = %r"
-    % (n_repeats, n_samples, n_features, outliers)
+    "Lauching experiment with parameters : \n %r"
+    % args
 )
-if outliers:
-    logging.info("outlier types :  %r" % outlier_types)
-logging.info("block sizes are : %r" % block_sizes)
-logging.info(
-    "random_seed = %d , mu_X = %r , Sigma_X = %r" % (random_seed, mu_X, Sigma_X)
-)
+
+logging.info("mu_X = %r , Sigma_X = %r" % (mu_X, Sigma_X))
 logging.info(
     "w_star_dist = %s , noise_dist = %s , sigma = %f"
     % (w_star_dist, noise_dist, noise_sigma[noise_dist])
 )
-logging.info("step_size = %f , T = %d" % (step_size, T))
 
 rng = np.random.RandomState(random_seed)  ## Global random generator
 
@@ -136,70 +152,6 @@ def gen_w_star(d, dist="normal"):
         raise Exception("Unknown w_star distribution")
 
 
-def generate_gaussian_noise_sample(n_samples, sigma=20):
-    noise = sigma * rng.normal(size=n_samples)
-    expect_noise = 0
-    noise_2nd_moment = sigma ** 2
-
-    return noise, expect_noise, noise_2nd_moment
-
-
-def generate_lognormal_noise_sample(n_samples, sigma=1.75):
-    noise = rng.lognormal(0, sigma, n_samples)
-    expect_noise = np.exp(0.5 * sigma ** 2)
-    noise_2nd_moment = np.exp(2 * sigma ** 2)
-
-    return noise, expect_noise, noise_2nd_moment
-
-
-def generate_pareto_noise_sample(n_samples, sigma=10, pareto=2.05):
-    noise = sigma * rng.pareto(pareto, n_samples)
-    expect_noise = (sigma) / (pareto - 1)
-    noise_2nd_moment = expect_noise ** 2 + (sigma ** 2) * pareto / (
-        ((pareto - 1) ** 2) * (pareto - 2)
-    )
-
-    return noise, expect_noise, noise_2nd_moment
-
-
-def generate_student_noise_sample(n_samples, sigma=10, df=2.1):
-    noise = sigma * rng.standard_t(df, n_samples)
-    expect_noise = 0
-    noise_2nd_moment = expect_noise ** 2 + (sigma ** 2) * df / (df - 2)
-
-    return noise, expect_noise, noise_2nd_moment
-
-
-def generate_weibull_noise_sample(n_samples, sigma=10, a=0.65):
-    from scipy.special import gamma
-
-    noise = sigma * rng.weibull(a, n_samples)
-    expect_noise = sigma * gamma(1 + 1 / a)
-    noise_2nd_moment = (sigma ** 2) * gamma(1 + 2 / a)
-
-    return noise, expect_noise, noise_2nd_moment
-
-
-def generate_frechet_noise_sample(n_samples, sigma=10, alpha=2.2):
-    from scipy.special import gamma
-
-    noise = sigma * (1 / rng.weibull(alpha, n_samples))
-    expect_noise = sigma * gamma(1 - 1 / alpha)
-    noise_2nd_moment = (sigma ** 2) * gamma(1 - 2 / alpha)
-
-    return noise, expect_noise, noise_2nd_moment
-
-
-def generate_loglogistic_noise_sample(n_samples, sigma=10, c=2.2):
-    from scipy.stats import fisk
-
-    noise = sigma * fisk.rvs(c, size=n_samples)
-    expect_noise = sigma * (np.pi / c) / np.sin(np.pi / c)
-    noise_2nd_moment = (sigma ** 2) * (2 * np.pi / c) / np.sin(2 * np.pi / c)
-
-    return noise, expect_noise, noise_2nd_moment
-
-
 def gradient_descent(funs_to_track, x0, grad, step_size, T):
     """run gradient descent for given gradient grad and step size for T steps"""
     x = x0
@@ -217,37 +169,36 @@ def gradient_descent(funs_to_track, x0, grad, step_size, T):
 col_try, col_time, col_algo, col_metric, col_val = [], [], [], [], []
 
 if noise_dist == "gaussian":
-    noise_fct = generate_gaussian_noise_sample
+    noise_fct = gaussian
 elif noise_dist == "lognormal":
-    noise_fct = generate_lognormal_noise_sample
+    noise_fct = lognormal
 elif noise_dist == "pareto":
-    noise_fct = generate_pareto_noise_sample
+    noise_fct = pareto
 elif noise_dist == "student":
-    noise_fct = generate_student_noise_sample
+    noise_fct = student
 elif noise_dist == "weibull":
-    noise_fct = generate_weibull_noise_sample
+    noise_fct = weibull
 elif noise_dist == "frechet":
-    noise_fct = generate_frechet_noise_sample
+    noise_fct = frechet
 elif noise_dist == "loglogistic":
     np.random.seed(seed=random_seed)
-    noise_fct = generate_loglogistic_noise_sample
+    noise_fct = loglogistic
 else:
     raise Exception("unknown noise dist")
 
-trackers = [(lambda w: w, (n_features + int(fit_intercept),))]
 
-Algorithm = StateHollandCatoni = namedtuple(
-    "Algorithm", ["name", "solver", "estimator", "max_iter"]
+Algorithm = namedtuple(
+    "Algorithm", ["name", "solver", "estimator"]
 )
 
 algorithms = [
-    Algorithm(name="erm_gd", solver="gd", estimator="erm", max_iter=T),
-    Algorithm(name="mom_cgd", solver="cgd", estimator="mom", max_iter=T),
-    Algorithm(name="catoni_cgd", solver="cgd", estimator="ch", max_iter=T),
-    Algorithm(name="tmean_cgd", solver="cgd", estimator="tmean", max_iter=T),
-    Algorithm(name="holland_gd", solver="gd", estimator="ch", max_iter=T),
-    Algorithm(name="gmom_gd", solver="gd", estimator="gmom", max_iter=T),
-    Algorithm(name="implicit_gd", solver="gd", estimator="llm", max_iter=T),
+    Algorithm(name="erm_gd", solver="gd", estimator="erm"),
+    Algorithm(name="mom_cgd", solver="cgd", estimator="mom"),
+    Algorithm(name="catoni_cgd", solver="cgd", estimator="ch"),
+    Algorithm(name="tmean_cgd", solver="cgd", estimator="tmean"),
+    Algorithm(name="holland_gd", solver="gd", estimator="ch"),
+    Algorithm(name="gmom_gd", solver="gd", estimator="gmom"),
+    Algorithm(name="implicit_gd", solver="gd", estimator="llm"),
     # Algorithm(name="implicit_cgd", solver="cgd", estimator="implicit", max_iter=T),
     # Algorithm(name="tmean_gd", solver="gd", estimator="tmean", max_iter=T),
     # Algorithm(name="mom_gd", solver="gd", estimator="mom", max_iter=T),
@@ -259,7 +210,7 @@ for rep in range(n_repeats):
         logging.info("WARNING : results will NOT be saved at the end of this session")
 
     logging.info(64 * "-")
-    logging.info("repeat : %d" % (rep + 1))
+    logging.info("repeat : %d/%d" % (rep + 1, n_repeats))
     logging.info(64 * "-")
 
     logging.info("generating data ...")
@@ -267,12 +218,12 @@ for rep in range(n_repeats):
 
     w_star = gen_w_star(n_features, dist=w_star_dist)
     noise, expect_noise, noise_2nd_moment = noise_fct(
-        n_samples, noise_sigma[noise_dist]
+        rng, n_samples, noise_sigma[noise_dist]
     )
     y = X @ w_star + noise
 
     # outliers
-    if outliers:
+    if len(outlier_types) > 0:
         for typ in outlier_types:
             X_out, y_out = generate_outliers(y, type=typ)
         X = np.concatenate((X, X_out), axis=0)
@@ -328,14 +279,14 @@ for rep in range(n_repeats):
         reg = Regressor(
             tol=0,
             max_iter=T,
+            eps=confidence,
             solver=algo.solver,
             estimator=algo.estimator,
             fit_intercept=fit_intercept,
             step_size=step_size,
             penalty="none",
-            block_size=block_sizes[algo.name]
-            if algo.name in block_sizes.keys()
-            else 0.07,
+            block_size=block_size,
+            percentage=percentage,
         )
         reg.fit(X, y)
         out[algo.name] = reg.history_.records
@@ -385,15 +336,15 @@ data = pd.DataFrame(
 
 if save_results:
     now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
-    ensure_directory("exp_archives/linreg")
+    ensure_directory("exp_archives/" + experiment_name + "/")
     import subprocess
 
     # Get the commit number as a string
     commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
     commit = commit.decode("utf-8").strip()
 
-    filename = "linreg_results_" + now + ".pickle"
-    with open("exp_archives/linreg/" + filename, "wb") as f:
+    filename = experiment_name + "_results_" + now + ".pickle"
+    with open("exp_archives/" + experiment_name + "/" + filename, "wb") as f:
         pickle.dump({"datetime": now, "commit": commit, "results": data}, f)
 
     logging.info("Saved results in file %s" % filename)
@@ -498,18 +449,18 @@ if zoom_on_excess_empirical_risk:
 plt.tight_layout()
 plt.show()
 
-if save_fig:
-    now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
-    specs = "n%d_n_rep%d_%s%.2f_block_size=%.2f_w_dist=%s" % (
-        n_samples,
-        n_repeats,
-        noise_dist,
-        noise_sigma[noise_dist],
-        block_sizes["mom_cgd"],
-        w_star_dist,
-    )
-    ensure_directory("exp_archives/linreg/")
+# save figure
+now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
+specs = "n%d_n_rep%d_%s%.2f_block_size=%.2f_w_dist=%s" % (
+    n_samples,
+    n_repeats,
+    noise_dist,
+    noise_sigma[noise_dist],
+    block_size,
+    w_star_dist,
+)
+ensure_directory("exp_archives/" + experiment_name + "/")
 
-    fig_file_name = "exp_archives/linreg/" + specs + now + ".pdf"
-    g.fig.savefig(fname=fig_file_name, bbox_inches="tight")
-    logging.info("Saved figure into file : %s" % fig_file_name)
+fig_file_name = "exp_archives/" + experiment_name + "/" + specs + now + ".pdf"
+g.fig.savefig(fname=fig_file_name, bbox_inches="tight")
+logging.info("Saved figure into file : %s" % fig_file_name)

@@ -29,6 +29,7 @@ classifiers = [
 
 [tool.poetry.dependencies]
 numba = "^0.51"
+numba-scipy = "^0.3.0"
 numpy = "^1.17.4"
 python = "^3.7"
 scikit-learn = "^0.22"

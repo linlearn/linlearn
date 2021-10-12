@@ -2,13 +2,13 @@
 #          Ibrahim Merad <imerad7@gmail.com>
 # License: BSD 3 clause
 from abc import ABC, abstractmethod
-from math import exp, log
+from math import exp, log, fabs
 import numpy as np
 from numba import jit, njit, vectorize, void, prange
 
 from .estimator.ch import holland_catoni_estimator
-from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float
-
+from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float, fast_median, fast_trimmed_mean, sum_sq, argmedian
+from scipy.special import expit
 
 # Options passed to the @jit decorator within this module
 jit_kwargs = {
@@ -77,210 +77,174 @@ def median_of_means(x, block_size):
     if last_block_size != 0:
         block_means[n_blocks] = sum_block / last_block_size
 
-    mom = np.median(block_means)
-    return mom  # , blocks_means
+    # mom = np.median(block_means)
+    return fast_median(block_means, len(block_means))#mom  # , blocks_means
 
 
-def steps_factory(
-    fit_intercept, estimator="mom", percentage=0.0, n_samples_in_block=0, eps=0.0
+#@jit(**jit_kwargs)
+def compute_steps_cgd(
+    X, estimator, fit_intercept, lip_const, percentage=0.0, n_samples_in_block=0, eps=0.0
 ):
-
+    n_samples, n_features = X.shape
+    int_fit_intercept = int(fit_intercept)
+    steps = np.zeros(n_features + int_fit_intercept, dtype=X.dtype)
+    if fit_intercept:
+        steps[0] = 1 / lip_const
     if estimator == "erm":
-        if fit_intercept:
+        # First squared norm is n_samples
+        sum_sq(X, 0, out=steps[int_fit_intercept:])
+        # for j in prange(n_features):
+        #     for i in range(n_samples):
+        #         steps[j + int_fit_intercept] += X[i, j] * X[i, j]
+        for j in prange(int_fit_intercept, n_features + int_fit_intercept):
+            steps[j] = n_samples / (lip_const * max(steps[j], 1e-8))
+        return steps
 
-            @jit(**jit_kwargs)
-            def steps_func(lip_const, X):
-                n_samples, n_features = X.shape
-                steps = np.zeros(n_features + 1, dtype=X.dtype)
-                # First squared norm is n_samples
-                steps[0] = 1 / lip_const
-                for j in prange(1, n_features + 1):
-                    col_j_squared_norm = 0.0
-                    for i in range(n_samples):
-                        col_j_squared_norm += X[i, j - 1] ** 2
-                    steps[j] = n_samples / (lip_const * max(col_j_squared_norm, 1e-8))
-                return steps
-
-            return steps_func
-        else:
-
-            @jit(**jit_kwargs)
-            def steps_func(lip_const, X):
-                n_samples, n_features = X.shape
-                steps = np.zeros(n_features, dtype=X.dtype)
-                for j in prange(n_features):
-                    col_j_squared_norm = 0.0
-                    for i in range(n_samples):
-                        col_j_squared_norm += X[i, j - 1] ** 2
-                    steps[j] = n_samples / (lip_const * max(col_j_squared_norm, 1e-8))
-                return steps
-
-            return steps_func
-
-    elif estimator == "mom" or estimator == "gmom" or estimator == "llm":
+    elif estimator in ["mom", "gmom", "llm", "tmean"]:
         if n_samples_in_block == 0:
             raise ValueError(
                 "You should provide n_samples_in_block for mom/gmom estimator"
             )
-        if fit_intercept:
-
-            @jit(**jit_kwargs)
-            def steps_func(lip_const, X):
-                n_samples, n_features = X.shape
-                steps = np.zeros(n_features + 1, dtype=X.dtype)
-                # First squared norm is n_samples
-                steps[0] = 1 / lip_const
-                for j in prange(1, n_features + 1):
-                    steps[j] = 1 / (
-                        max(
-                            median_of_means(
-                                X[:, j - 1] * X[:, j - 1], n_samples_in_block
-                            ),
-                            1e-8,
-                        )
-                        * lip_const
-                    )
-                return steps
-
-            return steps_func
-        else:
-
-            @jit(**jit_kwargs)
-            def steps_func(lip_const, X):
-                n_samples, n_features = X.shape
-                steps = np.zeros(n_features, dtype=X.dtype)
-                for j in prange(n_features):
-                    steps[j] = 1 / (
-                        max(
-                            median_of_means(X[:, j] * X[:, j], n_samples_in_block), 1e-8
-                        )
-                        * lip_const
-                    )
-                return steps
-
-            return steps_func
+        for j in range(n_features):
+            steps[j + int_fit_intercept] = 1 / (
+                max(
+                    median_of_means(
+                        X[:, j] * X[:, j], n_samples_in_block
+                    ),
+                    1e-8,
+                )
+                * lip_const
+            )
+        return steps
 
     elif estimator == "ch":
         if eps == 0.0:
             raise ValueError("you should provide eps for catoni/holland estimator")
-        if fit_intercept:
+        squared_coordinates = np.empty(n_samples, dtype=X.dtype)
 
-            @jit(**jit_kwargs)
-            def steps_func(lip_const, X):
-                n_samples, n_features = X.shape
-                steps = np.zeros(n_features + 1, dtype=X.dtype)
-                squared_coordinates = np.zeros(n_samples, dtype=X.dtype)
+        for j in range(n_features):
+            squared_coordinates[:] = X[:, j] * X[:, j]
+            steps[j + int_fit_intercept] = 1 / (
+                holland_catoni_estimator(squared_coordinates, eps) * lip_const
+            )
 
-                steps[0] = 1 / lip_const
-                for j in range(n_features):
-                    squared_coordinates[:] = X[:, j] * X[:, j]
-                    steps[j + 1] = 1 / (
-                        holland_catoni_estimator(squared_coordinates, eps) * lip_const
-                    )
+        return steps
 
-                return steps
-
-            return steps_func
-        else:
-
-            @jit(**jit_kwargs)
-            def steps_func(lip_const, X):
-                n_samples, n_features = X.shape
-                steps = np.zeros(n_features, dtype=X.dtype)
-                squared_coordinates = np.zeros(n_samples, dtype=X.dtype)
-
-                for j in range(n_features):
-                    squared_coordinates[:] = X[:, j] * X[:, j]
-                    steps[j] = 1 / (
-                        holland_catoni_estimator(squared_coordinates, eps) * lip_const
-                    )
-
-                return steps
-
-            return steps_func
-
-    elif estimator == "tmean":
-        if percentage == 0.0:
-            raise ValueError("you should provide percentage for tmean estimator")
-        if fit_intercept:
-
-            @jit(**jit_kwargs)
-            def steps_func(lip_const, X):
-                n_samples, n_features = X.shape
-                n_excluded_tails = int(n_samples * percentage / 2)
-                steps = np.zeros(n_features + 1, dtype=X.dtype)
-                squared_coordinates = np.zeros(n_samples, dtype=X.dtype)
-
-                steps[0] = 1 / lip_const
-                for j in range(n_features):
-                    squared_coordinates[:] = X[:, j] * X[:, j]
-                    squared_coordinates.sort()
-
-                    steps[j + 1] = 1 / (
-                        max(
-                            np.mean(
-                                squared_coordinates[n_excluded_tails:-n_excluded_tails]
-                            ),
-                            1e-8,
-                        )
-                        * lip_const
-                    )
-
-                return steps
-
-            return steps_func
-        else:
-
-            @jit(**jit_kwargs)
-            def steps_func(lip_const, X):
-                n_samples, n_features = X.shape
-                n_excluded_tails = int(n_samples * percentage / 2)
-                steps = np.zeros(n_features, dtype=X.dtype)
-                squared_coordinates = np.zeros(n_samples, dtype=X.dtype)
-
-                for j in range(n_features):
-                    squared_coordinates[:] = X[:, j] * X[:, j]
-                    squared_coordinates.sort()
-
-                    steps[j] = 1 / (
-                        max(
-                            np.mean(
-                                squared_coordinates[n_excluded_tails:-n_excluded_tails]
-                            ),
-                            1e-8,
-                        )
-                        * lip_const
-                    )
-
-                return steps
-
-            return steps_func
-
+    # elif estimator == "tmean":
+    #     # if percentage == 0.0:
+    #     #     raise ValueError("you should provide percentage for tmean estimator")
+    #
+    #     # n_excluded_tails = int(n_samples * percentage / 2)
+    #     squared_coordinates = np.empty(n_samples, dtype=X.dtype)
+    #     for j in range(n_features):
+    #         squared_coordinates[:] = X[:, j] * X[:, j]
+    #         steps[j + int_fit_intercept] = 1 / (max(fast_trimmed_mean(squared_coordinates, n_samples, percentage), 1e-8) * lip_const)
+    #
+    #     return steps
     else:
         raise ValueError("Unknown estimator")
 
-
-@njit
-def steps_coordinate_descent(lip_const, X, block_size, fit_intercept, estimator="mom"):
-    # def col_squared_norm_dense(X, fit_intercept):
+#@jit(**jit_kwargs)
+def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0, n_blocks=0, eps=0.0):
     n_samples, n_features = X.shape
-    if fit_intercept:
-        steps = np.zeros(n_features + 1, dtype=X.dtype)
-        # First squared norm is n_samples
-        steps[0] = 1 / lip_const
-        for j in prange(1, n_features + 1):
-            steps[j] = 1 / (
-                max(median_of_means(X[:, j - 1] * X[:, j - 1], block_size), 1e-8)
-                * lip_const
-            )
-    else:
-        steps = np.zeros(n_features, dtype=X.dtype)
-        for j in prange(n_features):
-            steps[j] = 1 / (
-                max(median_of_means(X[:, j] * X[:, j], block_size), 1e-8) * lip_const
-            )
+    int_fit_intercept = int(fit_intercept)
 
-    return steps
+    if solver in ["sgd", "svrg", "saga"]:
+        mean_sq_norms = np.mean(sum_sq(X, 1))
+        # for i in range(n_samples):
+        #     for j in range(n_features):
+        #         sum_sq_norms += X[i, j] * X[i, j]
+        step = 1 / (lip_const * max(int_fit_intercept, mean_sq_norms))
+        return step
+    elif solver in ["gd", "batch_gd"]:
+        if estimator == "erm":
+            cov = X.T @ X
+            step = n_samples / (lip_const * max(int_fit_intercept * n_samples, np.linalg.norm(cov, 2)))
+            return step
+        elif estimator == "mom":
+            if n_blocks == 0:
+                raise ValueError(
+                    "You should provide n_blocks for mom/gmom/llm estimator"
+                )
+
+            square_coords = np.empty(n_samples, dtype=X.dtype)
+
+            sum_norms = 0.0
+            for j in range(n_features):
+                # for i in range(n_samples):
+                #     square_coords[i] = X[i, j] * X[i, j]
+                square_coords[:] = X[:, j] * X[:, j]
+                sum_norms += median_of_means(square_coords, int(n_samples/n_blocks))
+            step = 1 / (lip_const * max(int_fit_intercept, sum_norms))
+            return step
+
+        elif estimator in ["gmom", "llm"]:
+            if n_blocks == 0:
+                raise ValueError(
+                    "You should provide n_blocks for mom/gmom/llm estimator"
+                )
+            # TODO : this is just an upper bound
+            n_blocks += n_blocks % 2 + 1
+            n_samples_in_block = n_samples // n_blocks
+            block_means = np.empty(n_blocks, dtype=X.dtype)
+            # sum_sq = np.zeros(n_samples)
+            # for i in range(n_samples):
+            #     for j in range(n_features):
+            #         sum_sq[i] += X[i, j] * X[i, j]
+            square_norms = sum_sq(X, 1)
+            sample_indices = np.arange(n_samples)
+            np.random.shuffle(sample_indices)
+            # Cumulative sum in the block
+            sum_block = 0.0
+            # Block counter
+            counter = 0
+            for i, idx in enumerate(sample_indices):
+                sum_block += square_norms[idx]
+                if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                    block_means[counter] = sum_block / n_samples_in_block
+                    counter += 1
+                    sum_block = 0.0
+            argmed = argmedian(block_means)
+
+            cov = np.zeros((n_features, n_features))
+            for i in sample_indices[
+                     argmed * n_samples_in_block: (argmed + 1) * n_samples_in_block
+                     ]:
+                cov += np.outer(X[i], X[i])
+
+            step = n_samples_in_block / (lip_const * max(int_fit_intercept * n_samples_in_block, np.linalg.norm(cov, 2)))
+            return step
+
+        elif estimator == "ch":
+            if eps == 0.0:
+                raise ValueError("you should provide eps for ch estimator")
+            # square_coords = np.empty(n_samples, dtype=X.dtype)
+            # sum_norms = 0.0
+            # for j in range(n_features):
+            #     square_coords[:] = X[:, j] * X[:, j]
+            #     sum_norms += holland_catoni_estimator(square_coords, eps)
+            square_norms = sum_sq(X, 1)
+            square_norm_average_estimate = holland_catoni_estimator(square_norms, eps)
+            step = 1 / (lip_const * max(int_fit_intercept, square_norm_average_estimate))
+            return step
+        elif estimator == "tmean":
+            if percentage == 0.0:
+                raise ValueError("you should provide percentage for tmean estimator")
+            # square_coords = np.empty(n_samples, dtype=X.dtype)
+            # sum_norms = 0.0
+            # for j in range(n_features):
+            #     square_coords[:] = X[:, j] * X[:, j]
+            #     sum_norms += fast_trimmed_mean(square_coords, n_samples, percentage)
+            square_norms = sum_sq(X, 1)
+            square_norm_average_estimate = fast_trimmed_mean(square_norms, n_samples, percentage)
+            step = 1 / (lip_const * max(int_fit_intercept, square_norm_average_estimate))
+            return step
+        else:
+            raise ValueError("Unknown estimator")
+
+    else:
+        raise ValueError("Unknown solver")
+
 
 
 ################################################################
@@ -319,7 +283,7 @@ class Loss(ABC):
 ################################################################
 
 
-@jit(**jit_kwargs)
+@jit(inline="always", **jit_kwargs)
 def sigmoid(z):
     # TODO: faster sigmoid
     if z > 0:
@@ -329,13 +293,13 @@ def sigmoid(z):
         return exp_z / (1 + exp_z)
 
 
-@vectorize(fastmath=True)
-def sigmoid(z):
-    if z > 0:
-        return 1 / (1 + exp(-z))
-    else:
-        exp_z = exp(z)
-        return exp_z / (1 + exp_z)
+# @vectorize(fastmath=True)
+# def sigmoid(z):
+#     if z > 0:
+#         return 1 / (1 + exp(-z))
+#     else:
+#         exp_z = exp(z)
+#         return exp_z / (1 + exp_z)
 
 
 # TODO: faster logistic
@@ -357,9 +321,9 @@ class Logistic(Loss):
         return value
 
     def deriv_factory(self):
-        @jit(**jit_kwargs)
+        @jit(inline="always", **jit_kwargs)
         def deriv(y, z, out):
-            out[0] = -y * sigmoid(-y * z[0])
+            out[0] = -y * expit(-y * z[0])#sigmoid(-y * z[0])#
 
         return deriv
 
@@ -422,7 +386,7 @@ class MultiLogistic(Loss):
 
 class LeastSquares(Loss):
     def __init__(self):
-        self.lip = 1
+        self.lip = 1.0
 
     def value_factory(self):
         @jit(**jit_kwargs)
@@ -435,6 +399,44 @@ class LeastSquares(Loss):
         @jit(**jit_kwargs)
         def deriv(y, z, out):
             out[0] = z[0] - y
+
+        return deriv
+
+
+################################################################
+# Huber loss
+################################################################
+
+
+class Huber(Loss):
+    def __init__(self, delta=1.35):
+        self.lip = 1.0
+        self.delta = delta
+
+    def value_factory(self):
+        delta = self.delta
+        @jit(**jit_kwargs)
+        def value(y, z):
+            diff = fabs(y - z[0])
+            if diff < delta:
+                return 0.5 * (diff) ** 2
+            else:
+                return delta * (diff - 0.5 * delta)
+
+        return value
+
+    def deriv_factory(self):
+        delta = self.delta
+        @jit(inline="always", **jit_kwargs)
+        def deriv(y, z, out):
+
+            diff = z[0] - y
+            if diff < -delta:
+                out[0] = -delta
+            elif diff < delta:
+                out[0] = z[0] - y
+            else:
+                out[0] = delta
 
         return deriv
 
@@ -503,7 +505,7 @@ class SquaredHinge(Loss):
         return value
 
     def deriv_factory(self):
-        @jit(**jit_kwargs)
+        @jit(inline="always", **jit_kwargs)
         def deriv(y, z, out):
             agreement = y * z[0]
             if agreement > 1:
