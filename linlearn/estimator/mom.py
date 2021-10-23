@@ -24,7 +24,7 @@ from collections import namedtuple
 import numpy as np
 from numba import jit
 from ._base import Estimator, jit_kwargs
-from .._utils import np_float
+from .._utils import np_float, fast_median
 
 
 StateMOM = namedtuple(
@@ -130,6 +130,7 @@ class MOM(Estimator):
         n_classes = self.n_classes
         n_samples_in_block = self.n_samples_in_block
         last_block_size = self.last_block_size
+        n_blocks = self.n_blocks
 
         if self.fit_intercept:
 
@@ -205,7 +206,8 @@ class MOM(Estimator):
                         )
 
                 for k in range(n_classes):
-                    derivatives_sum_block[k] = np.median(block_means[:, k])
+                    derivatives_sum_block[k] = fast_median(block_means[:, k], n_blocks)
+                    # derivatives_sum_block[k] = np.median(block_means[:, k])
                 # return np.median(block_means)
 
             return partial_deriv
@@ -270,7 +272,8 @@ class MOM(Estimator):
                         )
 
                 for k in range(n_classes):
-                    derivatives_sum_block[k] = np.median(block_means[:, k])
+                    derivatives_sum_block[k] = fast_median(block_means[:, k], n_blocks)
+                    # derivatives_sum_block[k] = np.median(block_means[:, k])
                 # return np.median(block_means)
 
             return partial_deriv

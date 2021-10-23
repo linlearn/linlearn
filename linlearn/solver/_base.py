@@ -8,6 +8,7 @@ This module contains the base Solver class
 
 from abc import ABC, abstractmethod
 import numpy as np
+from warnings import warn
 from math import fabs
 from numpy.random import permutation
 from numba import jit
@@ -93,7 +94,7 @@ class Solver(ABC):
     def solve(self, w0=None, dummy_first_step=False):
         X = self.X
         fit_intercept = self.fit_intercept
-        inner_products = np.empty((self.n_samples, self.n_classes), dtype=np_float)
+        inner_products = np.empty((self.n_samples, self.n_classes), dtype=np_float, order="F")
         coordinates = np.arange(self.weights_shape[0], dtype=np.intp)
         weights = np.empty(self.weights_shape, dtype=np_float)
         tol = self.tol
@@ -161,6 +162,8 @@ class Solver(ABC):
                 )
 
         history.close_bar()
+        if tol > 0:
+            warn("Maximum iteration number reached, solver may have not converged")
         return OptimizationResult(
             w=weights, n_iter=max_iter + 1, success=False, tol=tol, message=None
         )

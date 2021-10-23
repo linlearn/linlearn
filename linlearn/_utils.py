@@ -30,6 +30,162 @@ jit_kwargs = {
 nb_float = float64
 np_float = np.float64
 
+@jit(**jit_kwargs)
+def partition(A, p, r, ind):
+    A[r], A[ind] = A[ind], A[r]
+
+    x = A[r]
+    i = p - 1
+    for j in range(p, r):
+        if A[j] <= x:
+            i += 1
+            A[j], A[i] = A[i], A[j]
+
+    A[i+1], A[r] = A[r], A[i+1]
+    return i + 1
+
+@jit(**jit_kwargs)
+def findKth_QS(A, n, k):
+    N = n
+    AA = A
+    K = k
+
+    while N > 1:
+
+        kk1 = partition(AA, 0, N-1, N//2)+1
+        if kk1 == K:
+            break
+        elif K < kk1:
+            # AA = AA[:kk1-1]
+            N = kk1-1
+        else:
+            AA = AA[kk1:]
+            N = N - kk1
+            K = K - kk1
+
+@jit(**jit_kwargs)
+def findK2(A, n, k1, k2):
+
+    if n <= 1:
+        return# k-1
+    N = n
+    AA = A
+    K1 = k1
+    K2 = k2
+
+    while True:
+        kk1 = partition(AA, 0, N-1, N//2)+1
+        if kk1 < K1:
+            AA = AA[kk1:]
+            N -= kk1
+            K1 -= kk1
+            K2 -= kk1
+        elif kk1 == K1:
+            findKth_QS(AA[kk1:], N - kk1, K2 - kk1)
+            break
+        elif kk1 < K2:
+            findKth_QS(AA[:kk1-1], kk1-1, K1)
+            findKth_QS(AA[kk1:], N - kk1, K2 - kk1)
+            break
+        elif kk1 == K2:
+            findKth_QS(AA[:kk1-1], kk1-1, K1)
+            break
+        else:
+            AA = AA[:kk1-1]
+            N = kk1 - 1
+
+
+# Better implementation of argmedian ??
+@jit(**jit_kwargs)
+def argmedian(x):
+    med = np.median(x)
+    id = 0
+    for a in x:
+        if a == med:
+            return id
+        id += 1
+    raise ValueError("Failed argmedian")
+
+    # return np.argpartition(x, len(x) // 2)[len(x) // 2]
+
+@jit(**jit_kwargs)
+def trimmed_mean(x, n_samples, percentage):
+    n_excluded_tails = int(n_samples * percentage)
+    partitioned = np.partition(x, [n_excluded_tails, n_samples - n_excluded_tails - 1])
+    result = 0.0
+    for i in range(n_excluded_tails, n_samples - n_excluded_tails):
+        result += partitioned[i]
+    result += partitioned[n_excluded_tails] * n_excluded_tails
+    result += partitioned[n_samples - n_excluded_tails - 1] * n_excluded_tails
+    result /= n_samples
+    return result
+
+@jit(**jit_kwargs)
+def fast_median(A, n):
+    n2 = n//2
+    if n%2 == 1:
+        findKth_QS(A, n, n2+1)
+        return A[n2]
+    else:
+        N = n
+        AA = A
+        K = n2
+        upper = n
+        while N > 1:
+            kk1 = partition(AA, 0, N-1, N//2)+1
+            if kk1 == K:
+                break
+            elif K < kk1:
+                # AA = AA[:kk1-1]
+                if kk1 > 2:
+                    upper -= N - kk1 + 1
+                N = kk1-1
+            else:
+                AA = AA[kk1:]
+                N = N - kk1
+                K = K - kk1
+
+        mini = A[n2]
+        for e in A[n2+1:upper]:
+            if e < mini:
+                mini = e
+        return (A[n2-1] + mini)/2
+
+
+@jit(**jit_kwargs)
+def fast_trimmed_mean(x, n_samples, percentage):
+    n_excluded_tails = max(1, int(n_samples * percentage))
+    # findKth_QS(x, n_samples, n_excluded_tails)
+    # findKth_QS(x[n_excluded_tails:], n_samples - n_excluded_tails, n_samples - 2*n_excluded_tails + 1)
+    findK2(x, n_samples, n_excluded_tails, n_samples - n_excluded_tails + 1)
+
+    result = 0.0
+    for i in range(n_excluded_tails, n_samples - n_excluded_tails):
+        result += x[i]
+    result += x[n_excluded_tails-1] * n_excluded_tails
+    result += x[n_samples-n_excluded_tails] * n_excluded_tails
+    result /= n_samples
+
+    # alternative code for true theoretical definition
+
+    # half = n_samples // 2
+    # n_excluded_tails = max(1, int(half * percentage))
+    #
+    # findK2(x[:half], half, n_excluded_tails, half - n_excluded_tails + 1)
+    # a = x[n_excluded_tails-1]
+    # b = x[half - n_excluded_tails]
+    # result = 0.0
+    # for i in range(half, n_samples):
+    #     if x[i] < a:
+    #         result += a
+    #     elif x[i] < b:
+    #         result += x[i]
+    #     else:
+    #         result += b
+    # result /= (n_samples - half)
+
+    return result
+
 
 @jit(
     nopython=NOPYTHON,

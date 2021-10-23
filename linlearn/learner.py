@@ -23,9 +23,11 @@ from ._loss import (
     Logistic,
     MultiLogistic,
     LeastSquares,
+    Huber,
     SquaredHinge,
     MultiSquaredHinge,
-    steps_factory,
+    compute_steps,
+    compute_steps_cgd,
     decision_function_factory,
 )
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
@@ -48,6 +50,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
     _losses = [
         "logistic",
         "leastsquares",
+        "huber",
         "multilogistic",
         "squaredhinge",
         "multisquaredhinge",
@@ -66,7 +69,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         fit_intercept=True,
         estimator="erm",
         block_size=0.07,
-        percentage=0.05,
+        percentage=0.01,
         eps=0.001,
         solver="cgd",
         tol=1e-4,
@@ -200,8 +203,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
     @percentage.setter
     def percentage(self, val):
-        if not isinstance(val, numbers.Real) or val <= 0.0 or val > 1:
-            raise ValueError("percentage must be in (0, 1]; got (percentage=%r)" % val)
+        if not isinstance(val, numbers.Real) or val < 0.0 or val >= 0.5:
+            raise ValueError("percentage must be in [0, 0.5); got (percentage=%r)" % val)
         else:
             self._percentage = val
 
@@ -327,6 +330,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return Logistic()
         elif self.loss == "leastsquares":
             return LeastSquares()
+        elif self.loss == "huber":
+            return Huber()
         elif self.loss == "multilogistic":
             return MultiLogistic(self.n_classes)
         elif self.loss == "squaredhinge":
@@ -399,15 +404,15 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         n_samples_in_block = int(n_samples * self.block_size)
 
         if self.solver == "cgd":
-            # Get the gradient descent steps for each coordinate
-            steps_func = steps_factory(
-                fit_intercept=self.fit_intercept,
-                estimator=self.estimator,
-                percentage=self.percentage,
-                eps=self.eps,
-                n_samples_in_block=n_samples_in_block,
-            )
-            steps = self.step_size * steps_func(loss.lip, X)
+            step = compute_steps_cgd(X, self.estimator, self.fit_intercept, loss.lip, self.percentage,
+                                     n_samples_in_block, self.eps)
+        else:
+            step = compute_steps(X, self.solver, self.estimator, self.fit_intercept, loss.lip, self.percentage,
+                                 int(1 / self.block_size), self.eps)
+
+        step *= self.step_size
+
+        if self.solver == "cgd":
             # Create an history object for the solver
             history = History("CGD", self.max_iter, self.verbose)
             self.history_ = history
@@ -423,22 +428,12 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.max_iter,
                 self.tol,
                 self.random_state,
-                steps,
+                step,
                 history,
                 importance_sampling=self.cgd_IS,
             )
 
         elif self.solver == "gd":
-            # Get the gradient descent steps for each coordinate
-
-            steps_func = steps_factory(
-                fit_intercept=self.fit_intercept,
-                estimator=self.estimator,
-                percentage=self.percentage,
-                eps=self.eps,
-                n_samples_in_block=n_samples_in_block,
-            )
-            step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
             history = History("GD", self.max_iter, self.verbose)
             self.history_ = history
@@ -458,11 +453,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 history,
             )
         elif self.solver == "sgd":
-            # Get the gradient descent steps for each coordinate
-            steps_func = steps_factory(
-                fit_intercept=self.fit_intercept, estimator="erm"
-            )
-            step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
             history = History("SGD", self.max_iter, self.verbose)
             self.history_ = history
@@ -484,11 +474,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
 
         elif self.solver == "svrg":
-            # Get the gradient descent steps for each coordinate
-            steps_func = steps_factory(
-                fit_intercept=self.fit_intercept, estimator="erm"
-            )
-            step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
             history = History("SVRG", self.max_iter, self.verbose)
             self.history_ = history
@@ -508,11 +493,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 history,
             )
         elif self.solver == "saga":
-            # Get the gradient descent steps for each coordinate
-            steps_func = steps_factory(
-                fit_intercept=self.fit_intercept, estimator="erm"
-            )
-            step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
             history = History("SAGA", self.max_iter, self.verbose)
             self.history_ = history
@@ -532,16 +512,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 history,
             )
         elif self.solver == "batch_gd":
-            # Get the gradient descent steps for each coordinate
-
-            steps_func = steps_factory(
-                fit_intercept=self.fit_intercept,
-                estimator=self.estimator,
-                percentage=self.percentage,
-                eps=self.eps,
-                n_samples_in_block=n_samples_in_block,
-            )
-            step = self.step_size * np.min(steps_func(loss.lip, X))
             # Create an history object for the solver
             history = History("batch_GD", self.max_iter, self.verbose)
             self.history_ = history
@@ -609,7 +579,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
 
     def _check_regression_loss(self):
-        if self.loss != "leastsquares":
+        if self.loss not in ["leastsquares", "huber"]:
             raise ValueError(
                 "You should specify a regression loss, got loss=%s" % self.loss
             )
@@ -636,6 +606,13 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 return obj
 
             return objective
+
+    def fit_time(self):
+        # TODO : check_is_fitted is not throwing an error when it should
+        check_is_fitted(self)
+        time_record = self.history_.records[1]
+        return time_record.record[time_record.cursor-1] - time_record.record[0]
+
 
     def compute_objective_history(self, X, y):
         self.history_.allocate_record(1)
@@ -949,7 +926,7 @@ class Classifier(BaseLearner):
         fit_intercept=True,
         estimator="erm",
         block_size=0.07,
-        percentage=0.05,
+        percentage=0.01,
         eps=0.001,
         solver="cgd",
         tol=1e-4,

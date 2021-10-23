@@ -24,7 +24,7 @@ from .._utils import np_float
 
 
 @jit(**jit_kwargs)
-def gmom_njit(xs, tol=1e-7):
+def gmom_njit(xs, tol=1e-10):
     # from Vardi and Zhang 2000
     n_elem, n_dim = xs.shape
     # TODO : avoid the memory allocations in this function
@@ -198,7 +198,7 @@ class GMOM(Estimator):
                 deriv = state.loss_derivative
                 for i, idx in enumerate(sample_indices):
                     deriv_loss(y[idx], inner_products[idx], deriv)
-                    for j in range(n_features + 1):
+                    for j in range(n_features):
                         for k in range(n_classes):
                             grads_sum_block[j, k] += X[idx, j] * deriv[k]
 
@@ -212,7 +212,7 @@ class GMOM(Estimator):
                         counter += 1
 
                 if last_block_size != 0:
-                    for j in range(n_features + 1):
+                    for j in range(n_features):
                         for k in range(n_classes):
                             block_means[counter, j, k] = (
                                 grads_sum_block[j, k] / last_block_size

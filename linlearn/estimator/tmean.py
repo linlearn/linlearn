@@ -13,7 +13,7 @@ from collections import namedtuple
 import numpy as np
 from numba import jit
 from ._base import Estimator, jit_kwargs
-from .._utils import np_float
+from .._utils import np_float, trimmed_mean, fast_trimmed_mean
 
 StateTMean = namedtuple(
     "StateTMean",
@@ -82,22 +82,8 @@ class TMean(Estimator):
                 # TODO: Try out different sorting mechanisms, since at some point the
                 #  sorting order won't change much...
                 for k in range(n_classes):
-                    # TODO : this isn't efficient, full sorting is not necessary, use np.partition ?
-                    partitioned = np.partition(deriv_samples[:, k], [n_excluded_tails, n_samples-n_excluded_tails-1])
-
-                    #deriv_samples[:, k].sort()
-                    # partial_derivative[k] = np.mean(
-                    #     deriv_samples[n_excluded_tails:-n_excluded_tails, k]
-                    # )
-                    partial_derivative[k] = np.mean(
-                        partitioned[n_excluded_tails:-n_excluded_tails]
-                    )
-                    partial_derivative[k] = (1 - percentage) * partial_derivative[
-                        k
-                    ] + percentage * (
-                        partitioned[n_excluded_tails]
-                        + partitioned[-n_excluded_tails - 1]
-                    )
+                    # partial_derivative[k] = trimmed_mean(deriv_samples[:, k], n_samples, percentage)
+                    partial_derivative[k] = fast_trimmed_mean(deriv_samples[:, k], n_samples, percentage)
 
             return partial_deriv
 
@@ -113,35 +99,8 @@ class TMean(Estimator):
                         deriv_samples[i, k] *= X[i, j]
 
                 for k in range(n_classes):
-                    # TODO : this isn't efficient, full sorting is not necessary, use np.partition ?
-                    # deriv_samples[:, k].sort()
-                    # partial_derivative[k] = np.mean(
-                    #     deriv_samples[n_excluded_tails:-n_excluded_tails, k]
-                    # )
-                    # partial_derivative[k] = (1 - percentage) * partial_derivative[
-                    #     k
-                    # ] + percentage * (
-                    #     deriv_samples[n_excluded_tails, k]
-                    #     + deriv_samples[-n_excluded_tails - 1, k]
-                    # )
-                    partitioned = np.partition(deriv_samples[:, k], [n_excluded_tails, n_samples-n_excluded_tails-1])
-
-                    #deriv_samples[:, k].sort()
-                    # partial_derivative[k] = np.mean(
-                    #     deriv_samples[n_excluded_tails:-n_excluded_tails, k]
-                    # )
-                    partial_derivative[k] = np.mean(
-                        partitioned[n_excluded_tails:-n_excluded_tails]
-                    )
-                    partial_derivative[k] = (1 - percentage) * partial_derivative[
-                        k
-                    ] + percentage * (
-                        partitioned[n_excluded_tails]
-                        + partitioned[-n_excluded_tails - 1]
-                    )
-
-                # deriv_samples.sort()
-                # return np.mean(deriv_samples[n_excluded_tails:-n_excluded_tails])
+                    # partial_derivative[k] = trimmed_mean(deriv_samples[:, k], n_samples, percentage)
+                    partial_derivative[k] = fast_trimmed_mean(deriv_samples[:, k], n_samples, percentage)
 
             return partial_deriv
 
@@ -171,41 +130,17 @@ class TMean(Estimator):
                         deriv_samples_outer_prods[i, k] = deriv_samples[i, k]
 
                 for k in range(n_classes):
-                    partitioned = np.partition(deriv_samples_outer_prods[:, k], [n_excluded_tails, n_samples-n_excluded_tails-1])
 
-                    gradient[0, k] = np.mean(
-                        partitioned[n_excluded_tails:-n_excluded_tails]
-                    )
-                    gradient[0, k] = (1 - percentage) * gradient[0, k] + percentage * (
-                        partitioned[n_excluded_tails]
-                        + partitioned[-n_excluded_tails - 1]
-                    )
+                    gradient[0, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
 
-                    # deriv_samples_outer_prods[:, k].sort()
-                    # gradient[0, k] = np.mean(
-                    #     deriv_samples_outer_prods[n_excluded_tails:-n_excluded_tails, k]
-                    # )
                 for k in range(n_classes):
                     for j in range(n_features):
                         for i in range(n_samples):
                             deriv_samples_outer_prods[i, k] = (
                                 deriv_samples[i, k] * X[i, j]
                             )
-                        # deriv_samples_outer_prods[:, k].sort()
-                        # gradient[j + 1, k] = np.mean(
-                        #     deriv_samples_outer_prods[
-                        #         n_excluded_tails:-n_excluded_tails, k
-                        #     ]
-                        # )
-                        partitioned = np.partition(deriv_samples_outer_prods[:, k], [n_excluded_tails, n_samples-n_excluded_tails-1])
-
-                        gradient[j + 1, k] = np.mean(
-                            partitioned[n_excluded_tails:-n_excluded_tails]
-                        )
-                        gradient[j+1, k] = (1 - percentage) * gradient[j+1, k] + percentage * (
-                            partitioned[n_excluded_tails]
-                            + partitioned[-n_excluded_tails - 1]
-                        )
+                        gradient[j + 1, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
+                        # gradient[j + 1, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
 
             return grad
         else:
@@ -223,23 +158,9 @@ class TMean(Estimator):
                     for k in range(n_classes):
                         for i in range(n_samples):
                             deriv_samples_outer_prods[i, k] = (
-                                deriv_samples[i, k] * X[i, j]
+                                    deriv_samples[i, k] * X[i, j]
                             )
-                        # deriv_samples_outer_prods[:, k].sort()
-                        # gradient[j, k] = np.mean(
-                        #     deriv_samples_outer_prods[
-                        #         n_excluded_tails:-n_excluded_tails, k
-                        #     ]
-                        # )
-                        partitioned = np.partition(deriv_samples_outer_prods[:, k],
-                                                   [n_excluded_tails, n_samples - n_excluded_tails - 1])
+                        gradient[j, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
 
-                        gradient[j, k] = np.mean(
-                            partitioned[n_excluded_tails:-n_excluded_tails]
-                        )
-                        gradient[j, k] = (1 - percentage) * gradient[j, k] + percentage * (
-                                partitioned[n_excluded_tails]
-                                + partitioned[-n_excluded_tails - 1]
-                        )
-
+                        # gradient[j, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
             return grad

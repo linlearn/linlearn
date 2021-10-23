@@ -8,7 +8,7 @@ This module contains the ``GD`` class, for gradient descent solver.
 
 import numpy as np
 from math import fabs
-from numpy.random import permutation
+from warnings import warn
 from numba import jit
 
 from ._base import Solver, OptimizationResult, jit_kwargs
@@ -55,6 +55,7 @@ class GD(Solver):
         fit_intercept = self.fit_intercept
 
         n_features = self.n_features
+        n_samples = self.n_samples
         n_classes = self.n_classes
         grad_estimator = self.estimator.grad_factory()
         decision_function = decision_function_factory(X, fit_intercept)
@@ -74,6 +75,11 @@ class GD(Solver):
                 max_abs_weight = 0.0
 
                 decision_function(weights, inner_products)
+                # for k in range(n_classes):
+                #     for i in range(n_samples):
+                #         inner_products[i, k] = weights[0,k]
+                #         for j in range(n_features):
+                #             inner_products[i, k] += X[i, j] * weights[j+1, k]
 
                 grad_estimator(inner_products, state_estimator)
                 grad = state_estimator.gradient
@@ -372,6 +378,8 @@ class batch_GD(Solver):
                 )
 
         history.close_bar()
+        if tol > 0:
+            warn("Maximum iteration number reached, solver may have not converged")
         return OptimizationResult(
             w=weights, n_iter=max_iter + 1, success=False, tol=tol, message=None
         )

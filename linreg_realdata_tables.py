@@ -17,8 +17,8 @@ from collections import namedtuple
 import joblib
 from data_loaders import load_california_housing, load_used_car, load_data_boston, fetch_diabetes, load_simulated_regression
 
-experiment_logfile = "exp_archives/linreg_realdata.log"
-experiment_name = "linreg_realdata"
+experiment_logfile = "exp_archives/linreg_realdata_tables.log"
+experiment_name = "linreg_realdata_tables"
 
 
 file_handler = logging.FileHandler(filename=experiment_logfile)
@@ -40,7 +40,7 @@ def ensure_directory(directory):
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--dataset", type=str, default="Diabetes", choices=["used_car", "CaliforniaHousing", "Boston", "Diabetes", "simulated"])
-parser.add_argument("--loss", type=str, default="logistic", choices=["leastsquares", "huber"])
+parser.add_argument("--loss", type=str, default="leastsquares", choices=["leastsquares", "huber"])
 parser.add_argument("--huber_delta", type=float, default=1.35)
 parser.add_argument("--penalty", type=str, default="none", choices=["none", "l1", "l2", "elasticnet"])
 parser.add_argument("--lamda", type=float, default=1.0)
@@ -54,7 +54,7 @@ parser.add_argument("--meantype", type=str, default="mom", choices=["ordinary", 
 parser.add_argument("--random_seed", type=int, default=43)
 parser.add_argument("--n_samples", type=int, default=10000)  # for simulated data
 parser.add_argument("--n_features", type=int, default=20)  # for simulated data
-parser.add_argument("--n_repeats", type=int, default=1)
+parser.add_argument("--n_repeats", type=int, default=10)
 parser.add_argument("--max_iter", type=int, default=300)
 
 args = parser.parse_args()
@@ -129,7 +129,7 @@ def risk(X, y, clf, meantype=meantype, block_size=block_size, percentage=percent
     else:
         raise ValueError("unknown mean")
 
-    if penalty:
+    if penalty != "none":
         obj += lamda * penalties[penalty](clf.coef_)
 
     return obj
@@ -158,6 +158,7 @@ algorithms = [
     Algorithm(name="holland_gd", solver="gd", estimator="ch"),
     # Algorithm(name="saga", solver="saga", estimator="erm"),
     Algorithm(name="mom_cgd", solver="cgd", estimator="mom"),
+    Algorithm(name="mom_cgd_IS", solver="cgd", estimator="mom"),
     Algorithm(name="erm_cgd", solver="cgd", estimator="erm"),
     Algorithm(name="catoni_cgd", solver="cgd", estimator="ch"),
     Algorithm(name="tmean_cgd", solver="cgd", estimator="tmean"),
@@ -165,17 +166,16 @@ algorithms = [
     Algorithm(name="implicit_gd", solver="gd", estimator="llm"),
     Algorithm(name="erm_gd", solver="gd", estimator="erm"),
     # Algorithm(name="svrg", solver="svrg", estimator="erm"),
-    Algorithm(name="sgd", solver="sgd", estimator="erm"),
+    # Algorithm(name="sgd", solver="sgd", estimator="erm"),
 ]
 
 def announce(rep, x, status):
     logging.info(str(rep) + " : " + x + " " + status)
 
-def run_algorithm(data, algo, rep, col_try, col_algo, col_metric, col_val, col_time):
+def run_algorithm(data, algo, rep, col_try, col_algo, col_train_loss, col_test_loss, col_fit_time):
     X_train, X_test, y_train, y_test = data
     n_samples = len(y_train)
     announce(rep, algo.name, "running")
-
     clf = Regressor(
         tol=tol,
         loss=loss,
@@ -192,34 +192,22 @@ def run_algorithm(data, algo, rep, col_try, col_algo, col_metric, col_val, col_t
     )
     clf.fit(X_train, y_train, dummy_first_step=True)
     announce(rep, algo.name, "fitted")
-    clf.compute_objective_history(X_train, y_train)
-    clf.compute_objective_history(X_test, y_test)
-    announce(rep, algo.name, "computed history")
-
-    records = clf.history_.records[1:]
-
-    for j, metric in enumerate(["train_loss", "test_loss"]):
-        # for i in range(len(records[0])):
-        for i in range(records[0].cursor):
-            col_try.append(rep)
-            col_algo.append(algo.name)
-            col_metric.append(metric)
-            col_val.append(records[1+j].record[i])
-            col_time.append(records[0].record[i] - records[0].record[0])#i)#
+    col_try.append(rep)
+    col_algo.append(algo.name)
+    col_train_loss.append(risk(X_train, y_train, clf))
+    col_test_loss.append(risk(X_test, y_test, clf))
+    col_fit_time.append(clf.fit_time())
 
 
 def run_repetition(rep):
-    logging.info(64 * "-")
-    logging.info("repeat : %d" % rep)
-    logging.info(64 * "-")
-
-    col_try, col_algo, col_metric, col_val, col_time = [], [], [], [], []
+    col_try, col_algo, col_train_loss, col_test_loss, col_fit_time = [], [], [], [], []
     data = load_dataset(dataset)
     for algo in algorithms:
-        run_algorithm(data, algo, rep, col_try, col_algo, col_metric, col_val, col_time)
+        run_algorithm(data, algo, rep, col_try, col_algo, col_train_loss, col_test_loss, col_fit_time)
 
     logging.info("repetition done")
-    return col_try, col_algo, col_metric, col_val, col_time
+    return col_try, col_algo, col_train_loss, col_test_loss, col_fit_time
+
 
 if os.cpu_count() > 8:
     logging.info("running parallel repetitions")
@@ -232,28 +220,26 @@ else:
 
 col_try = list(itertools.chain.from_iterable([x[0] for x in results]))
 col_algo = list(itertools.chain.from_iterable([x[1] for x in results]))
-col_metric = list(itertools.chain.from_iterable([x[2] for x in results]))
-col_val = list(itertools.chain.from_iterable([x[3] for x in results]))
-col_time = list(itertools.chain.from_iterable([x[4] for x in results]))
-
+col_train_loss = list(itertools.chain.from_iterable([x[2] for x in results]))
+col_test_loss = list(itertools.chain.from_iterable([x[3] for x in results]))
+col_fit_time = list(itertools.chain.from_iterable([x[4] for x in results]))
 
 data = pd.DataFrame(
     {
         "repeat": col_try,
         "algorithm": col_algo,
-        "metric": col_metric,
-        "value": col_val,
-        "time": col_time,
+        "train_loss": col_train_loss,
+        "test_loss": col_test_loss,
+        "fit_time": col_fit_time,
     }
 )
 
+data_no_repeats = data.drop("repeat", axis=1)
+means = (data_no_repeats.groupby(["algorithm"]).mean()).add_suffix("_mean")
+means_stds = means.join((data_no_repeats.groupby(["algorithm"]).std()).add_suffix("_std")).sort_index(axis=1)
 
-indexNames = data[data["value"] > 1e8].index
-# Delete these row indexes from dataFrame
-logging.info("dropping %d rows" % len(indexNames))
-data.drop(indexNames, inplace=True)
 
-# save results:
+logging.info("Saving results ...")
 now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
 
 import subprocess
@@ -263,64 +249,13 @@ commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
 commit = commit.decode("utf-8").strip()
 
 filename = experiment_name + "_results_%s" % dataset + now + ".pickle"
-ensure_directory("exp_archives/" + experiment_name + "/")
-with open("exp_archives/" + experiment_name + "/" + filename, "wb") as f:
-    pickle.dump({"datetime": now, "commit": commit, "results": data}, f)
+
+ensure_directory("exp_archives/"+experiment_name+"/")
+with open("exp_archives/"+experiment_name+"/" + filename, "wb") as f:
+    pickle.dump({"datetime": now, "commit": commit, "args" : args, "results": data, "means_stds":means_stds}, f)
 
 logging.info("Saved results in file %s" % filename)
 
-logging.info("Plotting ...")
+print(data)
 
-line_width = 1.5
-
-g = sns.FacetGrid(data, col="metric", height=4, legend_out=True, sharey=False)
-g.map(sns.lineplot, "time", "value", "algorithm", lw=line_width).set(xlabel="", ylabel="")
-
-# g.set(
-#     ylim=(
-#         None,
-#         risk(
-#             X_test,
-#             y_test,
-#             np.zeros(n_features + int(fit_intercept)),
-#             fit_intercept=fit_intercept,
-#         ),
-#     )
-# )
-
-# g.set_titles(col_template="{col_name}")
-
-axes = g.axes.flatten()
-axes[0].set_title("Train risk")
-axes[1].set_title("Test risk")
-
-
-# plt.legend(
-axes[0].legend(
-    list(data["algorithm"].unique()),
-    # bbox_to_anchor=(0.3, 0.7, 1.0, 0.0),
-    # loc="lower left",
-    ncol=2,
-    borderaxespad=0.2,
-    columnspacing=1.0,
-    fontsize=10,
-)
-
-g.fig.suptitle(
-    "data : %s , loss=%s, meantype=%s"
-    % (dataset, loss.upper(), meantype)
-)
-
-plt.tight_layout()
-plt.show()
-
-# save fig:
-now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
-specs = "%s_block_size=%.2f" % (
-    dataset,
-    block_size,
-)
-fig_file_name = "exp_archives/" + experiment_name + "/" + specs + now + ".pdf"
-ensure_directory("exp_archives/" + experiment_name + "/")
-g.fig.savefig(fname=fig_file_name, bbox_inches="tight")
-logging.info("Saved figure into file : %s" % fig_file_name)
+print(means_stds)

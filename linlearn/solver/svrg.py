@@ -10,6 +10,7 @@ gradient descent.
 import numpy as np
 from math import fabs
 from numba import jit
+from warnings import warn
 
 from ._base import Solver, OptimizationResult, jit_kwargs
 from .._loss import decision_function_factory
@@ -270,6 +271,8 @@ class SVRG(Solver):
                 )
 
         history.close_bar()
+        if tol > 0:
+            warn("Maximum iteration number reached, solver may have not converged")
         return OptimizationResult(
             w=weights, n_iter=max_iter + 1, success=False, tol=tol, message=None
         )

@@ -69,7 +69,6 @@ class CGD(Solver):
         if self.importance_sampling:
             coord_csum_probas = np.cumsum(1 / self.steps)
             coord_csum_probas /= coord_csum_probas[-1]
-
             @jit(**jit_kwargs)
             def prepare_coordinates(coords):
                 rand_choice_nb(weights_dim1, coord_csum_probas, coords)
@@ -93,8 +92,10 @@ class CGD(Solver):
                 #     coordinates[idx] = idx
                 prepare_coordinates(coordinates)
                 # np.random.shuffle(coordinates)
+
                 w_j_new = state_estimator.loss_derivative
                 delta_j = state_estimator.partial_derivative
+
                 for j in coordinates:
                     partial_deriv_estimator(j, inner_products, state_estimator)
 
@@ -153,8 +154,7 @@ class CGD(Solver):
                         w_j_new[k] = weights[j, k] - steps[j] * delta_j[k]
                         w_j_new[k] = penalize(w_j_new[k], scaled_steps[j])
 
-                    # Update the inner products
-                    for k in range(n_classes):
+                        # Update the inner products
                         delta_j[k] = w_j_new[k] - weights[j, k]
                         # Update the maximum update change
                         abs_delta_j = fabs(delta_j[k])
@@ -169,7 +169,6 @@ class CGD(Solver):
                         for i in range(n_samples):
                             inner_products[i, k] += delta_j[k] * X[i, j]
 
-                    for k in range(n_classes):
                         weights[j, k] = w_j_new[k]
                 return max_abs_delta, max_abs_weight
 

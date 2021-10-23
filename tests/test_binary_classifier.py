@@ -391,6 +391,15 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, solver):
     else:
         raise ValueError("Weird penalty %r" % penalty)
 
+    if solver in ["svrg", "saga", "gd"]:
+        abs_approx, rel_approx = 1e-2, 1e-2
+        args["step_size"] = 2.5
+        if solver == "saga":
+            args["max_iter"] = 400
+
+    else:
+        abs_approx, rel_approx = 1e-6, 1e-6
+
     clf_scikit.fit(X, y)
     # We compare with saga since it supports all penalties
     # clf_scikit = LogisticRegression(solver="saga", **args).fit(X, y)
@@ -398,11 +407,6 @@ def test_fit_same_sklearn_logistic(fit_intercept, penalty, C, l1_ratio, solver):
         penalty=penalty, C=C, l1_ratio=l1_ratio, solver=solver, **args
     )
     clf_linlearn.fit(X, y)
-
-    if solver in ["svrg", "saga", "gd"] and fit_intercept:
-        abs_approx, rel_approx = 1e-4, 1e-4
-    else:
-        abs_approx, rel_approx = 1e-6, 1e-6
 
     # For some weird reason scikit's intercept_ does not match for "l1" and
     # "elasticnet" with intercept and for small C
@@ -475,6 +479,17 @@ def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio, solver):
     else:
         raise ValueError("Weird penalty %r" % penalty)
 
+    abs_approx, rel_approx = 1e-4, 1e-4
+
+    if solver in ["svrg", "saga", "gd"]:
+        args["step_size"] = 2.5
+        abs_approx, rel_approx = 1e-2, 1e-2
+        if solver == "saga":
+            args["max_iter"] = 400
+
+    if solver == "gd":
+        args["step_size"] = 1.5
+
     clf_scikit.fit(X, y)
     clf_linlearn = Classifier(
         penalty=penalty, C=C, l1_ratio=l1_ratio, solver=solver, **args
@@ -482,10 +497,10 @@ def test_fit_same_sklearn_moons(fit_intercept, penalty, C, l1_ratio, solver):
     clf_linlearn.fit(X, y)
 
     if not (penalty in ["l1", "elasticnet"] and fit_intercept and C < 1e-1):
-        assert clf_scikit.intercept_ == pytest.approx(clf_linlearn.intercept_, abs=1e-4)
+        assert clf_scikit.intercept_ == pytest.approx(clf_linlearn.intercept_, abs=abs_approx, rel=rel_approx)
 
     if not (penalty in ["l1", "elasticnet"] and C == 1e-1 and not fit_intercept):
-        assert clf_scikit.coef_ == pytest.approx(clf_linlearn.coef_, abs=1e-4)
+        assert clf_scikit.coef_ == pytest.approx(clf_linlearn.coef_, abs=abs_approx, rel=rel_approx)
 
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
@@ -535,6 +550,9 @@ def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio, solver):
         )
     else:
         raise ValueError("Weird penalty %r" % penalty)
+
+    if solver in ["svrg", "saga"]:
+        args["step_size"] = 3.0
 
     clf_scikit.fit(X, y)
     clf_linlearn = Classifier(
