@@ -48,6 +48,31 @@ def decision_function_factory(X, fit_intercept):
 
     return decision_function
 
+def batch_decision_function_factory(X, fit_intercept, n_classes, n_features):
+
+    if fit_intercept:
+
+        @jit(**jit_kwargs)  # void(nb_float[::1], nb_float[::1]),
+        def decision_function(w, out, indices_batch):
+            for ind in indices_batch:
+                for k in range(n_classes):
+                    out[ind, k] = w[0, k]
+                    for j in range(n_features):
+                        out[ind, k] += X[ind, j] * w[j+1, k]
+
+
+    else:
+
+        @jit(**jit_kwargs)  # void(nb_float[::1], nb_float[::1]),
+        def decision_function(w, out, indices_batch):
+            for ind in indices_batch:
+                for k in range(n_classes):
+                    out[ind, k] = 0.0
+                    for j in range(n_features):
+                        out[ind, k] += X[ind, j] * w[j, k]
+
+    return decision_function
+
 
 @njit
 def median_of_means(x, block_size):
@@ -192,7 +217,7 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
             #     for j in range(n_features):
             #         sum_sq[i] += X[i, j] * X[i, j]
             square_norms = sum_sq(X, 1)
-            sample_indices = np.arange(n_samples)
+            sample_indices = np.arange(n_blocks * n_samples_in_block)# np.arange(n_samples)
             np.random.shuffle(sample_indices)
             # Cumulative sum in the block
             sum_block = 0.0

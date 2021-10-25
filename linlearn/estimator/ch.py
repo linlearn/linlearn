@@ -191,6 +191,7 @@ class CH(Estimator):
                         gradient[j + 1, k] = holland_catoni_estimator(
                             deriv_samples_outer_prods, eps
                         )
+                return 0
 
             return grad
         else:
@@ -213,5 +214,6 @@ class CH(Estimator):
                         gradient[j, k] = holland_catoni_estimator(
                             deriv_samples_outer_prods, eps
                         )
+                return 0
 
             return grad

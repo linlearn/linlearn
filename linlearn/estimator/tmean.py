@@ -82,8 +82,8 @@ class TMean(Estimator):
                 # TODO: Try out different sorting mechanisms, since at some point the
                 #  sorting order won't change much...
                 for k in range(n_classes):
-                    # partial_derivative[k] = trimmed_mean(deriv_samples[:, k], n_samples, percentage)
-                    partial_derivative[k] = fast_trimmed_mean(deriv_samples[:, k], n_samples, percentage)
+                    partial_derivative[k] = trimmed_mean(deriv_samples[:, k], n_samples, percentage)
+                    # partial_derivative[k] = fast_trimmed_mean(deriv_samples[:, k], n_samples, percentage)
 
             return partial_deriv
 
@@ -99,8 +99,8 @@ class TMean(Estimator):
                         deriv_samples[i, k] *= X[i, j]
 
                 for k in range(n_classes):
-                    # partial_derivative[k] = trimmed_mean(deriv_samples[:, k], n_samples, percentage)
-                    partial_derivative[k] = fast_trimmed_mean(deriv_samples[:, k], n_samples, percentage)
+                    partial_derivative[k] = trimmed_mean(deriv_samples[:, k], n_samples, percentage)
+                    # partial_derivative[k] = fast_trimmed_mean(deriv_samples[:, k], n_samples, percentage)
 
             return partial_deriv
 
@@ -131,7 +131,8 @@ class TMean(Estimator):
 
                 for k in range(n_classes):
 
-                    gradient[0, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
+                    # gradient[0, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
+                    gradient[0, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
 
                 for k in range(n_classes):
                     for j in range(n_features):
@@ -139,8 +140,8 @@ class TMean(Estimator):
                             deriv_samples_outer_prods[i, k] = (
                                 deriv_samples[i, k] * X[i, j]
                             )
-                        gradient[j + 1, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
-                        # gradient[j + 1, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
+                        # gradient[j + 1, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
+                        gradient[j + 1, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
 
             return grad
         else:
@@ -160,7 +161,8 @@ class TMean(Estimator):
                             deriv_samples_outer_prods[i, k] = (
                                     deriv_samples[i, k] * X[i, j]
                             )
-                        gradient[j, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
+                        # gradient[j, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
 
-                        # gradient[j, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
+                        gradient[j, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, percentage)
+                return 0
             return grad

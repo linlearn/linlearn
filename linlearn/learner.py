@@ -33,7 +33,7 @@ from ._loss import (
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
 from .solver import CGD, GD, SGD, SVRG, SAGA, batch_GD, History
 from .estimator import ERM, MOM, TMean, LLM, GMOM, CH
-from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float
+from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float, numba_seed_numpy
 
 jit_kwargs = {
     "nopython": NOPYTHON,
@@ -110,6 +110,12 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         self.classes_ = None
 
         self.check_estimator_solver_combination(estimator, solver)
+
+        if random_state is not None:
+            # seed numba's random generator
+            numba_seed_numpy(random_state)
+            # randomness is not confined to numba jitted code, need to seed numpy's rng as well
+            np.random.seed(random_state)
 
     @property
     def penalty(self):
@@ -427,7 +433,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 penalty,
                 self.max_iter,
                 self.tol,
-                self.random_state,
                 step,
                 history,
                 importance_sampling=self.cgd_IS,
@@ -448,7 +453,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 penalty,
                 self.max_iter,
                 self.tol,
-                self.random_state,
                 step,
                 history,
             )
@@ -467,7 +471,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 penalty,
                 self.max_iter,
                 self.tol,
-                self.random_state,
                 step,
                 history,
                 exponent=self.sgd_exponent,
@@ -488,7 +491,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 penalty,
                 self.max_iter,
                 self.tol,
-                self.random_state,
                 step,
                 history,
             )
@@ -507,7 +509,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 penalty,
                 self.max_iter,
                 self.tol,
-                self.random_state,
                 step,
                 history,
             )
@@ -526,7 +527,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 penalty,
                 self.max_iter,
                 self.tol,
-                self.random_state,
                 step,
                 history,
                 batch_size=self.block_size,
@@ -614,8 +614,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         return time_record.record[time_record.cursor-1] - time_record.record[0]
 
 
-    def compute_objective_history(self, X, y):
-        self.history_.allocate_record(1)
+    def compute_objective_history(self, X, y, metric="objective"):
+        self.history_.allocate_record(1, metric)
         new_record = self.history_.records[-1]
         fit_intercept = self.fit_intercept
         inner_products = np.empty((X.shape[0], self.n_classes), dtype=np_float)
@@ -623,15 +623,33 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         # decision function
         decision_function = decision_function_factory(X, fit_intercept)
 
-        # Get the objective function
-        objective = self.objective_factory(y)
+        if metric == "objective":
+            # Get the objective function
+            obj = self.objective_factory(y)
+            metric_fct = lambda w, i_p, y: obj(w, i_p)
+        elif metric == "misclassif_rate":
+            if self.__class__.__name__ != "Classifier":
+                raise ValueError("Cannot compute misclassification rates for Regressor")
+
+            from sklearn.metrics import accuracy_score
+            classes = self.classes_
+            def metric_fct(w, i_p, y):
+                if i_p.ndim == 1:
+                    indices = (i_p > 0).astype(int)
+                else:
+                    indices = i_p.argmax(axis=1)
+                predictions = classes[indices]
+                return 1 - accuracy_score(y, predictions)
+        else:
+            raise ValueError("Unknown metric %r"%metric)
+
         parameter_record = self.history_.records[0]
         total_iter = parameter_record.cursor
 
         for i in range(total_iter):  # totalitaire
             weights = parameter_record.record[i]
             decision_function(weights, inner_products)
-            new_record.update(objective(weights, inner_products))
+            new_record.update(metric_fct(weights, inner_products, y))
 
     def fit(self, X, y, sample_weight=None, dummy_first_step=False):
         """
@@ -765,6 +783,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         solver = self._get_solver(X, y_encoded)
         w = self._get_initial_iterate(X, y_encoded)
         optimization_result = solver.solve(w, dummy_first_step=dummy_first_step)
+        self.history_.record_nm("sc_prods").record = np.cumsum(self.history_.record_nm("sc_prods").record)
 
         self.optimization_result_ = optimization_result
         self.n_iter_ = np.asarray([optimization_result.n_iter], dtype=np.int32)
@@ -1140,4 +1159,4 @@ class Regressor(BaseLearner, RegressorMixin):
         score : float
             MSE of ``self.predict(X)`` wrt. `y`.
         """
-        return ((y - self.predict(X)) ** 2).mean()
+        return 0.5 * ((y - self.predict(X)) ** 2).mean()

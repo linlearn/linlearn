@@ -319,5 +319,6 @@ class MOM(Estimator):
                 partial_deriv(j, inner_products, state)
                 for k in range(n_classes):
                     gradient[j, k] = partial_derivative[k]
+            return 0
 
         return grad

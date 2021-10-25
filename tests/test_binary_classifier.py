@@ -568,7 +568,7 @@ def test_fit_same_sklearn_circles(fit_intercept, penalty, C, l1_ratio, solver):
 
 @pytest.mark.parametrize("fit_intercept", (False, True))
 @pytest.mark.parametrize("C", grid_C)
-@pytest.mark.parametrize("solver", (*solvers, "sgd"))
+@pytest.mark.parametrize("solver", solvers)#, "sgd"))
 def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C, solver):
     n_samples = 128
     n_features = 5
@@ -586,12 +586,19 @@ def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C, solver):
         "tol": tol,
         "max_iter": max_iter,
         "verbose": verbose,
+        "step_size": 7.0,
         "fit_intercept": fit_intercept,
         "random_state": 42,
     }
 
     def approx(v):
         return pytest.approx(v, abs=1e-7)
+
+    if solver == "cgd" and C == 0.001 and fit_intercept:
+        args["step_size"] = 0.5
+
+    if solver == "saga" and C == 1000.0 and fit_intercept:
+        args["max_iter"] = 220
 
     # Test that elasticnet with l1_ratio=0.0 is the same as penalty="l2"
     clf_elasticnet = Classifier(
@@ -600,8 +607,8 @@ def test_elasticnet_l1_ridge_are_consistent(fit_intercept, C, solver):
     clf_l2 = Classifier(penalty="l2", C=C, solver=solver, **args)
     clf_elasticnet.fit(X, y)
     clf_l2.fit(X, y)
-    assert clf_elasticnet.intercept_ == approx(clf_l2.intercept_)
     assert clf_elasticnet.coef_ == approx(clf_l2.coef_)
+    assert clf_elasticnet.intercept_ == approx(clf_l2.intercept_)
 
     # Test that elasticnet with l1_ratio=1.0 is the same as penalty="l1"
     clf_elasticnet = Classifier(

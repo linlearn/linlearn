@@ -27,7 +27,6 @@ class CGD(Solver):
         penalty,
         max_iter,
         tol,
-        random_state,
         steps,
         history,
         importance_sampling=False,
@@ -42,7 +41,6 @@ class CGD(Solver):
             penalty=penalty,
             max_iter=max_iter,
             tol=tol,
-            random_state=random_state,
             history=history,
         )
 
@@ -130,7 +128,7 @@ class CGD(Solver):
                     for k in range(n_classes):
                         weights[j, k] = w_j_new[k]
 
-                return max_abs_delta, max_abs_weight
+                return max_abs_delta, max_abs_weight, n_samples
 
             return cycle
 
@@ -170,6 +168,6 @@ class CGD(Solver):
                             inner_products[i, k] += delta_j[k] * X[i, j]
 
                         weights[j, k] = w_j_new[k]
-                return max_abs_delta, max_abs_weight
+                return max_abs_delta, max_abs_weight, n_samples
 
             return cycle

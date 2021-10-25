@@ -235,6 +235,7 @@ class ERM(Estimator):
                 for j in range(n_features + 1):
                     for k in range(n_classes):
                         gradient[j, k] /= n_samples
+                return 0
 
             return grad
         else:
@@ -274,5 +275,6 @@ class ERM(Estimator):
                 for j in range(n_features):
                     for k in range(n_classes):
                         gradient[j, k] /= n_samples
+                return 0
 
             return grad

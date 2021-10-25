@@ -19,12 +19,13 @@ with warnings.catch_warnings():
 
 
 class Record(object):
-    def __init__(self, shape, capacity):
+    def __init__(self, shape, capacity, name):
         self.record = (
             np.zeros(capacity)
             if shape == 1
             else np.zeros(tuple([capacity] + list(shape)))
         )
+        self.name = name
         self.cursor = 0
 
     def update(self, value):
@@ -48,6 +49,7 @@ class History(object):
         self.values = defaultdict(list)
         self.title = title
         self.records = []
+        self.record_ind = {}
         self.n_updates = 0
         # TODO: List all possible keys
         print_style = defaultdict(lambda: "%.2e")
@@ -75,7 +77,7 @@ class History(object):
         else:
             self.bar = None
 
-    def update(self, current_iterate, update_bar=True, **kwargs):
+    def update(self, current_iterate, sc_prods, update_bar=True, **kwargs):
         # Total number of calls to update must be smaller than max_iter + 1
         if self.max_iter >= self.n_updates:
             self.n_updates += 1
@@ -116,11 +118,19 @@ class History(object):
             self.bar.set_postfix_str(postfix)
             self.bar.update(1)
 
-        self.records[0].update(current_iterate)
-        self.records[1].update(time.time())
+        self.record_nm("weights").update(current_iterate)
+        self.record_nm("time").update(time.time())
+        self.record_nm("sc_prods").update(sc_prods)
 
-    def allocate_record(self, shape):
-        self.records.append(Record(shape, self.max_iter + 1))
+        # self.records[0].update(current_iterate)
+        # self.records[1].update(time.time())
+
+    def allocate_record(self, shape, name):
+        self.record_ind[name] = len(self.records)
+        self.records.append(Record(shape, self.max_iter + 1, name))
+
+    def record_nm(self, name):
+        return self.records[self.record_ind[name]]
 
     def close_bar(self):
         if self.bar is not None:
