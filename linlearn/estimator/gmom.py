@@ -61,7 +61,7 @@ def gmom_njit(xs, tol=1e-10):
         y = y_new
         niter += 1
     # print(niter)
-    return y
+    return y, niter * (n_elem + 1)
 
 
 StateGMOM = namedtuple(
@@ -171,9 +171,11 @@ class GMOM(Estimator):
 
                 # TODO : possible optimizations in the next line by rewriting gmom_njit with out parameter
                 #  and preallocated place holders ...
-                gradient[:] = gmom_njit(block_means.reshape((n_blocks, -1))).reshape(
+                gmom_grad, sc_prods = gmom_njit(block_means.reshape((n_blocks, -1)))
+                gradient[:] = gmom_grad.reshape(
                     block_means.shape[1:]
                 )
+                return sc_prods
 
             return grad
         else:
@@ -220,8 +222,11 @@ class GMOM(Estimator):
 
                 # TODO : possible optimizations in the next line by rewriting gmom_njit with out parameter
                 #  and preallocated place holders ...
-                gradient[:] = gmom_njit(block_means.reshape((n_blocks, -1))).reshape(
+                gmom_grad, sc_prods = gmom_njit(block_means.reshape((n_blocks, -1)))
+
+                gradient[:] = gmom_grad.reshape(
                     block_means.shape[1:]
                 )
+                return sc_prods
 
             return grad

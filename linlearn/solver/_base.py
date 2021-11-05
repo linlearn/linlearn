@@ -62,7 +62,6 @@ class Solver(ABC):
         penalty,
         max_iter,
         tol,
-        random_state,
         history,
     ):
         self.X = X
@@ -74,7 +73,6 @@ class Solver(ABC):
         self.penalty = penalty
         self.max_iter = max_iter
         self.tol = tol
-        self.random_state = random_state
         self.n_samples, self.n_features = self.X.shape
         if self.fit_intercept:
             self.n_weights = (self.n_features + 1) * self.n_classes
@@ -84,8 +82,9 @@ class Solver(ABC):
             self.weights_shape = (self.n_features, self.n_classes)
 
         self.history = history
-        self.history.allocate_record(self.weights_shape)
-        self.history.allocate_record(1)
+        self.history.allocate_record(self.weights_shape, "weights")
+        self.history.allocate_record(1, "time")
+        self.history.allocate_record(1, "sc_prods")
 
     @abstractmethod
     def cycle_factory(self):
@@ -109,14 +108,14 @@ class Solver(ABC):
         decision_function = decision_function_factory(X, fit_intercept)
         decision_function(weights, inner_products)
 
-        random_state = self.random_state
-        if random_state is not None:
-
-            @jit(**jit_kwargs)
-            def numba_seed_numpy(rnd_state):
-                np.random.seed(rnd_state)
-
-            numba_seed_numpy(random_state)
+        # random_state = self.random_state
+        # if random_state is not None:
+        # 
+        #     @jit(**jit_kwargs)
+        #     def numba_seed_numpy(rnd_state):
+        #         np.random.seed(rnd_state)
+        # 
+        #     numba_seed_numpy(random_state)
 
         # Get the cycle function
         cycle = self.cycle_factory()
@@ -138,10 +137,10 @@ class Solver(ABC):
                 weights.fill(0.0)
             decision_function(weights, inner_products)
 
-        history.update(weights)
+        history.update(weights, 0)
 
         for n_iter in range(1, max_iter + 1):
-            max_abs_delta, max_abs_weight = cycle(
+            max_abs_delta, max_abs_weight, sc_prods = cycle(
                 coordinates, weights, inner_products, state_estimator
             )
             # Compute the new value of objective
@@ -153,7 +152,7 @@ class Solver(ABC):
 
             # TODO: tester tous les cas "max_abs_weight == 0.0" etc..
             # history.update(epoch=n_iter, obj=obj, tol=current_tol, update_bar=True)
-            history.update(weights)
+            history.update(weights, sc_prods)
 
             if current_tol < tol:
                 history.close_bar()

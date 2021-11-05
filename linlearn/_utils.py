@@ -657,3 +657,7 @@ def sample_without_replacement(pool, out):
 def rand_choice_nb(size, csum_probs, out):
     for i in range(size):
         out[i] = np.searchsorted(csum_probs, np.random.random(), side="right")
+
+@jit(**jit_kwargs)
+def numba_seed_numpy(rnd_state):
+    np.random.seed(rnd_state)

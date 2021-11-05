@@ -173,7 +173,6 @@ class LLM(Estimator):
         n_samples_in_block = self.n_samples_in_block
         n_classes = self.n_classes
         n_features = self.n_features
-        n_blocks = self.n_blocks
 
         if self.fit_intercept:
 
@@ -218,6 +217,7 @@ class LLM(Estimator):
                 for j in range(n_features + 1):
                     for k in range(n_classes):
                         gradient[j, k] /= n_samples_in_block
+                return 0
 
             return grad
         else:
@@ -261,5 +261,6 @@ class LLM(Estimator):
                 for j in range(n_features):
                     for k in range(n_classes):
                         gradient[j, k] /= n_samples_in_block
+                return 0
 
             return grad
