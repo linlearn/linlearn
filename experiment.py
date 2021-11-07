@@ -18,22 +18,24 @@ from sklearn.metrics import (
 )
 from sklearn.preprocessing import LabelBinarizer
 
+from sklearn.linear_model import HuberRegressor, RANSACRegressor, LinearRegression, SGDRegressor
+from scipy.optimize import minimize
 from linlearn import Classifier, Regressor
 sys.path.extend([".", ".."])
 
 
 # TODO: to add regressors for every Experiment
 
-min_mom_block_size = 0.001
+min_mom_block_size = np.log(1e-5)
 default_mom_block_size = 0.07
-max_mom_block_size = 0.2
+max_mom_block_size = np.log(0.2)
 
-min_tmean_percentage = 0.001
+min_tmean_percentage = 1e-5
 default_tmean_percentage = 0.01
 max_tmean_percentage = 0.3
 
-min_C_reg = np.log(1e-4)
-max_C_reg = np.log(1e4)
+# min_C_reg = np.log(1e-4)
+# max_C_reg = np.log(1e4)
 
 
 class Experiment(object):
@@ -136,10 +138,10 @@ class Experiment(object):
         params = params or self.default_params
         params = self.preprocess_params(params)
         # start_time = time.time()
-        bst = self.fit(
+        bst, fit_time = self.fit(
             params, X_train, y_train, seed=None
         )
-        fit_time = bst.fit_time()#time.time() - start_time
+        #time.time() - start_time
         y_scores = self.predict(bst, X_val)
         if self.learning_task.endswith("classification"):
             evals_result = log_loss(y_val, y_scores)
@@ -173,6 +175,9 @@ class Experiment(object):
             )
         elif self.learning_task == "multiclass-classification":
             y_val_binary = LabelBinarizer().fit_transform(y_val)
+            if not np.isfinite(y_scores).all():
+                print("Found NaN /inf in scores")
+                print(y_scores)
             roc_auc = roc_auc_score(y_val, y_scores, multi_class="ovr", average="macro")
             roc_auc_weighted = roc_auc_score(
                 y_val, y_scores, multi_class="ovr", average="weighted"
@@ -223,7 +228,6 @@ class Experiment(object):
         y_train,
         seed=None,
     ):
-        #  X_val, y_val not used since no early stopping
         if seed is not None:
             params.update({"random_state": seed})
 
@@ -233,7 +237,7 @@ class Experiment(object):
             learner = Regressor(**params, n_jobs=-1)
 
         learner.fit(X_train, y_train, dummy_first_step=True)
-        return learner
+        return learner, learner.fit_time()
 
     def predict(self, bst, X_test):
         if self.learning_task.endswith("classification"):
@@ -242,8 +246,17 @@ class Experiment(object):
             preds = bst.predict(X_test)
         return preds
 
+    # def preprocess_params(self, params):
+    #     raise NotImplementedError("Method preprocess_params is not implemented.")
+
     def preprocess_params(self, params):
-        raise NotImplementedError("Method preprocess_params is not implemented.")
+        params_ = params.copy()
+        params_.update(
+            {
+                "random_state": self.random_state,
+            }
+        )
+        return params_
 
 
 class MOM_CGD_Experiment(Experiment):
@@ -265,9 +278,9 @@ class MOM_CGD_Experiment(Experiment):
 
         # hard-coded params search space here
         self.space = {
-            "block_size": hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
+            "block_size": hp.loguniform("block_size", min_mom_block_size, max_mom_block_size),
             "cgd_IS": hp.choice("cgd_IS", [True, False]),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"block_size": default_mom_block_size, "cgd_IS": False}
@@ -280,6 +293,118 @@ class MOM_CGD_Experiment(Experiment):
             {
                 "estimator": "mom",
                 "solver": "cgd",
+                "random_state": self.random_state,
+            }
+        )
+        return params_
+
+class ERM_GD_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+        # hard-coded params search space here
+        self.space = {
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
+        }
+        # hard-coded default params here
+        self.default_params = {"C": 1}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "erm_gd"
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "erm",
+                "solver": "gd",
+                "random_state": self.random_state,
+            }
+        )
+        return params_
+
+class ERM_CGD_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+        # hard-coded params search space here
+        self.space = {
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
+        }
+        # hard-coded default params here
+        self.default_params = {"C": 1}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "erm_cgd"
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "erm",
+                "solver": "cgd",
+                "random_state": self.random_state,
+            }
+        )
+        return params_
+
+class ModifiedHuber_CGD_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+        # hard-coded params search space here
+        self.space = {
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
+        }
+        # hard-coded default params here
+        self.default_params = {"C": 1}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "modifiedhuber_cgd"
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "erm",
+                "solver": "cgd",
+                "loss": "modifiedhuber",
                 "random_state": self.random_state,
             }
         )
@@ -306,7 +431,7 @@ class TMEAN_CGD_Experiment(Experiment):
         self.space = {
             "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
             "cgd_IS": hp.choice("cgd_IS", [True, False]),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"percentage": default_tmean_percentage, "cgd_IS": False}
@@ -323,6 +448,48 @@ class TMEAN_CGD_Experiment(Experiment):
             }
         )
         return params_
+
+# class TMEAN_HUBER_CGD_Experiment(Experiment):
+#
+#     def __init__(
+#         self,
+#         learning_task,
+#         max_hyperopt_evals=50,
+#         random_state=0,
+#         output_folder_path="./",
+#     ):
+#         Experiment.__init__(
+#             self,
+#             learning_task,
+#             max_hyperopt_evals,
+#             random_state,
+#             output_folder_path,
+#         )
+#         if learning_task != "regression":
+#             raise ValueError("RANSAC is only used for regression")
+#
+#         # hard-coded params search space here
+#         self.space = {
+#             "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+#             "cgd_IS": hp.choice("cgd_IS", [True, False]),
+#             # "C": hp.loguniform("C", min_C_reg, max_C_reg),
+#         }
+#         # hard-coded default params here
+#         self.default_params = {"percentage": default_tmean_percentage, "cgd_IS": False}
+#         self.default_params = self.preprocess_params(self.default_params)
+#         self.title = "tmean_cgd"
+#
+#     def preprocess_params(self, params):
+#         params_ = params.copy()
+#         params_.update(
+#             {
+#                 "estimator": "tmean",
+#                 "solver": "cgd",
+#                 "loss": "huber",
+#                 "random_state": self.random_state,
+#             }
+#         )
+#         return params_
 
 class CH_GD_Experiment(Experiment):
 
@@ -343,8 +510,8 @@ class CH_GD_Experiment(Experiment):
 
         # hard-coded params search space here
         self.space = {
-            "eps": hp.loguniform("eps", -10, -1),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            "eps": hp.loguniform("eps", -10, 0),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"eps": 0.001}
@@ -381,9 +548,9 @@ class CH_CGD_Experiment(Experiment):
 
         # hard-coded params search space here
         self.space = {
-            "eps": hp.loguniform("eps", -10, -1),
+            "eps": hp.loguniform("eps", -10, 0),
             "cgd_IS": hp.choice("cgd_IS", [True, False]),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"eps": 0.001, "cgd_IS" : False}
@@ -420,8 +587,8 @@ class LLM_GD_Experiment(Experiment):
 
         # hard-coded params search space here
         self.space = {
-            "block_size": hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            "block_size": hp.loguniform("block_size", min_mom_block_size, max_mom_block_size),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"block_size": default_mom_block_size}
@@ -459,8 +626,8 @@ class GMOM_GD_Experiment(Experiment):
 
         # hard-coded params search space here
         self.space = {
-            "block_size" : hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            "block_size" : hp.loguniform("block_size", min_mom_block_size, max_mom_block_size),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"block_size": default_mom_block_size}
@@ -477,4 +644,185 @@ class GMOM_GD_Experiment(Experiment):
             }
         )
         return params_
+
+class HuberGrad_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+        # hard-coded params search space here
+        self.space = {
+            "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+        }
+        # hard-coded default params here
+        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "hubergrad"
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "hg",
+                "solver": "gd",
+                "random_state": self.random_state,
+            }
+        )
+        return params_
+
+
+class RANSAC_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+        if learning_task != "regression":
+            raise ValueError("RANSAC is only used for regression")
+
+        # hard-coded params search space here
+        self.space = {
+            "min_samples": 5 + hp.randint("min_samples", 100)
+        }
+        # hard-coded default params here
+        self.default_params = {}#"min_samples": 5}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "ransac"
+
+    def fit(
+            self,
+            params,
+            X_train,
+            y_train,
+            seed=None,
+    ):
+        #  X_val, y_val not used since no early stopping
+        if seed is not None:
+            params.update({"random_state": seed})
+
+        reg = RANSACRegressor(**params)
+        t0 = time.time()
+        reg.fit(X_train, y_train)
+        fit_time = time.time() - t0
+
+        return reg, fit_time
+
+class LAD_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+        if learning_task != "regression":
+            raise ValueError("LAD is only used for regression")
+
+        # hard-coded params search space here
+        self.space = {
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
+        }
+        # hard-coded default params here
+        self.default_params = {"loss": "epsilon_insensitive", "epsilon": 0.0, "alpha": 0.0}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "lad"
+
+    def fit(
+            self,
+            params,
+            X_train,
+            y_train,
+            seed=None,
+    ):
+        if seed is not None:
+            params.update({"random_state": seed})
+
+        reg = SGDRegressor(**params)
+        t0 = time.time()
+        reg.fit(X_train, y_train)
+        fit_time = time.time() - t0
+
+        return reg, fit_time
+
+
+class Huber_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+        if learning_task != "regression":
+            raise ValueError("Huber is only used for regression")
+
+        # hard-coded params search space here
+        self.space = {
+            "epsilon": hp.uniform("epsilon", 1.0, 2.5)
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
+        }
+        # hard-coded default params here
+        self.default_params = {"epsilon": 1.35, "alpha": 0.0}
+        # self.default_params = self.preprocess_params(self.default_params)
+        self.title = "huber"
+
+    def fit(
+            self,
+            params,
+            X_train,
+            y_train,
+            seed=None,
+    ):
+        # if seed is not None:
+        #     params.update({"random_state": seed})
+
+        reg = HuberRegressor(**params)
+        t0 = time.time()
+        reg.fit(X_train, y_train)
+        fit_time = time.time() - t0
+
+        return reg, fit_time
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        return params_
+
 

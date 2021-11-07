@@ -40,20 +40,23 @@ def gud(x):
 
 
 @jit(**jit_kwargs)
-def estimate_sigma(x, eps=0.001):
+def estimate_sigma(x, eps=0.001, max_iter=30):
     sigma = 1.0
     x_mean = x.mean()
     delta = 1
     khi0 = khi(0.0)
-    while delta > eps:
+    cpt = 0
+    while delta > eps and cpt < max_iter:
         tmp = sigma * np.sqrt(1 - (khi((x - x_mean) / sigma)).mean() / khi0)
         delta = np.abs(tmp - sigma)
         sigma = tmp
+        cpt += 1
+    # print(cpt)
     return sigma
 
 
 @jit(**jit_kwargs)
-def holland_catoni_estimator(x, eps=0.001):
+def holland_catoni_estimator(x, eps=0.001, max_iter=30):
     # if the array is constant, do not try to estimate scale
     # the following condition is supposed to reproduce np.allclose() behavior
     if (np.abs(x[0] - x) <= ((1e-8) + (1e-5) * np.abs(x[0]))).all():
@@ -62,10 +65,13 @@ def holland_catoni_estimator(x, eps=0.001):
     s = estimate_sigma(x) * np.sqrt(len(x) / np.log(1 / eps))
     m = 0.0
     diff = 1.0
-    while diff > eps:
+    cpt = 0
+    while diff > eps and cpt < max_iter:
         tmp = m + s * gud((x - m) / s).mean()
         diff = np.abs(tmp - m)
         m = tmp
+        cpt += 1
+    # print(cpt)
     return m
 
 

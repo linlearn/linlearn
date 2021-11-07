@@ -109,15 +109,53 @@ def argmedian(x):
     # return np.argpartition(x, len(x) // 2)[len(x) // 2]
 
 @jit(**jit_kwargs)
-def trimmed_mean(x, n_samples, percentage):
-    n_excluded_tails = int(n_samples * percentage)
+def trimmed_mean(x, n_samples, n_excluded_tails):  # , percentage):
+    # n_excluded_tails = max(1, int(n_samples * percentage))
+    n_excluded_tails = int(n_excluded_tails)
     partitioned = np.partition(x, [n_excluded_tails, n_samples - n_excluded_tails - 1])
     result = 0.0
     for i in range(n_excluded_tails, n_samples - n_excluded_tails):
         result += partitioned[i]
     result += partitioned[n_excluded_tails] * n_excluded_tails
-    result += partitioned[n_samples - n_excluded_tails - 1] * n_excluded_tails
+    result += partitioned[n_samples - n_excluded_tails-1] * n_excluded_tails
     result /= n_samples
+    return result
+
+
+@jit(**jit_kwargs)
+def fast_trimmed_mean(x, n_samples, n_excluded_tails):  # , percentage):
+
+    # n_excluded_tails = max(1, int(n_samples * percentage))
+    n_excluded_tails = int(n_excluded_tails)
+    # findKth_QS(x, n_samples, n_excluded_tails)
+    # findKth_QS(x[n_excluded_tails:], n_samples - n_excluded_tails, n_samples - 2*n_excluded_tails + 1)
+    findK2(x, n_samples, n_excluded_tails+1, n_samples - n_excluded_tails)
+
+    result = 0.0
+    for i in range(n_excluded_tails, n_samples - n_excluded_tails):
+        result += x[i]
+    result += x[n_excluded_tails] * n_excluded_tails
+    result += x[n_samples-n_excluded_tails-1] * n_excluded_tails
+    result /= n_samples
+
+    # alternative code for true theoretical definition
+
+    # half = n_samples // 2
+    # n_excluded_tails = max(1, int(half * percentage))
+    #
+    # findK2(x[:half], half, n_excluded_tails, half - n_excluded_tails + 1)
+    # a = x[n_excluded_tails-1]
+    # b = x[half - n_excluded_tails]
+    # result = 0.0
+    # for i in range(half, n_samples):
+    #     if x[i] < a:
+    #         result += a
+    #     elif x[i] < b:
+    #         result += x[i]
+    #     else:
+    #         result += b
+    # result /= (n_samples - half)
+
     return result
 
 @jit(**jit_kwargs)
@@ -150,42 +188,6 @@ def fast_median(A, n):
             if e < mini:
                 mini = e
         return (A[n2-1] + mini)/2
-
-
-@jit(**jit_kwargs)
-def fast_trimmed_mean(x, n_samples, percentage):
-    n_excluded_tails = max(1, int(n_samples * percentage))
-    # findKth_QS(x, n_samples, n_excluded_tails)
-    # findKth_QS(x[n_excluded_tails:], n_samples - n_excluded_tails, n_samples - 2*n_excluded_tails + 1)
-    findK2(x, n_samples, n_excluded_tails, n_samples - n_excluded_tails + 1)
-
-    result = 0.0
-    for i in range(n_excluded_tails, n_samples - n_excluded_tails):
-        result += x[i]
-    result += x[n_excluded_tails-1] * n_excluded_tails
-    result += x[n_samples-n_excluded_tails] * n_excluded_tails
-    result /= n_samples
-
-    # alternative code for true theoretical definition
-
-    # half = n_samples // 2
-    # n_excluded_tails = max(1, int(half * percentage))
-    #
-    # findK2(x[:half], half, n_excluded_tails, half - n_excluded_tails + 1)
-    # a = x[n_excluded_tails-1]
-    # b = x[half - n_excluded_tails]
-    # result = 0.0
-    # for i in range(half, n_samples):
-    #     if x[i] < a:
-    #         result += a
-    #     elif x[i] < b:
-    #         result += x[i]
-    #     else:
-    #         result += b
-    # result /= (n_samples - half)
-
-    return result
-
 
 @jit(
     nopython=NOPYTHON,

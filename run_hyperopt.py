@@ -4,7 +4,8 @@
 import sys
 import os
 import subprocess
-from time import time
+from joblib import Parallel, delayed, parallel_backend
+# from pqdm.threads import pqdm
 from datetime import datetime
 import logging
 import pickle as pkl
@@ -21,7 +22,8 @@ from sklearn.metrics import (
     mean_squared_error,
     mean_absolute_error,
 )
-from sklearn.preprocessing import LabelBinarizer
+from sklearn.preprocessing import LabelBinarizer, StandardScaler
+
 from scipy.special import expit, softmax
 
 sys.path.extend([".", ".."])
@@ -49,6 +51,31 @@ from linlearn.datasets import (  # noqa: E402
     load_internet,
     load_higgs,
     load_kddcup99,
+    load_electrical,
+    load_occupancy,
+    load_avila,
+    load_miniboone,
+    load_gas,
+    load_eeg,
+    load_drybean,
+    load_cbm,
+    load_metro,
+    load_ccpp,
+    load_energy,
+    load_gasturbine,
+    load_casp,
+    load_superconduct,
+    load_bike,
+    load_ovctt,
+    load_sgemm,
+    load_ypmsd,
+    load_nupvotes,
+    load_houseprices,
+    load_fifa19,
+    load_nyctaxi,
+    load_wine,
+    load_airbnb,
+    load_statlog
 )
 
 from experiment import (  # noqa: E402
@@ -58,6 +85,14 @@ from experiment import (  # noqa: E402
     TMEAN_CGD_Experiment,
     LLM_GD_Experiment,
     GMOM_GD_Experiment,
+    ERM_GD_Experiment,
+    ERM_CGD_Experiment,
+    HuberGrad_Experiment,
+    Huber_Experiment,
+    ModifiedHuber_CGD_Experiment,
+    LAD_Experiment,
+    RANSAC_Experiment,
+    # TMEAN_HUBER_CGD_Experiment,
 )
 
 
@@ -68,45 +103,28 @@ def set_experiment(
     expe_random_states,
     output_folder_path,
 ):
-    experiment_setting = {
-        "MOM_CGD": MOM_CGD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
-        "TMEAN_CGD": TMEAN_CGD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
-        "CH_CGD": CH_CGD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
-        "CH_GD": CH_GD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
-        "LLM_GD": LLM_GD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
-        "GMOM_GD": GMOM_GD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
+    experiment_select = {
+        "MOM_CGD": MOM_CGD_Experiment,
+        "TMEAN_CGD": TMEAN_CGD_Experiment,
+        "CH_CGD": CH_CGD_Experiment,
+        "CH_GD": CH_GD_Experiment,
+        "LLM_GD": LLM_GD_Experiment,
+        "GMOM_GD": GMOM_GD_Experiment,
+        "ERM_GD": ERM_GD_Experiment,
+        "ERM_CGD": ERM_CGD_Experiment,
+        "HG_GD": HuberGrad_Experiment,
+        "RANSAC": RANSAC_Experiment,
+        "LAD": LAD_Experiment,
+        "HUBER": Huber_Experiment,
+        "MODIFHUBER": ModifiedHuber_CGD_Experiment,
+        # "TMEAN_HUBER_CGD": TMEAN_HUBER_CGD_Experiment,
     }
-    return experiment_setting[clf_name]
+    return experiment_select[clf_name](
+            learning_task,
+            max_hyperopt_evals=max_hyperopt_eval,
+            random_state=expe_random_states,
+            output_folder_path=output_folder_path,
+        )
 
 
 def set_dataloader(dataset_name):
@@ -131,6 +149,31 @@ def set_dataloader(dataset_name):
         "kick": load_kick,
         "kddcup": load_kddcup99,
         "higgs": load_higgs,
+        "electrical": load_electrical,
+        "occupancy": load_occupancy,
+        "avila": load_avila,
+        "miniboone": load_miniboone,
+        "gas": load_gas,
+        "eeg": load_eeg,
+        "drybean": load_drybean,
+        "cbm": load_cbm,
+        "metro": load_metro,
+        "ccpp": load_ccpp,
+        "energy": load_energy,
+        "gasturbine": load_gasturbine,
+        "bike": load_bike,
+        "casp": load_casp,
+        "superconduct": load_superconduct,
+        "sgemm": load_sgemm,
+        "ovctt": load_ovctt,
+        "ypmsd": load_ypmsd,
+        "nupvotes": load_nupvotes,
+        "houseprices": load_houseprices,
+        "fifa19": load_fifa19,
+        "nyctaxi": load_nyctaxi,
+        "wine": load_wine,
+        "airbnb": load_airbnb,
+        "statlog": load_statlog,
     }
     return loaders_mapping[dataset_name]
 
@@ -306,37 +349,51 @@ def compute_multi_classif_history(model, X_train, y_train, X_test, y_test, seed)
 
 
 def compute_regression_history(model, X_train, y_train, X_test, y_test, seed):
-    total_iter = model.history_.records[0].cursor
-    train_decision_function = decision_function_factory(X_train, model.fit_intercept)
-    test_decision_function = decision_function_factory(X_test, model.fit_intercept)
-    train_inner_prods = np.empty((X_train.shape[0], model.n_classes), dtype=np_float)
-    test_inner_prods = np.empty((X_test.shape[0], model.n_classes), dtype=np_float)
+    if not hasattr(model, "history_"):
+        mse_list = [mean_squared_error(y_test, model.predict(X_test))]
+        mse_train_list = [mean_squared_error(y_train, model.predict(X_train))]
 
-    mse_list, mse_train_list, mae_list, mae_train_list = [], [], [], []
+        mae_list = [mean_absolute_error(y_test, model.predict(X_test))]
+        mae_train_list = [mean_absolute_error(y_train, model.predict(X_train))]
 
-    seed_list, time_list, sc_prods_list, iter_list = [], [], [], []
+        seed_list, time_list, sc_prods_list = [seed], [0], [0]
+        if hasattr(model, "n_iter_"):
+            iter_list = [model.n_iter_]
+        else: # ransac
+            iter_list = [model.n_trials_]
+    else:
 
-    weights_record = model.history_.record_nm("weights").record
-    time_record = model.history_.record_nm("time").record
-    sc_prods_record = model.history_.record_nm("sc_prods").record
+        total_iter = model.history_.records[0].cursor
+        train_decision_function = decision_function_factory(X_train, model.fit_intercept)
+        test_decision_function = decision_function_factory(X_test, model.fit_intercept)
+        train_inner_prods = np.empty((X_train.shape[0], model.n_classes), dtype=np_float)
+        test_inner_prods = np.empty((X_test.shape[0], model.n_classes), dtype=np_float)
 
-    for i in range(total_iter):
-        train_decision_function(weights_record[i], train_inner_prods)
-        test_decision_function(weights_record[i], test_inner_prods)
+        mse_list, mse_train_list, mae_list, mae_train_list = [], [], [], []
 
-        y_scores = test_inner_prods
-        y_scores_train = train_inner_prods
+        seed_list, time_list, sc_prods_list, iter_list = [], [], [], []
 
-        mse_list.append(mean_squared_error(y_test, y_scores))
-        mse_train_list.append(mean_squared_error(y_train, y_scores_train))
+        weights_record = model.history_.record_nm("weights").record
+        time_record = model.history_.record_nm("time").record
+        sc_prods_record = model.history_.record_nm("sc_prods").record
 
-        mae_list.append(mean_absolute_error(y_test, y_scores))
-        mae_train_list.append(mean_absolute_error(y_train, y_scores_train))
+        for i in range(total_iter):
+            train_decision_function(weights_record[i], train_inner_prods)
+            test_decision_function(weights_record[i], test_inner_prods)
 
-        seed_list.append(seed)
-        time_list.append(time_record[i] - time_record[0])
-        sc_prods_list.append(sc_prods_record[i])
-        iter_list.append(i)
+            y_scores = test_inner_prods
+            y_scores_train = train_inner_prods
+
+            mse_list.append(mean_squared_error(y_test, y_scores))
+            mse_train_list.append(mean_squared_error(y_train, y_scores_train))
+
+            mae_list.append(mean_absolute_error(y_test, y_scores))
+            mae_train_list.append(mean_absolute_error(y_train, y_scores_train))
+
+            seed_list.append(seed)
+            time_list.append(time_record[i] - time_record[0])
+            sc_prods_list.append(sc_prods_record[i])
+            iter_list.append(i)
 
     return (
         seed_list,
@@ -407,10 +464,15 @@ def run_hyperopt(
         col_it_mse, col_it_mse_train, col_it_mae, col_it_mae_train = [], [], [], []
         col_fin_mse, col_fin_mse_train, col_fin_mae, col_fin_mae_train = [], [], [], []
 
-    train_perc = 0.8
-    val_perc = 0.1
-    test_perc = 0.1
+    train_perc = 0.7
+    val_perc = 0.15
+    test_perc = 0.15
     assert train_perc + val_perc + test_perc == 1.0
+
+    # if dataset.name == "internet":
+    #     counts_dict = dict(dataset.df_raw[dataset.label_column].value_counts())
+    #     too_few = [k for k in counts_dict.keys() if counts_dict[k] < 20]
+    #     dataset.df_raw = dataset.df_raw[~dataset.df_raw[dataset.label_column].isin(too_few)]
 
     dataset.test_size = val_perc + test_perc
     X_train, X_te, y_train, y_te = dataset.extract_corrupt(
@@ -425,6 +487,18 @@ def run_hyperopt(
         stratify=y_te if learning_task.endswith("classification") else None,
     )
 
+    # if dataset.name == "kick":
+    #     X_train = np.nan_to_num(X_train)
+    #     X_val = np.nan_to_num(X_val)
+    #     X_test = np.nan_to_num(X_test)
+
+    # if dataset.name == "internet":
+    #     std_scaler = StandardScaler()
+    #     X_train = std_scaler.fit_transform(X_train)
+    #     X_val = std_scaler.transform(X_val)
+    #     X_test = std_scaler.transform(X_test)
+
+
     exp = set_experiment(
         learner_name,
         learning_task,
@@ -433,29 +507,32 @@ def run_hyperopt(
         results_dataset_path,
     )
 
-    print("Run train-val hyperopt exp...")
-    tuned_cv_result, best_param = exp.optimize_params(
-        X_train,
-        y_train,
-        X_val,
-        y_val,
-        max_evals=max_hyperopt_eval,
-        verbose=True,
-    )
-    print("\nThe best found params were : %r\n" % best_param)
+    if max_hyperopt_eval > 0:
+        print("Run train-val hyperopt exp...")
+        tuned_cv_result, best_param = exp.optimize_params(
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            max_evals=max_hyperopt_eval,
+            verbose=True,
+        )
+        print("\nThe best found params were : %r\n" % best_param)
+    else:
+        print("NO PARAMETER FINETUNING, using only default params")
+        best_param = exp.default_params
 
     print("Run fitting with tuned params...")
 
     for fit_seed in fit_seeds:
         # tic = time()
-        model = exp.fit(
-            tuned_cv_result["params"],
+        model, fit_time = exp.fit(
+            best_param,
             X_train,
             y_train,
             seed=fit_seed,
         )
         # toc = time()
-        fit_time = model.fit_time()  #
         logging.info("Fitted %s in %.2f seconds" % (learner_name, fit_time))
 
         if classification:
@@ -616,6 +693,7 @@ def run_hyperopt(
     results = {
         "dataset": dataset.name,
         "learner": learner_name,
+        "corruption_rate": corruption_rate,
         "iteration_df": iteration_df,
         "finals_df": finals_df,
         "best_parameter": best_param,
@@ -623,91 +701,134 @@ def run_hyperopt(
 
     return results
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
-if __name__ == "__main__":
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--learner_name",
+    choices=[
+        "MOM_CGD",
+        "TMEAN_CGD",
+        # "TMEAN_HUBER_CGD",
+        "CH_CGD",
+        "CH_GD",
+        "LLM_GD",
+        "GMOM_GD",
+        "ERM_GD",
+        "ERM_CGD",
+        "HG_GD",
+        "RANSAC",
+        "LAD",
+        "HUBER",
+        "MODIFHUBER",
+    ],
+)
+parser.add_argument(
+    "--dataset_name",
+    choices=[
+        "adult",
+        "bank",
+        "boston",
+        "breastcancer",
+        "californiahousing",
+        "car",
+        "cardio",
+        "churn",
+        "default-cb",
+        "diabetes",
+        "letter",
+        "satimage",
+        "sensorless",
+        "spambase",
+        "amazon",
+        "covtype",
+        "internet",
+        "kick",
+        "kddcup",
+        "higgs",
+        "electrical",
+        "occupancy",
+        "avila",
+        "miniboone",
+        "gas",
+        "eeg",
+        "drybean",
+        "cbm",
+        "ccpp",
+        "metro",
+        "energy",
+        "gasturbine",
+        "bike",
+        "casp",
+        "superconduct",
+        "sgemm",
+        "ovctt",
+        "ypmsd",
+        "nupvotes",
+        "houseprices",
+        "fifa19",
+        "nyctaxi",
+        "wine",
+        "airbnb",
+        "statlog",
+    ],
+)
+parser.add_argument("-n", "--hyperopt_evals", type=int, default=50)
+parser.add_argument("--n_jobs", type=int, default=1)
+parser.add_argument("--n_tuned_runs", type=int, default=10)
+parser.add_argument("-o", "--output_folder_path", default=None)
+parser.add_argument("--random_state_seed", type=int, default=42)
+parser.add_argument("--corruption_rates", nargs="+", type=float, default=[0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4])
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+args = parser.parse_args()
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--learner_name",
-        choices=[
-            "MOM_CGD",
-            "TMEAN_CGD",
-            "CH_CGD",
-            "CH_GD",
-            "LLM_GD",
-            "GMOM_GD",
-        ],
-    )
-    parser.add_argument(
-        "--dataset_name",
-        choices=[
-            "adult",
-            "bank",
-            "boston",
-            "breastcancer",
-            "californiahousing",
-            "car",
-            "cardio",
-            "churn",
-            "default-cb",
-            "diabetes",
-            "letter",
-            "satimage",
-            "sensorless",
-            "spambase",
-            # "amazon",
-            # "covtype",
-            # "internet",
-            # "kick",
-            # "kddcup",
-            # "higgs",
-        ],
-    )
-    parser.add_argument("-n", "--hyperopt_evals", type=int, default=50)
-    parser.add_argument("-o", "--output_folder_path", default=None)
-    parser.add_argument("--random_state_seed", type=int, default=42)
-    parser.add_argument("--corruption_rate", type=float, default=0.1)
+logging.info("Received parameters : \n %r" % args)
 
-    args = parser.parse_args()
+learner_name = args.learner_name
+max_hyperopt_eval = args.hyperopt_evals
+n_tuned_runs = args.n_tuned_runs
+n_jobs = args.n_jobs
+dataset_name = args.dataset_name.lower()
+loader = set_dataloader(dataset_name)
+random_state_seed = args.random_state_seed
+corruption_rates = args.corruption_rates
 
-    logging.info("Received parameters : \n %r" % args)
+if learner_name in ["ERM_GD", "ERM_CGD", "MODIFHUBER", "LAD"]:
+    logging.info("UNTUNED algorithm : %s, no hyperoptimization and single run" % learner_name)
+    max_hyperopt_eval = 0
+    n_tuned_runs = 1
 
-    learner_name = args.learner_name
-    max_hyperopt_eval = args.hyperopt_evals
-    loader = set_dataloader(args.dataset_name.lower())
-    random_state_seed = args.random_state_seed
-    corruption_rate = args.corruption_rate
+if args.output_folder_path is None:
+    if not os.path.exists("results"):
+        os.mkdir("results")
+    results_home_path = "results/"
+else:
+    results_home_path = args.output_folder_path
 
-    if args.output_folder_path is None:
-        if not os.path.exists("results"):
-            os.mkdir("results")
-        results_home_path = "results/"
-    else:
-        results_home_path = args.output_folder_path
+random_states = {
+    "data_extract_random_state": random_state_seed,
+    "train_val_split_random_state": 1 + random_state_seed,
+    "expe_random_state": 2 + random_state_seed,
+}
+fit_seeds = list(range(n_tuned_runs))#[0, 1, 2, 3, 4]
 
-    random_states = {
-        "data_extract_random_state": random_state_seed,
-        "train_val_split_random_state": 1 + random_state_seed,
-        "expe_random_state": 2 + random_state_seed,
-    }
-    fit_seeds = [0, 1, 2, 3, 4]
+logging.info("=" * 128)
+dataset = loader()
+learning_task = dataset.task
 
-    logging.info("=" * 128)
+logging.info("Launching experiments for %s" % dataset.name)
+
+if not os.path.exists(results_home_path + dataset.name):
+    os.mkdir(results_home_path + dataset.name)
+results_dataset_path = results_home_path + dataset.name + "/"
+
+def run_cr(corruption_rate):
+    logging.info("Running hyperoptimisation for corruption rate %.2f"%corruption_rate)
     dataset = loader()
-    learning_task = dataset.task
-
-    logging.info("Launching experiments for %s" % dataset.name)
-
-    if not os.path.exists(results_home_path + dataset.name):
-        os.mkdir(results_home_path + dataset.name)
-    results_dataset_path = results_home_path + dataset.name + "/"
-
     results = run_hyperopt(
         dataset,
         learner_name,
@@ -729,6 +850,8 @@ if __name__ == "__main__":
         "exp_hyperopt_"
         + str(max_hyperopt_eval)
         + "_"
+        + dataset_name + str(corruption_rate)
+        + "_"
         + learner_name
         + "_"
         + now
@@ -747,3 +870,9 @@ if __name__ == "__main__":
         )
 
     logging.info("Saved results in file %s" % results_dataset_path + filename)
+
+
+with parallel_backend('threading', n_jobs=n_jobs):
+    Parallel()(delayed(run_cr)(corruption_rate) for corruption_rate in corruption_rates)
+
+# pqdm(corruption_rates, run_cr, n_jobs=n_jobs)

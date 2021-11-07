@@ -14,7 +14,9 @@ from sklearn.preprocessing import (
     OrdinalEncoder,
     OneHotEncoder,
     StandardScaler,
+    MinMaxScaler,
     RobustScaler,
+    QuantileTransformer,
     LabelEncoder,
     FunctionTransformer,
 )
@@ -354,7 +356,7 @@ class Dataset:
 
 
     def extract_corrupt(self, corruption_rate=0.0, random_state=None):
-        self._build_transform(robust_scaler=True)
+        self._build_transform(robust_scaler=False)#True)
         df = self.df_raw
         # Don't put self.n_features_ = df.shape[1] since for now df contains the
         # column label
@@ -388,6 +390,9 @@ class Dataset:
 
         stratify = None if self.task == "regression" else df[self.label_column]
 
+        if self.task == "regression":
+            df[self.label_column] = MinMaxScaler((0, 10)).fit_transform(df[[self.label_column]])
+
         df_train, df_test = train_test_split(
             df,
             test_size=self.test_size,
@@ -396,34 +401,83 @@ class Dataset:
             stratify=stratify,
         )
 
-        # introduce corruption here
-        rng = np.random.RandomState(random_state)
-        n_samples_train = len(df_train)
-        corrupted_indices = rng.choice(df_train.index, size=int(corruption_rate * n_samples_train), replace=False)
+        if corruption_rate > 0:
+            # introduce corruption here
+            rng = np.random.RandomState(random_state)
+            n_samples_train = len(df_train)
+            perm = rng.permutation(n_samples_train)
+            # corrupted_indices = rng.choice(df_train.index, size=int(corruption_rate * n_samples_train), replace=False)
+            corrupted_indices = np.array(df_train.index[perm[:int(corruption_rate * n_samples_train)]])
+            cnt_cols = self.continuous_columns or []
+            cat_cols = self.categorical_columns or []
+            assert self.label_column not in (cat_cols + cnt_cols)
+            if self.task == "regression":
+                cnt_cols = cnt_cols + [self.label_column]
+            else:
+                cat_cols = cat_cols + [self.label_column]
 
-        for cnt_col in self.continuous_columns:
-            # print("corrupting column : %s"%cnt_col)
-            minmax = (df_train[cnt_col].min(), df_train[cnt_col].max())
-            range = minmax[1] - minmax[0]
-            for i in corrupted_indices:
-                updown = rng.randint(2)
-                sign = 2*updown-1
-                df_train.loc[i, cnt_col] = minmax[updown] + sign*rng.rand()*range
 
-        for cat_col in self.categorical_columns + [self.label_column]:
-            # print("corrupting column : %s"%cat_col)
-            dist = df_train[cat_col].value_counts(normalize=True).apply(lambda x: 1/x)
-            dist = dist.apply(lambda x: x/dist.sum())
-            # numbers = np.arange(len(dist.index))
-            # choices = list(dist.index)
-            for i in corrupted_indices:
-                df_train.loc[i, cat_col] = rng.choice(dist.index, p=dist)
+            n_cnt_features = len(cnt_cols)
+            if n_cnt_features > 0:
+                pd.options.mode.chained_assignment = None  # silence the useless warnings
 
-        # finished introducing corruption
+                # max_Sigma_X = np.sqrt(np.max(np.linalg.eigh(df_train[self.continuous_columns].cov())[0]))
+                # max_Sigma_X = np.max(np.std(df_train[self.continuous_columns], axis=0))
+                mu = df_train[cnt_cols].mean().to_numpy()
+                # vals = []
+                # for col in cnt_cols:
+                #     med = np.median(df_train[col])
+                #     s2 = np.median(np.abs(np.array(df_train[col]) - med))
+                #
+                #     vals.append(s2)
 
-        # ensure we have only modified data and not introduced new rows
-        # (previously a bug with data frame indices ...)
-        assert len(df_train) == n_samples_train
+                #max_Sigma_X = np.mean(df_train[self.continuous_columns].mad(axis=0))
+                stds = np.array(df_train[cnt_cols].std(axis=0))#vals
+                #print(max_Sigma_X)
+
+                # for cnt_col in cnt_cols:
+                #     # print("corrupting column : %s"%cnt_col)
+                #     minmax = (df_train[cnt_col].min(), df_train[cnt_col].max())
+                #     range = minmax[1] - minmax[0]
+                #     for i in corrupted_indices:
+                #         updown = rng.randint(2)
+                #         sign = 2*updown-1
+                #         df_train.loc[i, cnt_col] = minmax[updown] + sign * (10 + 5 * rng.rand()) * range
+                for i in corrupted_indices:
+                    type = rng.randint(3)
+                    dir = rng.randn(n_cnt_features)
+                    dir /= np.sqrt((dir * dir).sum())  # random direction
+                    corrupt = np.zeros_like(mu)  # + max_Sigma_X
+                    if type == 0:
+                        for j, cnt_col in enumerate(cnt_cols):
+                            corrupt[j] = df_train.loc[rng.choice(df_train.index), cnt_col] + 5 * stds[j] * rng.standard_t(2.1)
+
+                    elif type == 1:
+                        corrupt = mu + 5 * np.multiply(stds, dir) + rng.randn()#n_cnt_features)
+                        # corrupt = mu + 5 * max_Sigma_X * dir + rng.randn(n_cnt_features)
+
+                    elif type == 2:
+                        corrupt = rng.randn(n_cnt_features)
+                        corrupt = mu + 5 * np.multiply(stds, corrupt / np.linalg.norm(corrupt))
+
+                    for j, cnt_col in enumerate(cnt_cols):
+                        df_train.loc[i, cnt_col] = corrupt[j]
+
+            for cat_col in cat_cols:
+                # print("corrupting column : %s"%cat_col)
+                dist = df_train[cat_col].value_counts(normalize=True)#.apply(lambda x: 1/max(1e-8, x))
+                #dist = dist.apply(lambda x: x/dist.sum())
+
+                for i in corrupted_indices:
+                    # original = df_train.loc[i, cat_col]
+                    # while df_train.loc[i, cat_col] == original:
+                    df_train.loc[i, cat_col] = rng.choice(dist.index)# p=dist)
+
+            # finished introducing corruption
+
+            # ensure we have only modified data and not introduced new rows
+            # (previously a bug with data frame indices ...)
+            assert len(df_train) == n_samples_train
 
         self.transformer = self.transformer.fit(df_train)
         X_train = self.transformer.transform(df_train)

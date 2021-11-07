@@ -74,7 +74,7 @@ def load_californiahousing():
     data = fetch_california_housing(as_frame=True)
     df = data["frame"]
     continuous_columns = [col for col in df.columns if col != "MedHouseVal"]
-    categorical_columns = None
+    categorical_columns = []
     dataset = Dataset(
         name="californiahousing",
         task="regression",
@@ -89,7 +89,10 @@ def load_californiahousing():
 def load_letor():
     dtype = {str(i): np.float for i in range(1, 47)}
     dataset = Dataset.from_dtype(
-        name="letor", task="multiclass-classification", label_column="0", dtype=dtype,
+        name="letor",
+        task="multiclass-classification",
+        label_column="0",
+        dtype=dtype,
     )
     return dataset.load_from_csv("letor.csv.gz", dtype=dtype)
 
@@ -188,6 +191,477 @@ def load_churn():
     return dataset.load_from_csv("churn.csv.gz", dtype=dtype)
 
 
+def load_electrical():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Electrical+Grid+Stability+Simulated+Data+#
+    dtype = {
+        "tau1": np.float,
+        "tau2": np.float,
+        "tau3": np.float,
+        "tau4": np.float,
+        "p1": np.float,
+        "p2": np.float,
+        "p3": np.float,
+        "p4": np.float,
+        "g1": np.float,
+        "g2": np.float,
+        "g3": np.float,
+        "g4": np.float,
+        "stab": np.float,
+    }
+    dataset = Dataset.from_dtype(
+        name="electrical",
+        task="binary-classification",
+        label_column="stabf",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("electrical.csv.gz", dtype=dtype)
+
+
+def load_occupancy():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Occupancy+Detection+
+    # the dataframes obtained from files datatraining.txt, datatest.txt and datatest2.txt were
+    # concatenated in this order with ignore_index = True
+    dtype = {
+        "Temperature": np.float,
+        "Humidity": np.float,
+        "Light": np.float,
+        "CO2": np.float,
+        "HumidityRatio": np.float,
+    }
+    dataset = Dataset.from_dtype(
+        name="occupancy",
+        task="binary-classification",
+        label_column="Occupancy",
+        dtype=dtype,
+        drop_columns=["date"],
+    )
+    return dataset.load_from_csv("occupancy.csv.gz", dtype=dtype)
+
+
+def load_avila():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Avila
+    # the dataframes obtained from files avila-tr.txt and avila-ts.txt were
+    # concatenated in this order with ignore_index = True
+    dtype = {
+        "0": np.float,
+        "1": np.float,
+        "2": np.float,
+        "3": np.float,
+        "4": np.float,
+        "5": np.float,
+        "6": np.float,
+        "7": np.float,
+        "8": np.float,
+        "9": np.float,
+    }
+    dataset = Dataset.from_dtype(
+        name="avila",
+        task="multiclass-classification",
+        label_column="10",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("avila.csv.gz", dtype=dtype)
+
+
+def load_miniboone():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/MiniBooNE+particle+identification
+    # parsed with miniboone_parser.py
+    dtype = {str(i): np.float for i in range(50)}
+    dataset = Dataset.from_dtype(
+        name="miniboone",
+        task="binary-classification",
+        label_column="50",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("miniboone.csv.gz", dtype=dtype)
+
+
+def load_eeg():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/EEG+Eye+State
+    # parsed with pd.read_csv(..., skiprows=19, header=None)
+    dtype = {str(i): np.float for i in range(14)}
+    dataset = Dataset.from_dtype(
+        name="eeg",
+        task="binary-classification",
+        label_column="14",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("eeg_eye.csv.gz", dtype=dtype)
+
+
+def load_drybean():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Dry+Bean+Dataset
+    # parsed with pd.read_csv(..., skiprows=25, header=None)
+    dtype = {str(i): np.float for i in range(16)}
+    dataset = Dataset.from_dtype(
+        name="drybean",
+        task="multiclass-classification",
+        label_column="16",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("drybean.csv.gz", dtype=dtype)
+
+
+def load_gas():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Gas+Sensor+Array+Drift+Dataset
+    # parsed with gas_parser.py
+    dtype = {str(i): np.float for i in range(1, 129)}
+    dataset = Dataset.from_dtype(
+        name="gas",
+        task="multiclass-classification",
+        label_column="0",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("gas.csv.gz", dtype=dtype)
+
+
+def load_energy():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Appliances+energy+prediction
+    # directly extracted with pd.read_csv and compressed into gzip format
+    dtype = {
+        # "date",
+        # "Appliances",
+        "lights": np.float,
+        "T1": np.float,
+        "RH_1": np.float,
+        "T2": np.float,
+        "RH_2": np.float,
+        "T3": np.float,
+        "RH_3": np.float,
+        "T4": np.float,
+        "RH_4": np.float,
+        "T5": np.float,
+        "RH_5": np.float,
+        "T6": np.float,
+        "RH_6": np.float,
+        "T7": np.float,
+        "RH_7": np.float,
+        "T8": np.float,
+        "RH_8": np.float,
+        "T9": np.float,
+        "RH_9": np.float,
+        "T_out": np.float,
+        "Press_mm_hg": np.float,
+        "RH_out": np.float,
+        "Windspeed": np.float,
+        "Visibility": np.float,
+        "Tdewpoint": np.float,
+        "rv1": np.float,
+        "rv2": np.float,
+    }
+    dataset = Dataset.from_dtype(
+        name="energy",
+        task="regression",
+        label_column="Appliances",
+        dtype=dtype,
+        drop_columns=["date"],
+    )
+    return dataset.load_from_csv("energy.csv.gz", dtype=dtype)
+
+
+def load_bike():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Bike+Sharing+Dataset
+    # directly extracted from hour.csv with pd.read_csv and compressed into gzip format
+    dtype = {
+        # "instant",
+        # "dteday",
+        "season": "category",
+        # "yr",
+        # "mnth",
+        # "hr",
+        "holiday": "category",
+        "weekday": "category",
+        "workingday": "category",
+        "weathersit": "category",
+        "temp": np.float,
+        "atemp": np.float,
+        "hum": np.float,
+        "windspeed": np.float,
+        # "casual",
+        # "registered",
+        # "cnt",
+    }
+    dataset = Dataset.from_dtype(
+        name="bike",
+        task="regression",
+        label_column="cnt",
+        dtype=dtype,
+        drop_columns=["instant", "dteday", "yr", "mnth", "hr", "casual", "registered"],
+        # we keep only season and drop month, we discard the hour to avoid too many categories
+    )
+    return dataset.load_from_csv("bike.csv.gz", dtype=dtype)
+
+
+def load_cbm():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Condition+Based+Maintenance+of+Naval+Propulsion+Plants
+    # parsed with cbm_parser.py and saved with pandas.to_csv(..., index=False, compression="gzip")
+    dtype = {str(i): np.float for i in range(16)}
+    dataset = Dataset.from_dtype(
+        name="cbm",
+        task="regression",
+        label_column="16",
+        dtype=dtype,
+        drop_columns=["17"],
+    )
+    return dataset.load_from_csv("cbm.csv.gz", dtype=dtype)
+
+
+def load_ccpp():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Combined+Cycle+Power+Plant
+    # converted to csv in Numbers then parsed with ccpp_parser.py
+    dtype = {
+        "AT": np.float,
+        "V": np.float,
+        "AP": np.float,
+        "RH": np.float,
+    }
+    dataset = Dataset.from_dtype(
+        name="ccpp",
+        task="regression",
+        label_column="PE",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("ccpp.csv.gz", dtype=dtype)
+
+
+def load_gasturbine():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Gas+Turbine+CO+and+NOx+Emission+Data+Set
+    # parsed with gasturbine_parser.py
+    dtype = {
+        "AT": np.float,
+        "AP": np.float,
+        "AH": np.float,
+        "AFDP": np.float,
+        "GTEP": np.float,
+        "TIT": np.float,
+        "TAT": np.float,
+        "CDP": np.float,
+        "CO": np.float,
+        "NOX": np.float,
+    }
+    dataset = Dataset.from_dtype(
+        name="gasturbine",
+        task="regression",
+        label_column="TEY",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("gasturbine.csv.gz", dtype=dtype)
+
+
+def load_metro():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Metro+Interstate+Traffic+Volume
+    # date_time column has been preprocessed into (hour - 12)**2
+    dtype = {'temp': np.float, 'rain_1h': np.float, 'snow_1h': np.float, 'clouds_all': np.int, 'weather_main': "category", 'date_time': np.float}
+    dataset = Dataset.from_dtype(
+        name="metro",
+        task="regression",
+        label_column='traffic_volume',
+        dtype=dtype,
+        drop_columns=['holiday', 'weather_description']
+    )
+    return dataset.load_from_csv("metro.csv.gz", dtype=dtype)
+
+def load_casp():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Physicochemical+Properties+of+Protein+Tertiary+Structure#
+    # directly read with pandas and compressed
+    dtype = {'F%d' % i: np.float for i in range(1, 10)}
+    dataset = Dataset.from_dtype(
+        name="casp",
+        task="regression",
+        label_column='RMSD',
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("casp.csv.gz", dtype=dtype)
+
+def load_superconduct():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Superconductivty+Data
+    # directly read with pandas and compressed
+    feature_list = ['number_of_elements', 'mean_atomic_mass', 'wtd_mean_atomic_mass', 'gmean_atomic_mass', 'wtd_gmean_atomic_mass', 'entropy_atomic_mass', 'wtd_entropy_atomic_mass', 'range_atomic_mass', 'wtd_range_atomic_mass', 'std_atomic_mass', 'wtd_std_atomic_mass', 'mean_fie', 'wtd_mean_fie', 'gmean_fie', 'wtd_gmean_fie', 'entropy_fie', 'wtd_entropy_fie', 'range_fie', 'wtd_range_fie', 'std_fie', 'wtd_std_fie', 'mean_atomic_radius', 'wtd_mean_atomic_radius', 'gmean_atomic_radius', 'wtd_gmean_atomic_radius', 'entropy_atomic_radius', 'wtd_entropy_atomic_radius', 'range_atomic_radius', 'wtd_range_atomic_radius', 'std_atomic_radius', 'wtd_std_atomic_radius', 'mean_Density', 'wtd_mean_Density', 'gmean_Density', 'wtd_gmean_Density', 'entropy_Density', 'wtd_entropy_Density', 'range_Density', 'wtd_range_Density', 'std_Density', 'wtd_std_Density', 'mean_ElectronAffinity', 'wtd_mean_ElectronAffinity', 'gmean_ElectronAffinity', 'wtd_gmean_ElectronAffinity', 'entropy_ElectronAffinity', 'wtd_entropy_ElectronAffinity', 'range_ElectronAffinity', 'wtd_range_ElectronAffinity', 'std_ElectronAffinity', 'wtd_std_ElectronAffinity', 'mean_FusionHeat', 'wtd_mean_FusionHeat', 'gmean_FusionHeat', 'wtd_gmean_FusionHeat', 'entropy_FusionHeat', 'wtd_entropy_FusionHeat', 'range_FusionHeat', 'wtd_range_FusionHeat', 'std_FusionHeat', 'wtd_std_FusionHeat', 'mean_ThermalConductivity', 'wtd_mean_ThermalConductivity', 'gmean_ThermalConductivity', 'wtd_gmean_ThermalConductivity', 'entropy_ThermalConductivity', 'wtd_entropy_ThermalConductivity', 'range_ThermalConductivity', 'wtd_range_ThermalConductivity', 'std_ThermalConductivity', 'wtd_std_ThermalConductivity', 'mean_Valence', 'wtd_mean_Valence', 'gmean_Valence', 'wtd_gmean_Valence', 'entropy_Valence', 'wtd_entropy_Valence', 'range_Valence', 'wtd_range_Valence', 'std_Valence', 'wtd_std_Valence']#, 'critical_temp']
+    dtype = {x: np.float for x in feature_list}
+    dataset = Dataset.from_dtype(
+        name="superconduct",
+        task="regression",
+        label_column='critical_temp',
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("superconduct.csv.gz", dtype=dtype)
+
+def load_sgemm():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/SGEMM+GPU+kernel+performance
+    # read with pandas and added column runs_avg as average of Run 1 2 3 4
+
+    feature_list = ['MWG', 'NWG', 'KWG', 'MDIMC', 'NDIMC', 'MDIMA', 'NDIMB', 'KWI', 'VWM', 'VWN', 'STRM', 'STRN', 'SA', 'SB']
+    dtype = {x: np.float for x in feature_list}
+    dataset = Dataset.from_dtype(
+        name="sgemm",
+        task="regression",
+        label_column='runs_avg',
+        dtype=dtype,
+        drop_columns=['Run1 (ms)', 'Run2 (ms)', 'Run3 (ms)', 'Run4 (ms)']
+    )
+    return dataset.load_from_csv("sgemm.csv.gz", dtype=dtype)
+
+
+def load_ovctt():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Online+Video+Characteristics+and+Transcoding+Time+Dataset
+    # directly read file transcoding_mesurment.tsv with pd.read_csv("..", sep="\t")
+
+    feature_list = ['duration', 'width', 'height', 'bitrate', 'framerate', 'i', 'p', 'b', 'frames', 'i_size', 'p_size', 'b_size', 'size', 'o_bitrate', 'o_framerate', 'o_width', 'o_height', 'umem']
+    dtype = {x: np.float for x in feature_list}
+    dtype.update({'codec': "category", 'o_codec': "category"})
+    dataset = Dataset.from_dtype(
+        name="ovctt",
+        task="regression",
+        label_column='utime',
+        dtype=dtype,
+        drop_columns=['id']
+    )
+    return dataset.load_from_csv("ovctt.csv.gz", dtype=dtype)
+
+
+def load_ypmsd():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/YearPredictionMSD
+    # directly read and compressed with pandas
+
+    dtype = {str(x): np.float for x in range(1, 90)}
+
+    dataset = Dataset.from_dtype(
+        name="ypmsd",
+        task="regression",
+        label_column='0',
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("yearpredictionmsd.csv.gz", dtype=dtype)
+
+def load_nupvotes():
+    # downloaded from https://www.kaggle.com/umairnsr87/predict-the-number-of-upvotes-a-post-will-get
+    # only taken the train file which has labels
+
+    dtype = {'Tag': "category",
+             'Reputation': np.float,
+             'Answers': np.float,
+             'Views': np.float
+             }
+
+    dataset = Dataset.from_dtype(
+        name="nupvotes",
+        task="regression",
+        label_column='Upvotes',
+        dtype=dtype,
+        drop_columns=['ID', 'Username'],
+    )
+    return dataset.load_from_csv("nupvotes.csv.gz", dtype=dtype)
+
+
+def load_houseprices():
+    # downloaded from https://www.kaggle.com/greenwing1985/housepricing?select=HousePrices_HalfMil.csv
+    # SYNTHETIC DATASET
+    # directly read and compressed
+
+    dtype = {'Area':np.float,
+             'Garage': "category",
+             'FirePlace': "category",
+             'Baths': np.float,
+             'White Marble': "category",
+             'Black Marble': "category",
+             'Indian Marble': "category",
+             'Floors': np.float,
+             'City': "category",
+             'Solar': "category",
+             'Electric': "category",
+             'Fiber': "category",
+             'Glass Doors': "category",
+             'Swiming Pool': "category",
+             'Garden': "category"
+             }
+
+    dataset = Dataset.from_dtype(
+        name="houseprices",
+        task="regression",
+        label_column='Prices',
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("houseprices.csv.gz", dtype=dtype)
+
+
+def load_fifa19():
+    # downloaded from https://www.kaggle.com/karangadiya/fifa19
+    # preprocessed with fifa19_preprocess.py based on https://www.kaggle.com/nitindatta/fifa-in-depth-analysis-with-linear-regression/notebook
+
+    features = ['Age', 'Potential', 'International Reputation', 'Weak Foot', 'Skill Moves', 'Crossing', 'Finishing', 'HeadingAccuracy', 'ShortPassing', 'Volleys', 'Dribbling', 'Curve', 'FKAccuracy', 'LongPassing', 'BallControl', 'Acceleration', 'SprintSpeed', 'Agility', 'Reactions', 'Balance', 'ShotPower', 'Jumping', 'Stamina', 'Strength', 'LongShots', 'Aggression', 'Interceptions', 'Positioning', 'Vision', 'Penalties', 'Composure', 'Marking', 'StandingTackle', 'SlidingTackle', 'GKDiving', 'GKHandling', 'GKKicking', 'GKPositioning', 'GKReflexes']
+
+    dtype = {x: np.float for x in features}
+    dtype.update({x: "category" for x in ['Real_Face', 'Right_Foot', 'Simple_Position', 'Major_Nation', 'WorkRate1', 'WorkRate2']})
+
+    dataset = Dataset.from_dtype(
+        name="fifa19",
+        task="regression",
+        label_column='Overall',
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("fifa19.csv.gz", dtype=dtype)
+
+
+def load_nyctaxi():
+    # downloaded from https://www.kaggle.com/c/nyc-taxi-trip-duration/data?select=test.zip
+    # only using train file which has labels, preprocessed with nyctaxi_preprocess.py based on
+    # https://www.kaggle.com/stephaniestallworth/nyc-taxi-eda-regression-fivethirtyeight-viz/notebook
+
+    features = ['passenger_count', 'pickup_longitude', 'pickup_latitude', 'dropoff_longitude', 'dropoff_latitude', 'pickup_month', 'pickup_hour', 'pickup_weekday']
+
+    dtype = {x: np.float for x in features}
+    dtype.update({x: "category" for x in ['vendor_id', 'store_and_fwd_flag']})
+
+    dataset = Dataset.from_dtype(
+        name="nyctaxi",
+        task="regression",
+        label_column='trip_duration',
+        dtype=dtype,
+        drop_columns=["pickup_datetime", 'dropoff_datetime', 'pickup_date', 'pickup_time', 'dropoff_date', 'dropoff_time', 'id']
+    )
+    return dataset.load_from_csv("nyctaxi.csv.gz", dtype=dtype)
+
+
+
+def load_wine():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/wine+quality
+    # concatenated winequality-red/white into single dataframe
+
+    features = ['fixed acidity', 'volatile acidity', 'citric acid', 'residual sugar', 'chlorides', 'free sulfur dioxide', 'total sulfur dioxide', 'density', 'pH', 'sulphates', 'alcohol']
+
+    dtype = {x: np.float for x in features}
+
+    dataset = Dataset.from_dtype(
+        name="wine",
+        task="regression",
+        label_column='quality',
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("wine.csv.gz", dtype=dtype)
+
+
+def load_airbnb():
+    # downloaded from https://www.kaggle.com/dgomonov/new-york-city-airbnb-open-data
+    # preprocessed using preprocess_airbnb.py based on https://www.kaggle.com/xinjianzhao/airbnb-new-york-analysis-plus/notebook
+
+    features = ['latitude', 'longitude', 'minimum_nights', 'reviews_count', 'reviews_per_month', 'host_listings_count', 'availability_365']
+
+    dtype = {x: np.float for x in features}
+    dtype.update({x: "category" for x in ['neighbourhood_group', 'room_type']})
+
+    dataset = Dataset.from_dtype(
+        name="airbnb",
+        task="regression",
+        label_column='price_log',
+        dtype=dtype,
+        drop_columns=['last_review', 'price', 'neighbourhood', 'index', 'id', 'name', 'host_name', 'host_id']
+    )
+    return dataset.load_from_csv("airbnb.csv.gz", dtype=dtype)
+
+
+
+
+
 def load_epsilon_catboost():
     from catboost.datasets import epsilon
 
@@ -230,7 +704,7 @@ def load_diabetes():
     data = load_diabetes(as_frame=True)
     df = data["frame"]
     continuous_columns = [col for col in df.columns if col != "target"]
-    categorical_columns = None
+    categorical_columns = []
     dataset = Dataset(
         name="diabetes",
         task="regression",
@@ -380,17 +854,34 @@ def load_satimage():
     )
     return dataset.load_from_csv("satimage.csv.gz", dtype=dtype)
 
+def load_statlog():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Statlog+%28Landsat+Satellite%29
+    dtype = {str(x): np.float for x in range(36)}
+    dataset = Dataset.from_dtype(
+        name="statlog",
+        task="multiclass-classification",
+        label_column="36",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("statlog.csv.gz", dtype=dtype)
+
+
 def load_mnist():
     from sklearn.datasets import fetch_openml
+
     X, y = fetch_openml("mnist_784", version=1, return_X_y=True, as_frame=True)
     df = X.join(y)
 
-    dtype = {"pixel"+str(i+1): np.float for i in range(784)}
+    dtype = {"pixel" + str(i + 1): np.float for i in range(784)}
 
     dataset = Dataset.from_dtype(
-        name="mnist", task="multiclass-classification", label_column="class", dtype=dtype
+        name="mnist",
+        task="multiclass-classification",
+        label_column="class",
+        dtype=dtype,
     )
     return dataset.from_dataframe(df)
+
 
 def load_iris():
 
@@ -401,9 +892,13 @@ def load_iris():
     dtype = {c: np.float for c in X.columns}
 
     dataset = Dataset.from_dtype(
-        name="iris", task="multiclass-classification", label_column="target", dtype=dtype
+        name="iris",
+        task="multiclass-classification",
+        label_column="target",
+        dtype=dtype,
     )
     return dataset.from_dataframe(df)
+
 
 def load_sensorless():
     dtype = {
@@ -526,7 +1021,10 @@ def load_spambase():
         56: np.int,
     }
     dataset = Dataset.from_dtype(
-        name="spambase", task="binary-classification", label_column=57, dtype=dtype,
+        name="spambase",
+        task="binary-classification",
+        label_column=57,
+        dtype=dtype,
     )
     return dataset.load_from_csv("spambase.csv.gz", header=None, dtype=dtype)
 
@@ -667,6 +1165,9 @@ loaders_small_classification = [
     load_satimage,
     load_sensorless,
     load_spambase,
+    load_electrical,
+    load_occupancy,
+    load_avila,
 ]
 
 loaders_small_regression = [load_boston, load_californiahousing, load_diabetes]

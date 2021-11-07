@@ -10,8 +10,17 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from collections import namedtuple
 import os
-from noise_generators import gaussian, frechet, loglogistic, lognormal, weibull, student, pareto
+from noise_generators import (
+    gaussian,
+    frechet,
+    loglogistic,
+    lognormal,
+    weibull,
+    student,
+    pareto,
+)
 import argparse
+
 
 def ensure_directory(directory):
     if not os.path.exists(directory):
@@ -36,19 +45,25 @@ logging.basicConfig(
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("--n_samples", type=int, default=1000)
+parser.add_argument("--n_samples", type=int, default=500)
 parser.add_argument("--n_features", type=int, default=5)
-parser.add_argument("--random_seed", type=int, default=43)
-parser.add_argument("--n_repeats", type=int, default=10)
+parser.add_argument("--random_seed", type=int, default=42)
+parser.add_argument("--n_repeats", type=int, default=5)
 parser.add_argument("--outlier_types", nargs="+", type=int, default=[])
-parser.add_argument("--max_iter", type=int, default=150)
-parser.add_argument("--step_size", type=float, default=0.05)
+parser.add_argument("--max_iter", type=int, default=100)
+parser.add_argument("--step_size", type=float, default=0.1)
 parser.add_argument("--confidence", type=float, default=0.01)
-parser.add_argument("--noise_dist", type=str, default="gaussian", choices=["gaussian", "student", "weibull", "loglogistic", "lognormal", "pareto"])
-parser.add_argument('--X_centered', dest='X_centered', action='store_true')
-parser.add_argument('--X_not_centered', dest='X_centered', action='store_false')
+parser.add_argument("--corruption_rate", type=float, default=0.0)
+parser.add_argument(
+    "--noise_dist",
+    type=str,
+    default="gaussian",
+    choices=["gaussian", "student", "weibull", "loglogistic", "lognormal", "pareto"],
+)
+parser.add_argument("--X_centered", dest="X_centered", action="store_true")
+parser.add_argument("--X_not_centered", dest="X_centered", action="store_false")
 parser.set_defaults(X_centered=True)
-parser.add_argument('--save_results', dest='save_results', action='store_true')
+parser.add_argument("--save_results", dest="save_results", action="store_true")
 parser.set_defaults(save_results=False)
 args = parser.parse_args()
 
@@ -61,6 +76,7 @@ n_repeats = args.n_repeats
 n_samples = args.n_samples
 n_features = args.n_features
 save_results = args.save_results
+corruption_rate = args.corruption_rate
 
 if not save_results:
     logging.info("WARNING : results will NOT be saved at the end of this session")
@@ -70,10 +86,15 @@ fit_intercept = False
 confidence = args.confidence
 random_seed = args.random_seed
 
-percentage = np.log(4/confidence)/n_samples
-block_size = 18*np.log(1/confidence)/n_samples
-logging.info("percentage is %.2f"%percentage)
-logging.info("block size is :  %.2f"%block_size)
+percentage = np.log(4 / confidence) / n_samples + 2 * corruption_rate
+block_size = 1 / (18 * np.log(1 / confidence))
+llm_block_size = 1 / (4 * np.log(1 / confidence))
+if corruption_rate > 0.0:
+    block_size = min(block_size, 1 / (4 * (corruption_rate * n_samples)))
+    llm_block_size = min(llm_block_size, 1 / (4 * (corruption_rate * n_samples)))
+#print(1 / (4 * (corruption_rate * n_samples)))
+logging.info("percentage is %.2f" % percentage)
+logging.info("block size is :  %.2f" % block_size)
 
 noise_sigma = {
     "gaussian": 20,
@@ -96,10 +117,7 @@ mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
 
 w_star_dist = "uniform"
 
-logging.info(
-    "Lauching experiment with parameters : \n %r"
-    % args
-)
+logging.info("Lauching experiment with parameters : \n %r" % args)
 
 logging.info("mu_X = %r , Sigma_X = %r" % (mu_X, Sigma_X))
 logging.info(
@@ -110,37 +128,40 @@ logging.info(
 rng = np.random.RandomState(random_seed)  ## Global random generator
 
 
-def generate_outliers(y, number=10, type=1):
-    dir = np.random.randn(n_features)
-    dir /= np.sqrt((dir * dir).sum())  # random direction
-    if type == 0:
-        X_out = np.max(Sigma_X) * np.ones((number, n_features))
-        y_out = 2 * np.ones(number) * np.max(np.abs(y))
-    elif type == 1:
-        X_out = 2 * np.max(Sigma_X) * dir + np.random.randn(number, n_features)
-        y_out = 2 * np.ones(number) * np.max(np.abs(y))
-    elif type == 2:
-        X_out = np.max(Sigma_X) * np.ones((number, n_features))
-        y_out = 2 * (2 * np.random.randint(2, size=number) - 1) * np.max(np.abs(y))
-    elif type == 3:
-        X_out = np.ones((number, n_features))
-        y_out = np.ones(number)
-    elif type == 4:
-        X_out = 100 * np.max(Sigma_X) * dir + np.random.randn(number, n_features)
-        y_out = np.random.randint(2, size=number)
-    elif type == 5:
-        X_out = np.random.randn(number, n_features)
-        X_out = (
-            100 * np.max(Sigma_X) * np.diag(1 / np.linalg.norm(X_out, axis=1)) @ X_out
-        )
-        y_out = np.max(np.abs(y)) * (
-            (2 * np.random.randint(2, size=number) - 1)
-            + (2 * np.random.rand(number) - 1) / 5
-        )
-    else:
-        raise Exception("Unknown outliers type")
+def corrupt_data(X, y, types, corruption_rate):
+    number = int((n_samples * corruption_rate) / len(types))
+    corrupted_indices = rng.choice(n_samples, size=number, replace=False)
 
-    return X_out, y_out
+    dir = rng.randn(n_features)
+    dir /= np.sqrt((dir * dir).sum())  # random direction
+    max_y = np.max(np.abs(y))
+    for i in corrupted_indices:
+        type = rng.choice(types)
+
+        if type == 1:
+            X[i, :] = np.max(Sigma_X) * np.ones(n_features)
+            y[i] = 2 * max_y
+        elif type == 2:
+            X[i, :] = np.max(Sigma_X) * np.ones(n_features)
+            y[i] = 2 * (2 * rng.randint(2) - 1) * max_y
+        elif type == 3:
+            X[i, :] = 10 * np.max(Sigma_X) * dir + rng.randn(n_features)
+            y[i] = rng.randint(2)
+        elif type == 4:
+            vec = rng.randn(n_features)
+            vec /= np.sqrt((vec * vec).sum())
+            X[i, :] = 10 * np.max(Sigma_X) * vec
+
+            y[i] = max_y * ((2 * rng.randint(2) - 1) + (2 * rng.rand() - 1) / 5)
+        elif type == 5:
+            X[i, :] = np.ones(n_features)
+            y[i] = 1
+        elif type == 6:
+            X[i, :] = 2 * np.max(Sigma_X) * dir + rng.randn(n_features)
+            y[i] = 2 * max_y
+        else:
+            raise Exception("Unknown outliers type")
+    return corrupted_indices
 
 
 def gen_w_star(d, dist="normal"):
@@ -187,9 +208,7 @@ else:
     raise Exception("unknown noise dist")
 
 
-Algorithm = namedtuple(
-    "Algorithm", ["name", "solver", "estimator"]
-)
+Algorithm = namedtuple("Algorithm", ["name", "solver", "estimator"])
 
 algorithms = [
     Algorithm(name="erm_gd", solver="gd", estimator="erm"),
@@ -199,6 +218,7 @@ algorithms = [
     Algorithm(name="holland_gd", solver="gd", estimator="ch"),
     Algorithm(name="gmom_gd", solver="gd", estimator="gmom"),
     Algorithm(name="implicit_gd", solver="gd", estimator="llm"),
+    Algorithm(name="hg_gd", solver="gd", estimator="hg"),
     # Algorithm(name="implicit_cgd", solver="cgd", estimator="implicit", max_iter=T),
     # Algorithm(name="tmean_gd", solver="gd", estimator="tmean", max_iter=T),
     # Algorithm(name="mom_gd", solver="gd", estimator="mom", max_iter=T),
@@ -220,14 +240,17 @@ for rep in range(n_repeats):
     noise, expect_noise, noise_2nd_moment = noise_fct(
         rng, n_samples, noise_sigma[noise_dist]
     )
+
+    noise -= expect_noise
+    expect_noise = 0.0
+
     y = X @ w_star + noise
 
     # outliers
     if len(outlier_types) > 0:
-        for typ in outlier_types:
-            X_out, y_out = generate_outliers(y, type=typ)
-        X = np.concatenate((X, X_out), axis=0)
-        y = np.concatenate((y, y_out))
+        corrupted_indices = corrupt_data(X, y, outlier_types, corruption_rate)
+    else:
+        corrupted_indices = []
 
     logging.info("generating risks and gradients ...")
 
@@ -251,7 +274,8 @@ for rep in range(n_repeats):
     Xy = X.T @ y
 
     # compute the Lipschitz constant for oracle GD without the outliers
-    XXT_clean = X[:n_samples, :].T @ X[:n_samples, :]
+    clean_index = list(set(range(n_samples)) - set(corrupted_indices))
+    XXT_clean = X[clean_index, :].T @ X[clean_index, :]
     Lip = np.linalg.eigh(XXT_clean / n_samples)[0][-1]
 
     def empirical_gradient(w):
@@ -283,10 +307,11 @@ for rep in range(n_repeats):
             solver=algo.solver,
             estimator=algo.estimator,
             fit_intercept=fit_intercept,
-            step_size=step_size,
+            step_size=step_size,  # *(5 if algo.estimator=="hg" else 1),
             penalty="none",
-            block_size=block_size,
+            block_size=llm_block_size if algo.estimator =="llm" else block_size,
             percentage=percentage,
+            random_state=random_seed,
         )
         reg.fit(X, y)
         out[algo.name] = reg.history_.records
@@ -344,42 +369,80 @@ if save_results:
     commit = commit.decode("utf-8").strip()
 
     filename = experiment_name + "_results_" + now + ".pickle"
+
+    specs = {"n_samples": n_samples,
+        "n_rep": n_repeats,
+        "noise": noise_dist,
+        "sigma": noise_sigma[noise_dist],
+        "block_size": block_size,
+        "w_star_dist": w_star_dist,
+    }
+
+
     with open("exp_archives/" + experiment_name + "/" + filename, "wb") as f:
-        pickle.dump({"datetime": now, "commit": commit, "results": data}, f)
+        pickle.dump({"datetime": now, "commit": commit, "results": data, "specs": specs}, f)
 
     logging.info("Saved results in file %s" % filename)
 
 logging.info("Plotting ...")
 
-line_width = 1.0
+line_width = 1.2
 
-g = sns.FacetGrid(data, col="metric", height=4, legend_out=True, sharey=False)
-g.map(sns.lineplot, "t", "value", "algo", lw=line_width, ci=None,).set(
-    xlabel="", ylabel=""
-).set(yscale="log")
+# g = sns.FacetGrid(data, col="metric", height=4, legend_out=True, sharey=False)
+# g.map(sns.lineplot, "t", "value", "algo", lw=line_width, ci=None,).set(
+#     xlabel="", ylabel=""
+# ).set(yscale="log")
+
+
+# g = sns.FacetGrid(data, col="metric", height=4, legend_out=True, sharey=False)
+ax = sns.lineplot(
+    x="t",
+    y="value",
+    hue="algo",
+    data=data.query("metric == '%s'" % metrics[1].__name__),
+    legend=False,
+    lw=line_width,
+    ci=None,
+)
+
+ax.set(yscale="log")
+
+plt.xlabel("")
+plt.ylabel("")
 
 # g.set_titles(col_template="{col_name}")
 
-axes = g.axes.flatten()
-axes[0].set_title("Excess empirical risk")
-axes[1].set_title("Excess risk")
+#axes = [ax]  # g.axes.flatten()
+# axes[0].set_title("Excess empirical risk")
+# axes[0].set_title("Excess risk")
 
 color_palette = []
-for line in axes[0].get_lines():
+for line in ax.get_lines():
     color_palette.append(line.get_c())
 color_palette = color_palette[: len(algorithms) + 1]
 
 
-# plt.legend(
-axes[1].legend(
-    list(data["algo"].unique()),
+plt.legend(
+    [
+        "Oracle",
+        "$\\mathtt{ERM}$ GD",
+        "$\\mathtt{MOM}$ CGD",
+        "$\\mathtt{CH}$ CGD",
+        "$\\mathtt{TM}$ CGD",
+        "$\\mathtt{CH}$ GD",
+        "GMOM GD",
+        "LLM GD",
+        "HG GD",
+    ],
     # bbox_to_anchor=(0.3, 0.7, 1.0, 0.0),
-    loc="lower left",  # "upper right",
+    loc="lower left",#"upper right",
     ncol=2,
     borderaxespad=0.2,
     columnspacing=1.0,
     fontsize=10,
 )
+# axes[0].legend(
+# )
 # g.fig.subplots_adjust(top=0.9)
 # g.fig.suptitle(
 #     "n=%d , noise=%s , $\\sigma$ = %.2f, block_size=%.2f, w_star_dist=%s , outliers=%r , X_centered=%r"
@@ -396,11 +459,10 @@ axes[1].legend(
 
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
-zoom_on_excess_empirical_risk = False
-zoom_on_excess_risk = False
+zoom_on = False
 
-if zoom_on_excess_risk:
-    axins = inset_axes(axes[-1], "40%", "30%", loc="lower left", borderpad=1)
+if zoom_on:
+    axins = inset_axes(ax, "40%", "30%", loc="lower left", borderpad=1)
 
     sns.lineplot(
         x="t",
@@ -409,7 +471,7 @@ if zoom_on_excess_risk:
         lw=line_width,
         ci=None,
         data=data.query(
-            "t >= %d and metric=='excess_risk' and algo!='oracle' and algo!='erm_gd'"
+            "t >= %d and metric=='excess_risk' and algo not in ['oracle', 'erm_gd']"
             % ((T * 4) // 5)
         ),
         ax=axins,
@@ -419,48 +481,42 @@ if zoom_on_excess_risk:
         yscale="log"
     )  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
 
-    axes[-1].indicate_inset_zoom(axins, edgecolor="black")
+    ax.indicate_inset_zoom(axins, edgecolor="black")
     axins.xaxis.set_visible(False)
     axins.yaxis.set_visible(False)
 
-if zoom_on_excess_empirical_risk:
-    axins0 = inset_axes(axes[0], "40%", "30%", loc="lower left", borderpad=1)
-
-    sns.lineplot(
-        x="t",
-        y="value",
-        hue="algo",
-        lw=line_width,
-        ci=None,
-        data=data.query(
-            "t >= %d and metric=='excess_empirical_risk' and algo!='erm_gd'"
-            % ((T * 4) // 5)
-        ),
-        ax=axins0,
-        legend=False,
-        palette=color_palette[:1] + color_palette[2:],
-    ).set(
-        yscale="log"
-    )  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
-    axes[0].indicate_inset_zoom(axins0, edgecolor="black")
-    axins0.xaxis.set_visible(False)
-    axins0.yaxis.set_visible(False)
+# if zoom_on_excess_empirical_risk:
+#     axins0 = inset_axes(axes[0], "40%", "30%", loc="lower left", borderpad=1)
+#
+#     sns.lineplot(
+#         x="t",
+#         y="value",
+#         hue="algo",
+#         lw=line_width,
+#         ci=None,
+#         data=data.query(
+#             "t >= %d and metric=='excess_empirical_risk' and algo!='erm_gd'"
+#             % ((T * 4) // 5)
+#         ),
+#         ax=axins0,
+#         legend=False,
+#         palette=color_palette[:1] + color_palette[2:],
+#     ).set(
+#         yscale="log"
+#     )  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
+#     axes[0].indicate_inset_zoom(axins0, edgecolor="black")
+#     axins0.xaxis.set_visible(False)
+#     axins0.yaxis.set_visible(False)
 
 plt.tight_layout()
 plt.show()
 
 # save figure
 now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
-specs = "n%d_n_rep%d_%s%.2f_block_size=%.2f_w_dist=%s" % (
-    n_samples,
-    n_repeats,
-    noise_dist,
-    noise_sigma[noise_dist],
-    block_size,
-    w_star_dist,
-)
+
 ensure_directory("exp_archives/" + experiment_name + "/")
 
-fig_file_name = "exp_archives/" + experiment_name + "/" + specs + now + ".pdf"
-g.fig.savefig(fname=fig_file_name, bbox_inches="tight")
+fig_file_name = "exp_archives/" + experiment_name + "/linreg_results_" + now + ".pdf"
+fig = ax.get_figure()
+fig.savefig(fname=fig_file_name, bbox_inches="tight")
 logging.info("Saved figure into file : %s" % fig_file_name)

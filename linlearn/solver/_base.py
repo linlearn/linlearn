@@ -162,7 +162,7 @@ class Solver(ABC):
 
         history.close_bar()
         if tol > 0:
-            warn("Maximum iteration number reached, solver may have not converged")
+            warn("Maximum iteration number reached, solver may not have converged")
         return OptimizationResult(
             w=weights, n_iter=max_iter + 1, success=False, tol=tol, message=None
         )

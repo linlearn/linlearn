@@ -24,6 +24,8 @@ from ._loss import (
     MultiLogistic,
     LeastSquares,
     Huber,
+    ModifiedHuber,
+    MultiModifiedHuber,
     SquaredHinge,
     MultiSquaredHinge,
     compute_steps,
@@ -32,7 +34,7 @@ from ._loss import (
 )
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
 from .solver import CGD, GD, SGD, SVRG, SAGA, batch_GD, History
-from .estimator import ERM, MOM, TMean, LLM, GMOM, CH
+from .estimator import ERM, MOM, TMean, LLM, GMOM, CH, HG
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float, numba_seed_numpy
 
 jit_kwargs = {
@@ -51,12 +53,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         "logistic",
         "leastsquares",
         "huber",
+        "modifiedhuber",
+        "multimodifiedhuber",
         "multilogistic",
         "squaredhinge",
         "multisquaredhinge",
     ]
     _penalties = ["none", "l2", "l1", "elasticnet"]
-    _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch"]
+    _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch", "hg"]
     _solvers = ["cgd", "gd", "sgd", "svrg", "saga", "batch_gd"]
 
     def __init__(
@@ -304,7 +308,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
     # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None
 
     def check_estimator_solver_combination(self, estimator, solver):
-        if solver in ["sgd", "svrg", "saga"] and estimator != "erm":
+        if solver in ["sgd", "svrg", "saga", "batch_gd"] and estimator != "erm":
             warn(
                 "Your choice of robust estimator will be ignored because it is not supported by SGD type solvers (SGD, SVRG and SAGA)"
             )
@@ -326,9 +330,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             warn(
                 "The Trimmed Mean estimator computes only single gradient coordinates, full gradients for GD will be constituted from coordinates."
             )
-        elif solver == "cgd" and estimator == "gmom":
+        elif solver == "cgd" and estimator in ["gmom", "hg"]:
             raise ValueError(
-                "The GMOM estimator computes whole gradients and cannot be used with CGD."
+                "The GMOM and HG estimators compute whole gradients and cannot be used with CGD."
             )
 
     def _get_loss(self):
@@ -338,6 +342,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return LeastSquares()
         elif self.loss == "huber":
             return Huber()
+        elif self.loss == "modifiedhuber":
+            return ModifiedHuber()
+        elif self.loss == "multimodifiedhuber":
+            return MultiModifiedHuber(self.n_classes)
         elif self.loss == "multilogistic":
             return MultiLogistic(self.n_classes)
         elif self.loss == "squaredhinge":
@@ -352,7 +360,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return ERM(X, y, loss, self.n_classes, self.fit_intercept)
         elif self.estimator == "mom":
             n_samples = y.shape[0]
-            n_samples_in_block = int(self.block_size * n_samples)
+            n_samples_in_block = max(int(self.block_size * n_samples), 1)
             return MOM(
                 X, y, loss, self.n_classes, self.fit_intercept, n_samples_in_block
             )
@@ -364,13 +372,17 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return CH(X, y, loss, self.n_classes, self.fit_intercept, self.eps)
         elif self.estimator == "llm":
             return LLM(
-                X, y, loss, self.n_classes, self.fit_intercept, int(1 / self.block_size)
+                X, y, loss, self.n_classes, self.fit_intercept, max(int(1 / self.block_size), 1)
             )
         elif self.estimator == "gmom":
             n_samples = y.shape[0]
-            n_samples_in_block = int(self.block_size * n_samples)
+            n_samples_in_block = max(int(self.block_size * n_samples), 1)
             return GMOM(
                 X, y, loss, self.n_classes, self.fit_intercept, n_samples_in_block
+            )
+        elif self.estimator == "hg":
+            return HG(
+                X, y, loss, self.n_classes, self.fit_intercept, eps=self.percentage
             )
         else:
             raise ValueError("Unknown estimator")
@@ -407,14 +419,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         # The strength is scaled using following scikit-learn's scaling
         # strength = 1 / (self.C * n_samples)
         # penalty = penalty_factory(strength=strength, l1_ratio=self.l1_ratio)
-        n_samples_in_block = int(n_samples * self.block_size)
+        n_samples_in_block = max(int(n_samples * self.block_size), 1)
 
         if self.solver == "cgd":
             step = compute_steps_cgd(X, self.estimator, self.fit_intercept, loss.lip, self.percentage,
                                      n_samples_in_block, self.eps)
         else:
             step = compute_steps(X, self.solver, self.estimator, self.fit_intercept, loss.lip, self.percentage,
-                                 int(1 / self.block_size), self.eps)
+                                 max(1, int(1 / self.block_size)), self.eps)
 
         step *= self.step_size
 
@@ -559,6 +571,11 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             self.loss = "multisquaredhinge"
         elif self.loss == "multisquaredhinge":
             pass
+        elif self.loss == "modifiedhuber":
+            # if we are in the multiclass case switch to multiclass loss
+            self.loss = "multimodifiedhuber"
+        elif self.loss == "multimodifiedhuber":
+            pass
         else:
             raise ValueError(
                 "You should specify a classification loss, got loss=%s" % self.loss
@@ -572,6 +589,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         elif self.loss == "multisquaredhinge":
             self.loss = "squaredhinge"
         elif self.loss == "squaredhinge":
+            pass
+        elif self.loss == "multimodifiedhuber":
+            self.loss = "modifiedhuber"
+        elif self.loss == "modifiedhuber":
             pass
         else:
             raise ValueError(

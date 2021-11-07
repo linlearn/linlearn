@@ -44,6 +44,8 @@ StateLLM = namedtuple(
         "gradient",
         "loss_derivative",
         "partial_derivative",
+        "n_grad_calls",
+        "n_pderiv_calls",
     ],
 )
 
@@ -54,7 +56,9 @@ class LLM(Estimator):
         super().__init__(X, y, loss, n_classes, fit_intercept)
         # n_blocks must be uneven
         self.n_blocks = n_blocks + ((n_blocks + 1) % 2)
-        self.n_samples_in_block = self.n_samples // n_blocks
+        if self.n_blocks >= self.n_samples:
+            self.n_blocks = self.n_samples - (self.n_samples % 2 + 1)
+        self.n_samples_in_block = max(1, self.n_samples // n_blocks)
         # no last block size, the remaining samples are just ignored
         # self.last_block_size = self.n_samples % self.n_samples_in_block
         # if self.last_block_size > 0:
@@ -70,12 +74,15 @@ class LLM(Estimator):
             ),
             loss_derivative=np.empty(self.n_classes, dtype=np_float),
             partial_derivative=np.empty(self.n_classes, dtype=np_float),
+            n_grad_calls=0,
+            n_pderiv_calls=0,
         )
 
     def partial_deriv_factory(self):
         X = self.X
         y = self.y
         n_samples_in_block = self.n_samples_in_block
+        n_blocks = self.n_blocks
         loss = self.loss
         n_classes = self.n_classes
         value_loss = loss.value_factory()
@@ -86,6 +93,8 @@ class LLM(Estimator):
             @jit(**jit_kwargs)
             def partial_deriv(j, inner_products, state):
                 sample_indices = state.sample_indices
+                n_calls = state.n_pderiv_calls
+                n_calls += 1
                 block_means = state.block_means
 
                 np.random.shuffle(sample_indices)
@@ -93,9 +102,9 @@ class LLM(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i, idx in enumerate(sample_indices):
+                for i, idx in enumerate(sample_indices[:n_blocks*n_samples_in_block]):
                     objectives_sum_block += value_loss(y[idx], inner_products[idx])
-                    if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                    if ((i != 0) and ((i + 1) % n_samples_in_block == 0)) or n_samples_in_block == 1:
                         block_means[counter] = objectives_sum_block / n_samples_in_block
                         counter += 1
                         objectives_sum_block = 0.0
@@ -132,6 +141,8 @@ class LLM(Estimator):
             @jit(**jit_kwargs)
             def partial_deriv(j, inner_products, state):
                 sample_indices = state.sample_indices
+                n_calls = state.n_pderiv_calls
+                n_calls += 1
                 block_means = state.block_means
 
                 np.random.shuffle(sample_indices)
@@ -139,9 +150,9 @@ class LLM(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i, idx in enumerate(sample_indices):
+                for i, idx in enumerate(sample_indices[:n_blocks*n_samples_in_block]):
                     objectives_sum_block += value_loss(y[idx], inner_products[idx])
-                    if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                    if ((i != 0) and ((i + 1) % n_samples_in_block == 0)) or n_samples_in_block == 1:
                         block_means[counter] = objectives_sum_block / n_samples_in_block
                         counter += 1
                         objectives_sum_block = 0.0
@@ -171,6 +182,7 @@ class LLM(Estimator):
         value_loss = loss.value_factory()
         deriv_loss = loss.deriv_factory()
         n_samples_in_block = self.n_samples_in_block
+        n_blocks = self.n_blocks
         n_classes = self.n_classes
         n_features = self.n_features
 
@@ -179,6 +191,8 @@ class LLM(Estimator):
             @jit(**jit_kwargs)
             def grad(inner_products, state):
                 sample_indices = state.sample_indices
+                n_calls = state.n_grad_calls
+                n_calls += 1
                 block_means = state.block_means
                 gradient = state.gradient
                 # for i in range(n_samples):
@@ -189,9 +203,9 @@ class LLM(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i, idx in enumerate(sample_indices):
+                for i, idx in enumerate(sample_indices[:n_blocks*n_samples_in_block]):
                     objectives_sum_block += value_loss(y[idx], inner_products[idx])
-                    if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                    if ((i != 0) and ((i + 1) % n_samples_in_block == 0)) or n_samples_in_block == 1:
                         block_means[counter] = objectives_sum_block / n_samples_in_block
                         counter += 1
                         objectives_sum_block = 0.0
@@ -225,6 +239,8 @@ class LLM(Estimator):
             @jit(**jit_kwargs)
             def grad(inner_products, state):
                 sample_indices = state.sample_indices
+                n_calls = state.n_grad_calls
+                n_calls += 1
                 block_means = state.block_means
                 gradient = state.gradient
                 # for i in range(n_samples):
@@ -235,9 +251,9 @@ class LLM(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i, idx in enumerate(sample_indices):
+                for i, idx in enumerate(sample_indices[:n_blocks*n_samples_in_block]):
                     objectives_sum_block += value_loss(y[idx], inner_products[idx])
-                    if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                    if ((i != 0) and ((i + 1) % n_samples_in_block == 0)) or n_samples_in_block == 1:
                         block_means[counter] = objectives_sum_block / n_samples_in_block
                         counter += 1
                         objectives_sum_block = 0.0
