@@ -158,6 +158,7 @@ class MOM(Estimator):
                 output : float
                     The value of the partial derivative
                 """
+                # print("call to mom partial deriv")
                 sample_indices = state.sample_indices
                 block_means = state.block_means
 
@@ -177,7 +178,7 @@ class MOM(Estimator):
                         deriv_loss(y[idx], inner_products[idx], deriv)
                         for k in range(n_classes):
                             derivatives_sum_block[k] += deriv[k]
-                        if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                        if ((i != 0) and ((i + 1) % n_samples_in_block == 0)) or n_samples_in_block == 1:
                             for k in range(n_classes):
                                 block_means[n_block, k] = (
                                     derivatives_sum_block[k] / n_samples_in_block
@@ -191,7 +192,7 @@ class MOM(Estimator):
                         for k in range(n_classes):
                             derivatives_sum_block[k] += deriv[k] * Xij
 
-                        if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                        if ((i != 0) and ((i + 1) % n_samples_in_block == 0)) or n_samples_in_block == 1:
                             for k in range(n_classes):
                                 block_means[n_block, k] = (
                                     derivatives_sum_block[k] / n_samples_in_block
@@ -209,7 +210,7 @@ class MOM(Estimator):
                     derivatives_sum_block[k] = fast_median(block_means[:, k], n_blocks)
                     # derivatives_sum_block[k] = np.median(block_means[:, k])
                 # return np.median(block_means)
-
+                # print("over")
             return partial_deriv
 
         else:
@@ -238,6 +239,7 @@ class MOM(Estimator):
                 output : float
                     The value of the partial derivative
                 """
+                # print("call to mom partial deriv")
                 sample_indices = state.sample_indices
                 block_means = state.block_means
                 # for i in range(n_samples):
@@ -257,7 +259,7 @@ class MOM(Estimator):
                     for k in range(n_classes):
                         derivatives_sum_block[k] += deriv[k] * Xij
 
-                    if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                    if ((i != 0) and ((i + 1) % n_samples_in_block == 0)) or n_samples_in_block == 1:
                         for k in range(n_classes):
                             block_means[n_block, k] = (
                                 derivatives_sum_block[k] / n_samples_in_block
@@ -275,6 +277,7 @@ class MOM(Estimator):
                     derivatives_sum_block[k] = fast_median(block_means[:, k], n_blocks)
                     # derivatives_sum_block[k] = np.median(block_means[:, k])
                 # return np.median(block_means)
+                # print("over")
 
             return partial_deriv
 

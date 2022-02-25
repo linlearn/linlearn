@@ -24,7 +24,7 @@ from .._utils import np_float
 
 
 @jit(**jit_kwargs)
-def gmom_njit(xs, tol=1e-10):
+def gmom_njit(xs, tol=1e-4):
     # from Vardi and Zhang 2000
     n_elem, n_dim = xs.shape
     # TODO : avoid the memory allocations in this function
@@ -42,26 +42,76 @@ def gmom_njit(xs, tol=1e-10):
     while delta > tol:
         xsy[:] = xs - y
         dists.fill(0.0)
-        for i in range(n_dim):
-            dists += xsy[:, i] ** 2  # np.linalg.norm(xsy, axis=1)
-        dists[:] = np.sqrt(dists)
-        inv_dists[:] = 1 / dists
+        for j in range(n_dim):
+            dists[:] += xsy[:, j] * xsy[:, j]  # np.linalg.norm(xsy, axis=1)
+        for i in range(n_elem):
+            dists[i] = np.sqrt(dists[i])
+
+        # dists[:] = euclidean_numba1(xs, [y]).flatten()
         mask = dists < eps
+        nmask = np.logical_not(mask)
+        inv_dists[nmask] = 1 / dists[nmask]
+        # print("pass2")
         inv_dists[mask] = 0
-        nb_too_close = (mask).sum()
+        nb_too_close = mask.sum()
         ry = np.sqrt(
             np.sum(np.dot(inv_dists, xsy) ** 2)
         )  # np.linalg.norm(np.dot(inv_dists, xsy))
+        if ry == 0:
+            break
+
         cst = nb_too_close / ry
+        sum_inv_dists = np.sum(inv_dists)
+        if sum_inv_dists == 0:
+            raise ValueError
         y_new = (
-            max(0, 1 - cst) * np.dot(inv_dists, xs) / np.sum(inv_dists)
+            max(0, 1 - cst) * np.dot(inv_dists, xs) / sum_inv_dists
             + min(1, cst) * y
         )
+
         delta = np.sqrt(np.sum((y - y_new) ** 2))  # np.linalg.norm(y - y_new)
         y = y_new
         niter += 1
-    # print(niter)
+
     return y, niter * (n_elem + 1)
+
+@jit(**jit_kwargs)
+def gmom_njit2(X, tol=1e-5):
+    n_elem, n_dim = X.shape
+    y = np.zeros(n_dim)
+    for i in range(n_elem):
+        y += X[i]
+    y /= n_elem
+    D = np.zeros((n_elem, 1))
+    while True:
+        D.fill(0.0)
+        for i in range(n_elem):
+            for j in range(n_dim):
+                D[i] += (X[i, j] - y[j]) ** 2
+            D[i] = np.sqrt(D[i])
+        # D = cdist(X, [y])
+        nonzeros = (D != 0)[:, 0]
+
+        Dinv = 1 / D[nonzeros]
+        Dinvs = np.sum(Dinv)
+        W = Dinv / Dinvs
+        T = np.sum(W * X[nonzeros], 0)
+
+        num_zeros = n_elem - np.sum(nonzeros)
+        if num_zeros == 0:
+            y1 = T
+        elif num_zeros == n_elem:
+            return (y, 0)
+        else:
+            R = (T - y) * Dinvs
+            r = np.linalg.norm(R)
+            rinv = 0 if r == 0 else num_zeros / r
+            y1 = max(0, 1 - rinv) * T + min(1, rinv) * y
+
+        if np.linalg.norm(y - y1) < tol:
+            return (y1, 0)
+
+        y = y1
 
 
 StateGMOM = namedtuple(
@@ -81,6 +131,8 @@ class GMOM(Estimator):
     def __init__(self, X, y, loss, n_classes, fit_intercept, n_samples_in_block):
         super().__init__(X, y, loss, n_classes, fit_intercept)
         self.n_samples_in_block = n_samples_in_block
+        if n_samples_in_block <= 0:
+            raise ValueError
         self.n_blocks = self.n_samples // n_samples_in_block
         self.last_block_size = self.n_samples % n_samples_in_block
         if self.last_block_size > 0:
@@ -146,6 +198,7 @@ class GMOM(Estimator):
                 deriv = state.loss_derivative
                 for i, idx in enumerate(sample_indices):
                     deriv_loss(y[idx], inner_products[idx], deriv)
+
                     for k in range(n_classes):
                         grads_sum_block[0, k] += deriv[k]
                         for j in range(n_features):
@@ -153,7 +206,8 @@ class GMOM(Estimator):
                                 X[idx, j] * deriv[k]
                             )  # np.outer(X[idx], deriv)
 
-                    if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                    if ((i != 0) and ((i + 1) % n_samples_in_block == 0)) or n_samples_in_block == 1:
+
                         for j in range(n_features + 1):
                             for k in range(n_classes):
                                 block_means[counter, j, k] = (
@@ -175,6 +229,7 @@ class GMOM(Estimator):
                 gradient[:] = gmom_grad.reshape(
                     block_means.shape[1:]
                 )
+
                 return sc_prods
 
             return grad
@@ -205,7 +260,7 @@ class GMOM(Estimator):
                             grads_sum_block[j, k] += X[idx, j] * deriv[k]
 
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
-                        for j in range(n_features + 1):
+                        for j in range(n_features):
                             for k in range(n_classes):
                                 block_means[counter, j, k] = (
                                     grads_sum_block[j, k] / n_samples_in_block

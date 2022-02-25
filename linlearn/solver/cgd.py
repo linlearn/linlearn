@@ -53,6 +53,7 @@ class CGD(Solver):
         X = self.X
         fit_intercept = self.fit_intercept
         n_samples = self.estimator.n_samples
+        n_features = self.n_features
         n_classes = self.n_classes
         weights_dim1 = self.weights_shape[0]
         partial_deriv_estimator = self.estimator.partial_deriv_factory()
@@ -77,6 +78,16 @@ class CGD(Solver):
             def prepare_coordinates(coords):
                 np.random.shuffle(coords)
 
+        if self.estimator == "llm":
+            @jit(**jit_kwargs)
+            def step_scaler(state):
+                return 1 / np.sqrt(1 + state.n_pderiv_calls/n_features)
+        else:
+            @jit(**jit_kwargs)
+            def step_scaler(state):
+                return 1
+
+
         if fit_intercept:
 
             @jit(**jit_kwargs)
@@ -90,20 +101,20 @@ class CGD(Solver):
                 #     coordinates[idx] = idx
                 prepare_coordinates(coordinates)
                 # np.random.shuffle(coordinates)
+                step_scale = step_scaler(state_estimator)
 
                 w_j_new = state_estimator.loss_derivative
                 delta_j = state_estimator.partial_derivative
 
                 for j in coordinates:
                     partial_deriv_estimator(j, inner_products, state_estimator)
-
                     for k in range(n_classes):
-                        w_j_new[k] = weights[j, k] - steps[j] * delta_j[k]
+                        w_j_new[k] = weights[j, k] - steps[j] * step_scale * delta_j[k]
                     if j != 0:
                         # It's not the intercept so we penalize
                         # TODO: compute the
                         for k in range(n_classes):
-                            w_j_new[k] = penalize(w_j_new[k], scaled_steps[j])
+                            w_j_new[k] = penalize(w_j_new[k], scaled_steps[j] * step_scale)
 
                     # Update the inner products
                     for k in range(n_classes):
@@ -142,6 +153,8 @@ class CGD(Solver):
                 #     coordinates[idx] = idx
                 prepare_coordinates(coordinates)
                 # np.random.shuffle(coordinates)
+                step_scale = step_scaler(state_estimator)
+
                 # use available place holders in estimator state to avoid allocation
                 w_j_new = state_estimator.loss_derivative
                 delta_j = state_estimator.partial_derivative
@@ -149,8 +162,8 @@ class CGD(Solver):
 
                     partial_deriv_estimator(j, inner_products, state_estimator)
                     for k in range(n_classes):
-                        w_j_new[k] = weights[j, k] - steps[j] * delta_j[k]
-                        w_j_new[k] = penalize(w_j_new[k], scaled_steps[j])
+                        w_j_new[k] = weights[j, k] - steps[j] * step_scale * delta_j[k]
+                        w_j_new[k] = penalize(w_j_new[k], scaled_steps[j] * step_scale)
 
                         # Update the inner products
                         delta_j[k] = w_j_new[k] - weights[j, k]
