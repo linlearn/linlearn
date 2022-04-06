@@ -8,6 +8,7 @@ This module contains all the solvers available in ``linlearn``
 
 from .cgd import CGD
 from .gd import GD, batch_GD
+from .md import MD
 from .sgd import SGD
 from .saga import SAGA
 from .svrg import SVRG

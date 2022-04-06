@@ -182,7 +182,7 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
         #         sum_sq_norms += X[i, j] * X[i, j]
         step = 1 / (lip_const * max(int_fit_intercept, mean_sq_norms))
         return step
-    elif solver in ["gd", "batch_gd"]:
+    elif solver in ["gd", "batch_gd", "md"]:
         if estimator == "erm":
             cov = X.T @ X
             step = n_samples / (lip_const * max(int_fit_intercept * n_samples, np.linalg.norm(cov, 2)))

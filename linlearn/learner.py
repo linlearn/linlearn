@@ -33,7 +33,7 @@ from ._loss import (
     decision_function_factory,
 )
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
-from .solver import CGD, GD, SGD, SVRG, SAGA, batch_GD, History
+from .solver import CGD, GD, MD, SGD, SVRG, SAGA, batch_GD, History
 from .estimator import ERM, MOM, TMean, LLM, GMOM, CH, HG
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float, numba_seed_numpy
 
@@ -61,7 +61,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
     ]
     _penalties = ["none", "l2", "l1", "elasticnet"]
     _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch", "hg"]
-    _solvers = ["cgd", "gd", "sgd", "svrg", "saga", "batch_gd"]
+    _solvers = ["cgd", "gd", "md", "sgd", "svrg", "saga", "batch_gd"]
 
     def __init__(
         self,
@@ -85,6 +85,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         l1_ratio=0.5,
         sgd_exponent=0.5,
         cgd_IS=False,
+        stage_length=10,
+        R=1000,
+        sparsity_ub=None,
     ):
         self.penalty = penalty
         self.C = C
@@ -105,6 +108,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         self.l1_ratio = l1_ratio
         self.sgd_exponent = sgd_exponent
         self.cgd_IS = cgd_IS
+        self.stage_length = stage_length
+        self.R = R
+        self.sparsity_ub = sparsity_ub
+
 
         self.history_ = None
         self.intercept_ = None
@@ -467,6 +474,26 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.tol,
                 step,
                 history,
+            )
+        elif self.solver == "md":
+            # Create an history object for the solver
+            history = History("MD", self.max_iter, self.verbose)
+            self.history_ = history
+
+            return MD(
+                X,
+                y,
+                loss,
+                self.n_classes,
+                self.fit_intercept,
+                estimator,
+                self.max_iter,
+                self.tol,
+                self.step_size,
+                history,
+                self.stage_length,
+                self.R,
+                self.sparsity_ub,
             )
         elif self.solver == "sgd":
             # Create an history object for the solver
@@ -978,6 +1005,10 @@ class Classifier(BaseLearner):
         n_jobs=None,
         l1_ratio=0.5,
         cgd_IS=False,
+        stage_length=10,
+        R=1000,
+        sparsity_ub=None,
+
     ):
         super(Classifier, self).__init__(
             penalty=penalty,
@@ -998,6 +1029,10 @@ class Classifier(BaseLearner):
             n_jobs=n_jobs,
             l1_ratio=l1_ratio,
             cgd_IS=cgd_IS,
+            stage_length=stage_length,
+            R=R,
+            sparsity_ub=sparsity_ub,
+
         )
 
         self.class_weight = class_weight
@@ -1136,6 +1171,10 @@ class Regressor(BaseLearner, RegressorMixin):
         n_jobs=None,
         l1_ratio=0.5,
         cgd_IS=False,
+        stage_length=10,
+        R=1000,
+        sparsity_ub=None,
+
     ):
         super(Regressor, self).__init__(
             penalty=penalty,
@@ -1156,6 +1195,10 @@ class Regressor(BaseLearner, RegressorMixin):
             n_jobs=n_jobs,
             l1_ratio=l1_ratio,
             cgd_IS=cgd_IS,
+            stage_length=stage_length,
+            R=R,
+            sparsity_ub=sparsity_ub,
+
         )
 
     def predict(self, X):

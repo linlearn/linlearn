@@ -31,6 +31,20 @@ nb_float = float64
 np_float = np.float64
 
 @jit(**jit_kwargs)
+def softthresh(u, lamda):
+    return np.maximum(np.abs(u) - lamda, 0)
+
+@jit(**jit_kwargs)
+def hardthresh(u, k):
+    abs_u = np.abs(u.flatten())
+    thresh = np.partition(abs_u, -k)[-k]
+    u_s = u.copy()
+    for i in range(u.shape[0]):
+        if abs_u[i] < thresh:
+            u_s[i] = 0
+    return u_s
+
+@jit(**jit_kwargs)
 def partition(A, p, r, ind):
     A[r], A[ind] = A[ind], A[r]
 
