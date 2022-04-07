@@ -174,6 +174,8 @@ def compute_steps_cgd(
 def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0, n_blocks=0, eps=0.0):
     n_samples, n_features = X.shape
     int_fit_intercept = int(fit_intercept)
+    if not np.isfinite(lip_const):
+        return 1.0
 
     if solver in ["sgd", "svrg", "saga"]:
         mean_sq_norms = np.mean(sum_sq(X, 1))
@@ -182,7 +184,7 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
         #         sum_sq_norms += X[i, j] * X[i, j]
         step = 1 / (lip_const * max(int_fit_intercept, mean_sq_norms))
         return step
-    elif solver in ["gd", "batch_gd", "md"]:
+    elif solver in ["gd", "batch_gd", "md", "da"]:
         if estimator == "erm":
             cov = X.T @ X
             step = n_samples / (lip_const * max(int_fit_intercept * n_samples, np.linalg.norm(cov, 2)))
@@ -483,6 +485,35 @@ class Huber(Loss):
 
 
 ################################################################
+# absolute value loss
+################################################################
+
+
+class AbsVal(Loss):
+    def __init__(self):
+        self.lip = np.inf
+
+    def value_factory(self):
+        @jit(**jit_kwargs)
+        def value(y, z):
+            return fabs(y - z[0])
+
+        return value
+
+    def deriv_factory(self):
+        @jit(inline="always", **jit_kwargs)
+        def deriv(y, z, out):
+
+            diff = z[0] - y
+            if diff < 0:
+                out[0] = -1
+            else:
+                out[0] = 1
+
+        return deriv
+
+
+################################################################
 # Modified Huber loss
 ################################################################
 
@@ -607,6 +638,38 @@ class MultiSquaredHinge(Loss):
                 out[y] = 0.0
 
         return deriv
+
+################################################################
+# Hinge loss
+################################################################
+
+
+class Hinge(Loss):
+    def __init__(self):
+        self.lip = np.inf
+
+    def value_factory(self):
+        @jit(**jit_kwargs)
+        def value(y, z):
+            agreement = y * z[0]
+            if agreement > 1:
+                return 0.0
+            else:
+                return 1 - agreement
+
+        return value
+
+    def deriv_factory(self):
+        @jit(inline="always", **jit_kwargs)
+        def deriv(y, z, out):
+            agreement = y * z[0]
+            if agreement > 1:
+                out[0] = 0.0
+            else:
+                out[0] = -1
+
+        return deriv
+
 
 
 ################################################################

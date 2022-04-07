@@ -24,6 +24,8 @@ from ._loss import (
     MultiLogistic,
     LeastSquares,
     Huber,
+    Hinge,
+    AbsVal,
     ModifiedHuber,
     MultiModifiedHuber,
     SquaredHinge,
@@ -33,7 +35,7 @@ from ._loss import (
     decision_function_factory,
 )
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
-from .solver import CGD, GD, MD, SGD, SVRG, SAGA, batch_GD, History
+from .solver import CGD, GD, MD, DA, SGD, SVRG, SAGA, batch_GD, History
 from .estimator import ERM, MOM, TMean, LLM, GMOM, CH, HG
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float, numba_seed_numpy
 
@@ -53,6 +55,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         "logistic",
         "leastsquares",
         "huber",
+        "hinge",
+        "absolute",
         "modifiedhuber",
         "multimodifiedhuber",
         "multilogistic",
@@ -61,7 +65,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
     ]
     _penalties = ["none", "l2", "l1", "elasticnet"]
     _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch", "hg"]
-    _solvers = ["cgd", "gd", "md", "sgd", "svrg", "saga", "batch_gd"]
+    _solvers = ["cgd", "gd", "md", "da", "sgd", "svrg", "saga", "batch_gd"]
 
     def __init__(
         self,
@@ -359,6 +363,11 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return SquaredHinge()
         elif self.loss == "multisquaredhinge":
             return MultiSquaredHinge(self.n_classes)
+        elif self.loss == "hinge":
+            return Hinge()
+        elif self.loss == "absolute":
+            return AbsVal()
+
         else:
             raise ValueError("Loss unknown")
 
@@ -495,6 +504,27 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.R,
                 self.sparsity_ub,
             )
+        elif self.solver == "da":
+            # Create an history object for the solver
+            history = History("DA", self.max_iter, self.verbose)
+            self.history_ = history
+
+            return DA(
+                X,
+                y,
+                loss,
+                self.n_classes,
+                self.fit_intercept,
+                estimator,
+                self.max_iter,
+                self.tol,
+                self.step_size,
+                history,
+                self.stage_length,
+                self.R,
+                self.sparsity_ub,
+            )
+
         elif self.solver == "sgd":
             # Create an history object for the solver
             history = History("SGD", self.max_iter, self.verbose)
@@ -613,6 +643,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             self.loss = "logistic"
         elif self.loss == "logistic":
             pass
+        elif self.loss == "hinge":
+            pass
         elif self.loss == "multisquaredhinge":
             self.loss = "squaredhinge"
         elif self.loss == "squaredhinge":
@@ -627,7 +659,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
 
     def _check_regression_loss(self):
-        if self.loss not in ["leastsquares", "huber"]:
+        if self.loss not in ["leastsquares", "huber", "absolute"]:
             raise ValueError(
                 "You should specify a regression loss, got loss=%s" % self.loss
             )

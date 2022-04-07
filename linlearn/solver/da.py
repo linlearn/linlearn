@@ -48,9 +48,9 @@ def h(uu, lamda, p):
 #     stu = softthresh(u, lamda)
 #     return - np.sign(u) * np.power(stu, 1 / (p - 1)) / (
 #             (2 * C) * (np.linalg.norm(stu.flatten(), p / (p - 1)) ** ((2 - p) / (p - 1))))
+#
 
-
-class MD(Solver):
+class DA(Solver):
     def __init__(
         self,
         X,
@@ -68,7 +68,7 @@ class MD(Solver):
         sparsity_ub=None,
     ):
         assert n_classes == 1
-        super(MD, self).__init__(
+        super(DA, self).__init__(
             X=X,
             y=y,
             loss=loss,
@@ -118,7 +118,7 @@ class MD(Solver):
         if fit_intercept:
 
             @jit(**jit_kwargs)
-            def cycle(w0, weights, inner_products, state_estimator):
+            def cycle(w0, weights, inner_products, state_estimator, s_t, t):
                 max_abs_delta = 0.0
                 max_abs_weight = 0.0
 
@@ -129,7 +129,9 @@ class MD(Solver):
                 grad = state_estimator.gradient
                 # TODO : allocate w_new somewhere ?
 
-                w_new = w0 + prox(step * step_scaler(state_estimator) * grad - grad_omega(weights - w0, p, C), R, p, C)
+                s_t += grad
+                weights_plus = w0 + prox(step * step_scaler(state_estimator) * s_t / np.sqrt(t+1), R, p, C)#
+                w_new = (t * weights + weights_plus) / (t+1)
 
                 for k in range(n_classes):
                     abs_delta_j = fabs(w_new[0, k] - weights[0, k])
@@ -161,7 +163,7 @@ class MD(Solver):
         else:
             # There is no intercept, so the code changes slightly
             @jit(**jit_kwargs)
-            def cycle(w0, weights, inner_products, state_estimator):
+            def cycle(w0, weights, inner_products, state_estimator, s_t, t):
                 max_abs_delta = 0.0
                 max_abs_weight = 0.0
                 decision_function(weights, inner_products)
@@ -169,7 +171,10 @@ class MD(Solver):
                 grad_estimator(inner_products, state_estimator)
                 grad = state_estimator.gradient
                 # TODO : allocate w_new somewhere ?
-                w_new = w0 + prox(step * step_scaler(state_estimator) * grad - grad_omega(weights - w0, p, C), R, p, C)
+
+                s_t += grad
+                weights_plus = w0 + prox(step * step_scaler(state_estimator) * s_t / np.sqrt(t+1), R, p, C)
+                w_new = (t * weights + weights_plus) / (t+1)
 
                 for k in range(n_classes):
                     for j in range(n_features):
@@ -200,7 +205,7 @@ class MD(Solver):
         stage_length = self.stage_length
         history = self.history
         sb = self.sparsity_ub
-        print("running MD solver with : ")
+        print("running DA solver with : ")
         print("sb, R, stagelength = %d, %f, %d" % (sb, self.R, stage_length))
 
         if w0 is not None:
@@ -220,8 +225,9 @@ class MD(Solver):
 
         # TODO: First value for tolerance is 1.0 or NaN
         # history.update(epoch=0, obj=obj, tol=1.0, update_bar=True)
+        s_t = np.zeros_like(weights)
         if dummy_first_step:
-            cycle(sample_indices, weights, inner_products, state_estimator)
+            cycle(sample_indices, weights, inner_products, state_estimator, s_t, 1)
             if w0 is not None:
                 weights[:] = w0
             else:
@@ -229,11 +235,14 @@ class MD(Solver):
             decision_function(weights, inner_products)
 
         history.update(weights, 0)
+        s_t.fill(0.0)
 
         n_iter = 1
+        t = 0
         while n_iter <= max_iter:
+
             max_abs_delta, max_abs_weight = cycle(
-                w0, weights, inner_products, state_estimator
+                w0, weights, inner_products, state_estimator, s_t, t
             )
             # Compute the new value of objective
             # obj = objective(weights, inner_products)
@@ -252,9 +261,11 @@ class MD(Solver):
                     w=weights, n_iter=n_iter, success=True, tol=tol, message=None
                 )
             if n_iter % stage_length == 0:
+                s_t.fill(0.0)
+                t = 0
                 weights = hardthresh(weights, sb)
                 w0[:] = weights[:]
-
+            t += 1
             n_iter += 1
 
         history.close_bar()

@@ -31,6 +31,33 @@ nb_float = float64
 np_float = np.float64
 
 @jit(**jit_kwargs)
+def omega(th, p, C):
+    return C * ((np.power(np.abs(th), p).sum()) ** (2/p))
+
+@jit(**jit_kwargs)
+def grad_omega(th, p, C):
+    return 2 * C * ((np.linalg.norm(th.flatten(), p))**(2-p)) * np.sign(th) * np.power(np.abs(th), p-1)
+
+
+@jit(**jit_kwargs)
+def prox(u, R, p, C):
+    # first figure out lambda
+
+    lamda1, lamda2 = 0, np.max(np.abs(u))
+    while np.abs(lamda2 - lamda1) > 1e-5:
+        mid = (lamda1 + lamda2) / 2
+        if h(u, mid, p) > R:
+            lamda1 = mid
+        else:
+            lamda2 = mid
+    lamda = lamda1
+    stu = softthresh(u, lamda)
+    return - np.sign(u) * np.power(stu, 1 / (p - 1)) / (
+            (2 * C) * (np.linalg.norm(stu.flatten(), p / (p - 1)) ** ((2 - p) / (p - 1))))
+
+
+
+@jit(**jit_kwargs)
 def softthresh(u, lamda):
     return np.maximum(np.abs(u) - lamda, 0)
 
