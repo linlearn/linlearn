@@ -16,12 +16,12 @@ from .._loss import decision_function_factory, batch_decision_function_factory
 from .._utils import np_float, softthresh, hardthresh, omega, grad_omega, prox
 
 
-@jit(**jit_kwargs)
-def h(uu, lamda, p):
-    stu = softthresh(uu, lamda)
-    a = np.power(stu, 1 / (p - 1)).sum()
-    b = np.power(stu, p / (p - 1)).sum() ** (1 - 2 / p)
-    return a * b
+# @jit(**jit_kwargs)
+# def h(uu, lamda, p):
+#     stu = softthresh(uu, lamda)
+#     a = np.power(stu, 1 / (p - 1)).sum()
+#     b = np.power(stu, p / (p - 1)).sum() ** (1 - 2 / p)
+#     return a * b
 
 
 # @jit(**jit_kwargs)
@@ -67,7 +67,7 @@ class DA(Solver):
         R,
         sparsity_ub=None,
     ):
-        assert n_classes == 1
+        #assert n_classes == 1
         super(DA, self).__init__(
             X=X,
             y=y,

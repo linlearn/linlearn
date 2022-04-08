@@ -56,6 +56,10 @@ from .loaders import (
     load_wine,
     load_airbnb,
     load_statlog,
+    load_madelon,
+    load_arcene,
+    load_gene_expression,
+    load_glaucoma,
     describe_datasets,
 )
 

@@ -36,7 +36,46 @@ def omega(th, p, C):
 
 @jit(**jit_kwargs)
 def grad_omega(th, p, C):
-    return 2 * C * ((np.linalg.norm(th.flatten(), p))**(2-p)) * np.sign(th) * np.power(np.abs(th), p-1)
+    if th.shape[1] <= 1:
+        return 2 * C * ((np.linalg.norm(th.flatten(), p))**(2-p)) * np.sign(th) * np.power(np.abs(th), p-1)
+    euc_norms = np.sqrt(np.power(th, 2).sum(axis=1))
+    scaled_th = th.copy()
+    for i in range(th.shape[0]):
+        scaled_th[i,:] /= (euc_norms[i] ** (2-p))
+    return 2 * C * ((np.power(euc_norms, p).sum()) ** ((2-p)/p)) * scaled_th
+
+
+@jit(**jit_kwargs)
+def h(uu, lamda, p):
+    if uu.shape[1] > 1:
+        stu = np.maximum(np.sqrt((uu ** 2).sum(axis=1)) - lamda, 0)# softthresh(np.sqrt((uu ** 2).sum(axis=1)), lamda)
+    else:
+        stu = np.maximum(np.abs(uu) - lamda, 0).sum(axis=1)# softthresh(uu, lamda)
+    a = np.power(stu, 1 / (p - 1)).sum()
+    b = np.power(stu, p / (p - 1)).sum() ** (1 - 2 / p)
+    return a * b
+
+# @jit(**jit_kwargs)
+# def prox(u, R, p, C):
+#     # first figure out lambda
+#
+#     lamda1, lamda2 = 0, np.max(np.abs(u))
+#     while np.abs(lamda2 - lamda1) > 1e-5:
+#         mid = (lamda1 + lamda2) / 2
+#         if h(u, mid, p)/(2*C) > R:
+#             lamda1 = mid
+#         else:
+#             lamda2 = mid
+#     lamda = lamda1
+#     if u.shape[1] > 1:
+#         stu = np.maximum(np.sqrt((u ** 2).sum(axis=1)) - lamda, 0)# softthresh(np.sqrt((uu ** 2).sum(axis=1)), lamda)
+#     else:
+#         stu = np.maximum(np.abs(u) - lamda, 0)# softthresh(uu, lamda)
+#
+#     # stu = softthresh(u, lamda)
+#     # return - np.sign(u) * np.power(stu, 1 / (p - 1)) / (
+#     #         (2 * C) * (np.linalg.norm(stu.flatten(), p / (p - 1)) ** ((2 - p) / (p - 1))))
+#
 
 
 @jit(**jit_kwargs)
@@ -46,14 +85,31 @@ def prox(u, R, p, C):
     lamda1, lamda2 = 0, np.max(np.abs(u))
     while np.abs(lamda2 - lamda1) > 1e-5:
         mid = (lamda1 + lamda2) / 2
-        if h(u, mid, p) > R:
+        if h(u, mid, p)/(2*C) > R:
             lamda1 = mid
         else:
             lamda2 = mid
     lamda = lamda1
-    stu = softthresh(u, lamda)
-    return - np.sign(u) * np.power(stu, 1 / (p - 1)) / (
-            (2 * C) * (np.linalg.norm(stu.flatten(), p / (p - 1)) ** ((2 - p) / (p - 1))))
+    if u.shape[1] > 1:
+        stu = np.maximum(np.sqrt((u ** 2).sum(axis=1)) - lamda, 0)# softthresh(np.sqrt((uu ** 2).sum(axis=1)), lamda)
+        th = -u.copy()
+        for i in range(u.shape[0]):
+            if stu[i] <= 0:
+                th[i,:] = 0
+            else:
+                th[i,:] /= stu[i] ** ((p-2)/(p-1)) + lamda * (stu[i] ** (-1/(p-1)))
+        return th / (2 * C * (np.power(stu, p / (p - 1)).sum() ** ((2 - p) / p)))
+    else:
+        stu = np.maximum(np.abs(u) - lamda, 0)# softthresh(uu, lamda)
+        th = -np.power(stu, 1/(p-1)) * np.sign(u)
+        return th / (2 * C * (np.power(stu, p / (p - 1)).sum() ** ((2 - p) / p)))
+
+    #return th / (2 * C * (np.power(stu, p/(p-1)).sum() ** ((2-p)/p)))
+    #return th / (2 * C * (np.power(stu, p / (p - 1)).sum() ** ((2 - p) / p)))
+
+    # stu = softthresh(u, lamda)
+    # return - np.sign(u) * np.power(stu, 1 / (p - 1)) / (
+    #         (2 * C) * (np.linalg.norm(stu.flatten(), p / (p - 1)) ** ((2 - p) / (p - 1))))
 
 
 

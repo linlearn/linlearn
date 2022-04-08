@@ -617,8 +617,10 @@ class MultiSquaredHinge(Loss):
                     val += 0.5 * (1 + z[i]) ** 2
             if z[y] > 1:
                 val -= 0.5 * (1 + z[y]) ** 2
-            else:
+            elif z[y] > -1:
                 val -= 2 * z[y]
+            else:
+                val += 0.5 * (1 - z[i]) ** 2
             return val
 
         return value
@@ -628,10 +630,10 @@ class MultiSquaredHinge(Loss):
         @jit(**jit_kwargs)
         def deriv(y, z, out):
             for i in range(n_classes):
-                if z[i] < 1:
+                if z[i] > -1:
                     out[i] = 0.0
                 else:
-                    out[i] = z[i] - 1
+                    out[i] = 1 + z[i]
             if z[y] < 1:
                 out[y] = z[y] - 1
             else:
@@ -666,10 +668,49 @@ class Hinge(Loss):
             if agreement > 1:
                 out[0] = 0.0
             else:
-                out[0] = -1
+                out[0] = -y
 
         return deriv
 
+
+class MultiHinge(Loss):
+    def __init__(self, n_classes):
+        self.lip = np.inf
+        self.n_classes = n_classes
+
+    def value_factory(self):
+        n_classes = self.n_classes
+        @jit(**jit_kwargs)
+        def value(y, z):
+            val = 0.0
+            for i in range(n_classes):
+                if z[i] > -1:
+                    val += 1 + z[i]
+            if z[y] > 1:
+                val -= 1 + z[y]
+            elif z[y] > -1:
+                val -= 2 * z[y]
+            else:
+                val += 1 - z[y]
+            return val
+
+        return value
+
+    def deriv_factory(self):
+        n_classes = self.n_classes
+        @jit(**jit_kwargs)
+        def deriv(y, z, out):
+            for i in range(n_classes):
+                if z[i] < -1:
+                    out[i] = 0.0
+                else:
+                    out[i] = 1.0
+            if z[y] < 1:
+                out[y] = -1.0
+            else:
+                out[y] = 0.0
+
+        return deriv
 
 
 ################################################################

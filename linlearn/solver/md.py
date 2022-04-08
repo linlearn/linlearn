@@ -67,7 +67,7 @@ class MD(Solver):
         R,
         sparsity_ub=None,
     ):
-        assert n_classes == 1
+        #assert n_classes == 1
         super(MD, self).__init__(
             X=X,
             y=y,
@@ -130,6 +130,10 @@ class MD(Solver):
                 # TODO : allocate w_new somewhere ?
 
                 w_new = w0 + prox(step * step_scaler(state_estimator) * grad - grad_omega(weights - w0, p, C), R, p, C)
+                # if np.isnan(w_new).any():
+                #     print("got nan")
+                # else:
+                #     print("no nan")
 
                 for k in range(n_classes):
                     abs_delta_j = fabs(w_new[0, k] - weights[0, k])

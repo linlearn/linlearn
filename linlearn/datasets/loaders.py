@@ -602,6 +602,84 @@ def load_fifa19():
     return dataset.load_from_csv("fifa19.csv.gz", dtype=dtype)
 
 
+def load_madelon():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Madelon
+    # preprocessed with parser.py in data/madelon
+
+    features = [i for i in range(500)] #+ ["label"]
+
+
+    dtype = {x: np.float for x in features}
+    #dtype["label"] = "category"
+
+    dataset = Dataset.from_dtype(
+        name="madelon",
+        task="binary-classification",
+        label_column='label',
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("madelon.csv.gz", dtype=dtype)
+
+
+def load_arcene():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Arcene
+    # preprocessed with parser.py in data/arcene
+
+    features = [i for i in range(10000)] #+ ["label"]
+
+
+    dtype = {x: np.float for x in features}
+    #dtype["label"] = "category"
+
+    dataset = Dataset.from_dtype(
+        name="arcene",
+        task="binary-classification",
+        label_column='label',
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("arcene.csv.gz", dtype=dtype)
+
+
+def load_gene_expression():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/gene+expression+cancer+RNA-Seq
+    # preprocessed with parser.py in data/TCGA-PANCAN-HiSeq-801x20531
+
+    features = ["gene_"+str(i) for i in range(20531)] #+ ["label"]
+
+    dtype = {x: np.float for x in features}
+    #dtype["label"] = "category"
+
+    dataset = Dataset.from_dtype(
+        name="gene-expression",
+        task="multiclass-classification",
+        label_column='Class',
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("gene_expression.csv.gz", dtype=dtype)
+
+
+def load_glaucoma():
+    # directly downloaded from https://www.machinelearningplus.com/machine-learning/feature-selection/
+
+    features = ['ag', 'at', 'as', 'an', 'ai', 'eag', 'eat', 'eas', 'ean', 'eai', 'abrg',
+       'abrt', 'abrs', 'abrn', 'abri', 'hic', 'mhcg', 'mhct', 'mhcs', 'mhcn',
+       'mhci', 'phcg', 'phct', 'phcs', 'phcn', 'phci', 'hvc', 'vbsg', 'vbst',
+       'vbss', 'vbsn', 'vbsi', 'vasg', 'vast', 'vass', 'vasn', 'vasi', 'vbrg',
+       'vbrt', 'vbrs', 'vbrn', 'vbri', 'varg', 'vart', 'vars', 'varn', 'vari',
+       'mdg', 'mdt', 'mds', 'mdn', 'mdi', 'tmg', 'tmt', 'tms', 'tmn', 'tmi',
+       'mr', 'rnf', 'mdic', 'emd', 'mv']
+
+    dtype = {x: np.float for x in features}
+
+    dataset = Dataset.from_dtype(
+        name="glaucoma",
+        task="binary-classification",
+        label_column='Class',
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("glaucoma.csv.gz", dtype=dtype)
+
+
 def load_nyctaxi():
     # downloaded from https://www.kaggle.com/c/nyc-taxi-trip-duration/data?select=test.zip
     # only using train file which has labels, preprocessed with nyctaxi_preprocess.py based on

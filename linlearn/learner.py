@@ -30,6 +30,7 @@ from ._loss import (
     MultiModifiedHuber,
     SquaredHinge,
     MultiSquaredHinge,
+    MultiHinge,
     compute_steps,
     compute_steps_cgd,
     decision_function_factory,
@@ -56,6 +57,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         "leastsquares",
         "huber",
         "hinge",
+        "multihinge",
         "absolute",
         "modifiedhuber",
         "multimodifiedhuber",
@@ -359,6 +361,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return MultiModifiedHuber(self.n_classes)
         elif self.loss == "multilogistic":
             return MultiLogistic(self.n_classes)
+        elif self.loss == "multihinge":
+            return MultiHinge(self.n_classes)
         elif self.loss == "squaredhinge":
             return SquaredHinge()
         elif self.loss == "multisquaredhinge":
@@ -440,6 +444,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         if self.solver == "cgd":
             step = compute_steps_cgd(X, self.estimator, self.fit_intercept, loss.lip, self.percentage,
                                      n_samples_in_block, self.eps)
+        elif self.solver in ["md", "da"]:
+            step = 1.0
         else:
             step = compute_steps(X, self.solver, self.estimator, self.fit_intercept, loss.lip, self.percentage,
                                  max(1, int(1 / self.block_size)), self.eps)
@@ -488,7 +494,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             # Create an history object for the solver
             history = History("MD", self.max_iter, self.verbose)
             self.history_ = history
-
             return MD(
                 X,
                 y,
@@ -508,7 +513,6 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             # Create an history object for the solver
             history = History("DA", self.max_iter, self.verbose)
             self.history_ = history
-
             return DA(
                 X,
                 y,
@@ -628,6 +632,11 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             self.loss = "multisquaredhinge"
         elif self.loss == "multisquaredhinge":
             pass
+        elif self.loss == "hinge":
+            # if we are in the multiclass case switch to multiclass loss
+            self.loss = "multihinge"
+        elif self.loss == "multihinge":
+            pass
         elif self.loss == "modifiedhuber":
             # if we are in the multiclass case switch to multiclass loss
             self.loss = "multimodifiedhuber"
@@ -635,7 +644,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             pass
         else:
             raise ValueError(
-                "You should specify a classification loss, got loss=%s" % self.loss
+                "You should specify a multiclass classification loss, got loss=%s" % self.loss
             )
 
     def _check_binary_loss(self):
