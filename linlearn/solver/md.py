@@ -130,10 +130,6 @@ class MD(Solver):
                 # TODO : allocate w_new somewhere ?
 
                 w_new = w0 + prox(step * step_scaler(state_estimator) * grad - grad_omega(weights - w0, p, C), R, p, C)
-                # if np.isnan(w_new).any():
-                #     print("got nan")
-                # else:
-                #     print("no nan")
 
                 for k in range(n_classes):
                     abs_delta_j = fabs(w_new[0, k] - weights[0, k])
@@ -145,6 +141,7 @@ class MD(Solver):
                         max_abs_weight = abs_w_j_new
 
                     weights[0, k] = w_new[0, k]
+
                     for j in range(n_features):
 
                         # Update the maximum update change
@@ -157,6 +154,8 @@ class MD(Solver):
                             max_abs_weight = abs_w_j_new
 
                         weights[j + 1, k] = w_new[j + 1, k]
+
+                #weights[:] = w_new[:]
 
                 return max_abs_delta, max_abs_weight
 
@@ -239,6 +238,7 @@ class MD(Solver):
             max_abs_delta, max_abs_weight = cycle(
                 w0, weights, inner_products, state_estimator
             )
+
             # Compute the new value of objective
             # obj = objective(weights, inner_products)
             if max_abs_weight == 0.0:

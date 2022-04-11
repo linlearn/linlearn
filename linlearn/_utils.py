@@ -41,7 +41,8 @@ def grad_omega(th, p, C):
     euc_norms = np.sqrt(np.power(th, 2).sum(axis=1))
     scaled_th = th.copy()
     for i in range(th.shape[0]):
-        scaled_th[i,:] /= (euc_norms[i] ** (2-p))
+        if euc_norms[i] > 0:
+            scaled_th[i,:] /= (euc_norms[i] ** (2-p))
     return 2 * C * ((np.power(euc_norms, p).sum()) ** ((2-p)/p)) * scaled_th
 
 
@@ -119,13 +120,19 @@ def softthresh(u, lamda):
 
 @jit(**jit_kwargs)
 def hardthresh(u, k):
-    abs_u = np.abs(u.flatten())
+
+    if u.shape[1] <= 1:
+        abs_u = np.abs(u.flatten())
+    else:
+        abs_u = np.sqrt(np.power(u, 2).sum(axis=1))
+
     thresh = np.partition(abs_u, -k)[-k]
     u_s = u.copy()
     for i in range(u.shape[0]):
         if abs_u[i] < thresh:
-            u_s[i] = 0
+            u_s[i, :] = 0
     return u_s
+
 
 @jit(**jit_kwargs)
 def partition(A, p, r, ind):
