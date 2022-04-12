@@ -37,7 +37,7 @@ from ._loss import (
 )
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
 from .solver import CGD, GD, MD, DA, SGD, SVRG, SAGA, batch_GD, History
-from .estimator import ERM, MOM, TMean, LLM, GMOM, CH, HG
+from .estimator import ERM, MOM, TMean, LLM, GMOM, CH, HG, DKK
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float, numba_seed_numpy
 
 jit_kwargs = {
@@ -66,7 +66,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         "multisquaredhinge",
     ]
     _penalties = ["none", "l2", "l1", "elasticnet"]
-    _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch", "hg"]
+    _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch", "hg", "dkk"]
     _solvers = ["cgd", "gd", "md", "da", "sgd", "svrg", "saga", "batch_gd"]
 
     def __init__(
@@ -404,6 +404,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return HG(
                 X, y, loss, self.n_classes, self.fit_intercept, eps=self.percentage
             )
+        elif self.estimator == "dkk":
+            return DKK(
+                X, y, loss, self.n_classes, self.fit_intercept, eps=self.percentage
+            )
         else:
             raise ValueError("Unknown estimator")
 
@@ -654,6 +658,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             pass
         elif self.loss == "hinge":
             pass
+        elif self.loss == "multihinge":
+            self.loss = "hinge"
         elif self.loss == "multisquaredhinge":
             self.loss = "squaredhinge"
         elif self.loss == "squaredhinge":

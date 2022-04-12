@@ -60,6 +60,7 @@ from .loaders import (
     load_arcene,
     load_gene_expression,
     load_glaucoma,
+    load_gisette,
     describe_datasets,
 )
 

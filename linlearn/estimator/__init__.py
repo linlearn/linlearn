@@ -13,3 +13,4 @@ from .llm import LLM, StateLLM
 from .gmom import GMOM, StateGMOM
 from .tmean import TMean, StateTMean
 from .hg import HG, StateHG
+from .dkk import DKK, StateDKK

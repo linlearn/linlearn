@@ -679,6 +679,25 @@ def load_glaucoma():
     )
     return dataset.load_from_csv("glaucoma.csv.gz", dtype=dtype)
 
+def load_gisette():
+    # downloaded from https://archive.ics.uci.edu/ml/datasets/Gisette
+    # preprocessed with parser.py in data/gisette
+
+    features = list(range(5000))
+
+    dtype = {x: np.float for x in features}
+    #dtype["label"] = "category"
+
+    dataset = Dataset.from_dtype(
+        name="gisette",
+        task="binary-classification",
+        label_column='label',
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("gisette.csv.gz", dtype=dtype)
+
+
+
 
 def load_nyctaxi():
     # downloaded from https://www.kaggle.com/c/nyc-taxi-trip-duration/data?select=test.zip

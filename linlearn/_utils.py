@@ -38,12 +38,38 @@ def omega(th, p, C):
 def grad_omega(th, p, C):
     if th.shape[1] <= 1:
         return 2 * C * ((np.linalg.norm(th.flatten(), p))**(2-p)) * np.sign(th) * np.power(np.abs(th), p-1)
-    euc_norms = np.sqrt(np.power(th, 2).sum(axis=1))
+    d, k = th.shape
+    euc_norms = np.empty(d)
+    for j in range(th.shape[1]):
+        for i in range(d):
+            euc_norms[i] += th[i, j] ** 2
+    np.power(euc_norms, (2-p)/2, euc_norms)
+    # for i in range(d):
+    #     euc_norms[i] = np.sqrt(euc_norms[i])
+
+    #euc_norms = np.sqrt(np.power(th, 2).sum(axis=1))
     scaled_th = th.copy()
-    for i in range(th.shape[0]):
+    for i in range(d):
         if euc_norms[i] > 0:
-            scaled_th[i,:] /= (euc_norms[i] ** (2-p))
-    return 2 * C * ((np.power(euc_norms, p).sum()) ** ((2-p)/p)) * scaled_th
+            for j in range(k):
+                scaled_th[i, k] /= euc_norms[i]
+
+    scale = 0.0
+    for j in range(k):
+        for i in range(d):
+            if euc_norms[i] > 0:
+                scaled_th[i, j] /= euc_norms[i]
+
+    for i in range(d):
+        scale += (euc_norms[i] ** (p / (2 - p)))
+
+    scale = scale ** ((2-p)/p)
+
+    for j in range(k):
+        for i in range(d):
+            scaled_th[i, j] *= 2 * C * scale
+
+    return scaled_th
 
 
 @jit(**jit_kwargs)
@@ -166,6 +192,7 @@ def findKth_QS(A, n, k):
             AA = AA[kk1:]
             N = N - kk1
             K = K - kk1
+
 
 @jit(**jit_kwargs)
 def findK2(A, n, k1, k2):
