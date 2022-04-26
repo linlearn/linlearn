@@ -5,15 +5,17 @@
 
 from collections import namedtuple
 import numpy as np
-from numba import jit
+from numba import jit, objmode
 from ._base import Estimator, jit_kwargs
 from .._utils import np_float
+
+from scipy.linalg import eigh
 
 
 @jit(**jit_kwargs)
 def find_t(g, w, eps):
     p1, p2 = int((len(g)-1)/max(1, 2*(1 - 2*eps))), (len(g)-1)
-    while p2 - p1 > 2:
+    while p2 - p1 > 1:
         mid = (p1 + p2) // 2
         t = np.partition(g, mid)[mid]
         sm = 0.0
@@ -26,13 +28,130 @@ def find_t(g, w, eps):
             p2 = mid
     return t
 
+# #@jit(**jit_kwargs)
+# def find_t2(g, w, eps):
+#     p1, p2 = int((len(g)-1)/max(1, 2*(1 - 2*eps))), (len(g)-1)
+#     mid = (p1 + p2) // 2
+#     argpart = np.argpartition(g, mid)
+#     t = g[argpart[mid]]
+#     sm = 0.0
+#     for i in range(mid, len(g)):
+#         sm += w[argpart[i]]
+#     if sm >= eps:
+#         indices = argpart[mid:]
+#     else:
+#         indices = argpart[:mid]
+#     vals = g[indices]
+#     weight_vals = w[indices]
+#     n_vals = len(vals)
+#     while n_vals > 1:
+#         mid = n_vals // 2
+#         argpart = np.argpartition(vals, mid)
+#         t = vals[argpart[mid]]
+#         if sm >= eps:
+#             for i in range(mid):
+#                 sm -= weight_vals[argpart[i]]
+#         else:
+#             for i in range(mid+1, n_vals):
+#                 sm += weight_vals[argpart[i]]
+#
+#         if sm >= eps:
+#             indices = argpart[mid:]
+#         else:
+#             indices = argpart[:mid]
+#
+#         vals = g[indices]
+#         weight_vals = w[indices]
+#         n_vals = len(vals)
+#
+#     return t
+
+@jit(**jit_kwargs)
+def projected_partition(A, p, r, ind, B):
+    A[r], A[ind] = A[ind], A[r]
+    B[r], B[ind] = B[ind], B[r]
+
+    x = A[r]
+    i = p - 1
+    for j in range(p, r):
+        if A[j] <= x:
+            i += 1
+            if A[j] < x:
+                A[j], A[i] = A[i], A[j]
+                B[j], B[i] = B[i], B[j]
+
+    A[i+1], A[r] = A[r], A[i+1]
+    B[i+1], B[r] = B[r], B[i+1]
+    return i + 1
+
+@jit(**jit_kwargs)
+def projected_findKth_QS(A, n, k, B):
+    N = n
+    AA = A
+    BB = B
+    K = k
+
+    while N > 1:
+
+        kk1 = projected_partition(AA, 0, N-1, N//2, BB)+1
+        if kk1 == K:
+            break
+        elif K < kk1:
+            # AA = AA[:kk1-1]
+            N = kk1-1
+        else:
+            AA = AA[kk1:]
+            BB = BB[kk1:]
+            N = N - kk1
+            K = K - kk1
+
+
+@jit(**jit_kwargs)
+def find_t3(g, w, eps):
+    #p1, p2 = int((len(g)-1)/max(1, 2*(1 - 2*eps))), (len(g)-1)
+    mid = len(g)//2#(p1 + p2) // 2
+    projected_findKth_QS(g, len(g), mid+1, w)
+    sm = 0.0
+    for i in range(mid, len(g)):
+        sm += w[i]
+    if sm > eps:
+        vals = g[mid:]
+        weight_vals = w[mid:]
+    else:
+        vals = g[:mid]
+        weight_vals = w[:mid]
+    n_vals = len(vals)
+
+    while n_vals > 1:
+        mid = n_vals // 2
+        projected_findKth_QS(vals, n_vals, mid+1, weight_vals)
+
+        if sm > eps:
+            for i in range(mid):
+                sm -= weight_vals[i]
+        else:
+            for i in range(mid, n_vals):
+                sm += weight_vals[i]
+
+        if sm > eps:
+            vals = vals[mid:]
+            weight_vals = weight_vals[mid:]
+
+        else:
+            vals = vals[:mid]
+            weight_vals = weight_vals[:mid]
+
+        n_vals = len(vals)
+
+    return vals[0]
+
 @jit(**jit_kwargs)
 def dkk(vecs, eps):
     n, d = vecs.shape
     w = np.empty(len(vecs))
     ph1 = np.empty(vecs.shape)
     Sigma = np.empty((d, d))
-    w.fill(1 / len(vecs))
+    w.fill(1.0 / len(vecs))
     sum_w = 1.0
     while sum_w > 1 - 2 * eps:
         mu = np.dot(w, vecs) / sum_w
@@ -45,40 +164,45 @@ def dkk(vecs, eps):
         Sigma.fill(0.0)
         for j1 in range(d):
             for j2 in range(j1, d):
+                Sigma[j1, j2] = 0.0
                 for i in range(n):
                     Sigma[j1, j2] += w[i] * ph1[i, j1] * ph1[i, j2]
-        Sigma /= sum_w
-        Sigma += Sigma.T
-        for j in range(d):
-            Sigma[j, j] /= 2
+                Sigma[j1, j2] /= sum_w
+                Sigma[j2, j1] = Sigma[j1, j2]
 
         #Sigma = ph1.T @ (w[:, np.newaxis] * ph1)
         # TODO : Figure out how to compute only first eigenvector in Numba
-        eigvals, eigvecs = np.linalg.eigh(Sigma)
-        eigvec = eigvecs[:, np.argmax(eigvals)]
-        #_, eigvec = scipy.linalg.eigh(Sigma, subset_by_index=[d - 1, d - 1])
+        with objmode(eigvec='float64[:]'):  # annotate return type
+            # this region is executed by object-mode.
+            _, eigvec = eigh(Sigma, subset_by_index=[d - 1, d - 1])
+            #np.ascontiguousarray(eigvec)
+        # eigvals, eigvecs = np.linalg.eigh(Sigma)
+        # eigvec = eigvecs[:, np.argmax(eigvals)]
 
         g = np.square(ph1 @ eigvec).reshape(n)
+        f = g.copy()
 
-        #________________________________
-        asg = np.argsort(g)#[::-1]
-        sm = 0.0
-        ind = n-1
-        while sm < eps:
-            sm += w[asg[ind]]
-            ind -= 1
-        t = g[asg[ind + 1]]
-        #________________________________
-        # t = find_t(g, w, eps)
+        # ________________________________
+        # asg = np.argsort(g)#[::-1]
+        # sm = 0.0
+        # ind = n-1
+        # while sm < eps:
+        #     sm += w[asg[ind]]
+        #     ind -= 1
+        # t = g[asg[ind + 1]]
+        # ________________________________
+        t = find_t3(g, w, eps)
 
-        f = g#.copy()
+
         # f[f < t] = 0
         m = 0.0
+        #print("pass 2")
         for i in range(n):
             if f[i] < t:
                 f[i] = 0.0
             elif f[i] > m and w[i] > 0:
                 m = f[i]
+        #print("pass 3")
         w = np.multiply(w, 1 - f / m)
         sum_w = np.sum(w)
 

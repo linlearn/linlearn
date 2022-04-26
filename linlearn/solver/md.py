@@ -233,33 +233,35 @@ class MD(Solver):
 
         history.update(weights, 0)
 
-        n_iter = 1
-        while n_iter <= max_iter:
-            max_abs_delta, max_abs_weight = cycle(
-                w0, weights, inner_products, state_estimator
-            )
+        n_iter = 0
+        while n_iter + stage_length <= max_iter:
 
-            # Compute the new value of objective
-            # obj = objective(weights, inner_products)
-            if max_abs_weight == 0.0:
-                current_tol = 0.0
-            else:
-                current_tol = max_abs_delta / max_abs_weight
-
-            # TODO: tester tous les cas "max_abs_weight == 0.0" etc..
-            # history.update(epoch=n_iter, obj=obj, tol=current_tol, update_bar=True)
-            history.update(weights, 0)
-
-            if current_tol < tol:
-                history.close_bar()
-                return OptimizationResult(
-                    w=weights, n_iter=n_iter, success=True, tol=tol, message=None
+            for t in range(stage_length):
+                max_abs_delta, max_abs_weight = cycle(
+                    w0, weights, inner_products, state_estimator
                 )
-            if n_iter % stage_length == 0:
-                weights = hardthresh(weights, sb)
-                w0[:] = weights[:]
 
-            n_iter += 1
+                # Compute the new value of objective
+                # obj = objective(weights, inner_products)
+                if max_abs_weight == 0.0:
+                    current_tol = 0.0
+                else:
+                    current_tol = max_abs_delta / max_abs_weight
+
+                # TODO: tester tous les cas "max_abs_weight == 0.0" etc..
+                # history.update(epoch=n_iter, obj=obj, tol=current_tol, update_bar=True)
+                history.update(weights, 0)
+
+                if current_tol < tol:
+                    history.close_bar()
+                    return OptimizationResult(
+                        w=weights, n_iter=n_iter, success=True, tol=tol, message=None
+                    )
+                n_iter += 1
+
+            weights = hardthresh(weights, sb)
+            w0[:] = weights[:]
+
 
         history.close_bar()
         if tol > 0:
