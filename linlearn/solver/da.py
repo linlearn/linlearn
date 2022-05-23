@@ -13,7 +13,7 @@ from numba import jit
 
 from ._base import Solver, OptimizationResult, jit_kwargs
 from .._loss import decision_function_factory
-from .._utils import np_float, softthresh, hardthresh, omega, grad_omega, prox
+from .._utils import np_float, hardthresh, prox
 
 
 # @jit(**jit_kwargs)
@@ -205,8 +205,6 @@ class DA(Solver):
         stage_length = self.stage_length
         history = self.history
         sb = self.sparsity_ub
-        print("running DA solver with : ")
-        print("(sb, R, stagelength) = (%d, %f, %d)" % (sb, self.R, stage_length))
 
         if w0 is not None:
             weights[:] = w0

@@ -47,10 +47,21 @@ def mom(v, K):
     
 
 @jit(**jit_kwargs)
-def liuliu19_solver(X, y, step_size, k_prime, n_iter, loss_deriv, estim, tm_alpha=0.01):
+def liuliu19_solver(X, y, step_size, k_prime, n_iter, loss_deriv, estim, random_state=None, tm_alpha=0.01, only_last=True):
     n, d = X.shape
-    mom_blocks = int(4.5 * np.log(d))
+    #mom_blocks = min(int(4.5 * np.log(d)), n)
+    confidence = 0.01
+    mom_blocks = min(int(18 * np.log(1 / confidence)), n)
 
+    if estim == "mom" and random_state is None:
+        print("You must provide a random state for MOM estimator")
+        return
+    # seed numba's random generator
+    np.random.seed(random_state)
+
+
+    if not only_last:
+        betas = np.zeros((n_iter+1, d))
     beta = np.zeros(d)
     gradients_ph = np.empty_like(X)
     grad_ph = np.empty(d)
@@ -79,5 +90,10 @@ def liuliu19_solver(X, y, step_size, k_prime, n_iter, loss_deriv, estim, tm_alph
 
         beta -= step_size * grad_ph
         hardthresh(beta, k_prime)
+        if not only_last:
+            betas[t+1, :] = beta
 
-    return beta
+    if not only_last:
+        return betas
+    else:
+        return beta.reshape((1, d))

@@ -39,7 +39,7 @@ def solve_SDP(Sigma, k):
     return prob.value, H.value
 
 @jit(**jit_kwargs)
-def RSGE(Xss, k_p, ro_sep, cl, grad_ph, pph, pTau):
+def RSGE(Xss, k_p, ro_sep, cl, grad_ph, pph, pTau, eliminations_per_step=2):
     n, d = Xss.shape
     Xs = Xss#.copy()
     id = np.random.randint(10000)
@@ -74,6 +74,7 @@ def RSGE(Xss, k_p, ro_sep, cl, grad_ph, pph, pTau):
         if lamda < ro_sep:
             return #G
         else:
+            print("elminating")
             #Tau = np.abs(np.einsum("ij, jk, ik -> i", ph, H, ph))
             Tau.fill(0.0)
             for i in range(n - N_eliminated):
@@ -82,20 +83,41 @@ def RSGE(Xss, k_p, ro_sep, cl, grad_ph, pph, pTau):
                         Tau[i] += ph[i, j] * H[j, k] * ph[i, k]
                 Tau[i] = np.abs(Tau[i])
             Tau = Tau[:n - N_eliminated]
-            arg = np.argmax(Tau) #np.random.choice(len(Tau), p=Tau / Tau.sum())  #
-            N_eliminated += 1
-            #return RSGE(np.vstack((Xs[:arg, :], Xs[arg + 1:, :])), k, ro_sep)
 
-            #Xs = np.vstack((Xs[:arg, :], Xs[arg + 1:, :]))
-            for j in range(d):
-                Xs[arg, j] = Xs[n - N_eliminated, j]
+            thresh = np.partition(Tau, n-N_eliminated-eliminations_per_step)[n-N_eliminated-eliminations_per_step]
+
+            eliminated_indices = []#np.sort(np.argpartition(Tau, n-N_eliminated-eliminations_per_step)[n-N_eliminated-eliminations_per_step:])
+            for i in range(n - N_eliminated):
+                if Tau[i] >= thresh:
+                    eliminated_indices.append(i)
+
+            pointer = n-N_eliminated-1
+            for i in range(eliminations_per_step):
+                eliminated_index = eliminated_indices[eliminations_per_step-1-i]
+                if eliminated_index == pointer:
+                    pass
+                else:
+                    for j in range(d):
+                        Xs[eliminated_index, j] = Xs[pointer, j]
+                pointer -= 1
+            N_eliminated += eliminations_per_step
+
+            # arg = np.argmax(Tau) #np.random.choice(len(Tau), p=Tau / Tau.sum())  #
+            # N_eliminated += 1
+            # #return RSGE(np.vstack((Xs[:arg, :], Xs[arg + 1:, :])), k, ro_sep)
+            # #Xs = np.vstack((Xs[:arg, :], Xs[arg + 1:, :]))
+            # for j in range(d):
+            #     Xs[arg, j] = Xs[n - N_eliminated, j]
+
             Xs = Xs[:n - N_eliminated]
     return #G
 
 @jit(**jit_kwargs)
-def liuliu18_solver(X, y, step_size, k_prime, n_iter, loss_deriv, theta_star, sigma, C_gamma = 1, corrupt_lvl=0.0):
+def liuliu18_solver(X, y, step_size, k_prime, n_iter, loss_deriv, theta_star, sigma, C_gamma = 1, corrupt_lvl=0.0, only_last=True):
     n, d = X.shape
     beta = np.zeros(d)
+    if not only_last:
+        betas = np.empty((n_iter, d))
     gradients_ph = np.empty_like(X)
     grad_ph = np.empty(d)
     inner_products = np.empty(n)
@@ -116,5 +138,10 @@ def liuliu18_solver(X, y, step_size, k_prime, n_iter, loss_deriv, theta_star, si
 
         beta -= step_size * grad_ph
         hardthresh(beta, k_prime)
+        if not only_last:
+            betas[t, :] = beta
 
-    return beta
+    if not only_last:
+        return betas
+    else:
+        return beta.reshape((1, d))

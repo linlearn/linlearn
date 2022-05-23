@@ -3,13 +3,16 @@ import numpy as np
 import logging
 import pickle
 from datetime import datetime
-from scipy.optimize import minimize
+from sklearn import linear_model
 import sys
 import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
-from collections import namedtuple
+import warnings
 import os
+from liuliu19 import liuliu19_solver
+from liuliu18 import liuliu18_solver
+from scipy.stats import multivariate_t
 from noise_generators import (
     gaussian,
     frechet,
@@ -20,6 +23,20 @@ from noise_generators import (
     pareto,
 )
 import argparse
+from numba import jit, objmode
+
+NOPYTHON = True
+NOGIL = True
+BOUNDSCHECK = False
+FASTMATH = True
+PARALLEL = False
+
+jit_kwargs = {
+    "nopython": NOPYTHON,
+    "nogil": NOGIL,
+    "boundscheck": BOUNDSCHECK,
+    "fastmath": FASTMATH,
+}
 
 
 def ensure_directory(directory):
@@ -46,18 +63,21 @@ logging.basicConfig(
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--n_samples", type=int, default=500)
-parser.add_argument("--n_features", type=int, default=100000)
+parser.add_argument("--n_features", type=int, default=5000)
+parser.add_argument("--sparsity", type=int, default=40)
+parser.add_argument("--sparsity_ub", type=int, default=50)
 parser.add_argument("--random_seed", type=int, default=42)
 parser.add_argument("--n_repeats", type=int, default=5)
 parser.add_argument("--outlier_types", nargs="+", type=int, default=[])
-parser.add_argument("--max_iter", type=int, default=100)
+parser.add_argument("--max_iter", type=int, default=520)
 parser.add_argument("--step_size", type=float, default=0.1)
+parser.add_argument("--stage_length", type=int, default=40)
 parser.add_argument("--confidence", type=float, default=0.01)
 parser.add_argument("--corruption_rate", type=float, default=0.0)
 parser.add_argument(
     "--noise_dist",
     type=str,
-    default="gaussian",
+    default="student",
     choices=["gaussian", "student", "weibull", "loglogistic", "lognormal", "pareto"],
 )
 parser.add_argument("--X_centered", dest="X_centered", action="store_true")
@@ -74,6 +94,8 @@ logging.info(48 * "=")
 
 n_repeats = args.n_repeats
 n_samples = args.n_samples
+sparsity = args.sparsity
+sparsity_ub = args.sparsity_ub
 n_features = args.n_features
 save_results = args.save_results
 corruption_rate = args.corruption_rate
@@ -86,15 +108,10 @@ fit_intercept = False
 confidence = args.confidence
 random_seed = args.random_seed
 
-percentage = np.log(4 / confidence) / n_samples + 2 * corruption_rate
-block_size = 1 / (18 * np.log(1 / confidence))
-llm_block_size = 1 / (4 * np.log(1 / confidence))
-if corruption_rate > 0.0:
-    block_size = min(block_size, 1 / (4 * (corruption_rate * n_samples)))
-    llm_block_size = min(llm_block_size, 1 / (4 * (corruption_rate * n_samples)))
-#print(1 / (4 * (corruption_rate * n_samples)))
+percentage = np.log(4 / confidence) / n_samples + corruption_rate
+
+# print(1 / (4 * (corruption_rate * n_samples)))
 logging.info("percentage is %.2f" % percentage)
-logging.info("block size is :  %.2f" % block_size)
 
 noise_sigma = {
     "gaussian": 20,
@@ -109,17 +126,15 @@ noise_sigma = {
 X_centered = args.X_centered
 noise_dist = args.noise_dist
 step_size = args.step_size
+stage_length = args.stage_length
 T = args.max_iter
 outlier_types = args.outlier_types
-
-Sigma_X = np.diag(np.arange(1, n_features + 1))
-mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
 
 w_star_dist = "uniform"
 
 logging.info("Lauching experiment with parameters : \n %r" % args)
 
-logging.info("mu_X = %r , Sigma_X = %r" % (mu_X, Sigma_X))
+# logging.info("mu_X = %r , Sigma_X = %r" % (mu_X, Sigma_X))
 logging.info(
     "w_star_dist = %s , noise_dist = %s , sigma = %f"
     % (w_star_dist, noise_dist, noise_sigma[noise_dist])
@@ -127,9 +142,12 @@ logging.info(
 
 rng = np.random.RandomState(random_seed)  ## Global random generator
 
+min_Sigma = 1.0
+max_Sigma = 10.0
+
 
 def corrupt_data(X, y, types, corruption_rate):
-    number = int((n_samples * corruption_rate) / len(types))
+    number = int(n_samples * corruption_rate)
     corrupted_indices = rng.choice(n_samples, size=number, replace=False)
 
     dir = rng.randn(n_features)
@@ -145,12 +163,12 @@ def corrupt_data(X, y, types, corruption_rate):
             X[i, :] = np.max(Sigma_X) * np.ones(n_features)
             y[i] = 2 * (2 * rng.randint(2) - 1) * max_y
         elif type == 3:
-            X[i, :] = 10 * np.max(Sigma_X) * dir + rng.randn(n_features)
+            X[i, :] = 100 * np.max(Sigma_X) * dir + rng.randn(n_features)
             y[i] = rng.randint(2)
         elif type == 4:
             vec = rng.randn(n_features)
             vec /= np.sqrt((vec * vec).sum())
-            X[i, :] = 10 * np.max(Sigma_X) * vec
+            X[i, :] = 100 * np.max(Sigma_X) * vec
 
             y[i] = max_y * ((2 * rng.randint(2) - 1) + (2 * rng.rand() - 1) / 5)
         elif type == 5:
@@ -164,30 +182,148 @@ def corrupt_data(X, y, types, corruption_rate):
     return corrupted_indices
 
 
+def hardthresh(u, k):
+
+    abs_u = np.abs(u)
+
+    thresh = np.partition(abs_u, -k)[-k]
+    for i in range(len(abs_u)):
+        if abs_u[i] < thresh:
+            u[i] = 0.0
+
+
 def gen_w_star(d, dist="normal"):
     if dist == "normal":
-        return rng.multivariate_normal(np.zeros(d), np.eye(d)).reshape(d)
+        w = rng.randn(d)
     elif dist == "uniform":
-        return 10 * rng.uniform(size=d) - 5
+        w = 10 * rng.uniform(size=d) - 5
     else:
         raise Exception("Unknown w_star distribution")
+    hardthresh(w, sparsity)
+    return w
 
 
-def gradient_descent(funs_to_track, x0, grad, step_size, T):
-    """run gradient descent for given gradient grad and step size for T steps"""
-    x = x0
-    tracks = [np.zeros(T) for i in range(len(funs_to_track))]
-    for t in range(T):
-        for i, f in enumerate(funs_to_track):
-            tracks[i][t] = f(x)
-        grad_x = grad(x)
-        # grad_error = np.linalg.norm(grad_x - true_gradient(x))
-        x -= step_size * grad_x
-        # tracks[len(funs_to_track)][t] = grad_error
-    return tracks
+def run_Lasso_CDA(X, y, param, max_iter, random_state=None):
+    reg = linear_model.Lasso(
+        alpha=param,
+        max_iter=1,
+        warm_start=True,
+        fit_intercept=False,
+        random_state=random_state,
+    )
+    coefs = np.zeros((max_iter + 1, X.shape[1]))
+
+    for t in range(max_iter):
+        with warnings.catch_warnings():  # silence the warnings about not enough iterations
+            warnings.simplefilter("ignore")
+            reg.fit(X, y)
+        coefs[t + 1, :] = reg.coef_
+
+    return coefs
 
 
-col_try, col_time, col_algo, col_metric, col_val = [], [], [], [], []
+@jit(**jit_kwargs)
+def drv(y1, y2):
+    return y1 - y2
+
+
+def run_liuliu18(X, y, max_iter, theta_star, sigma, C_gamma=100.0, corrupt_lvl=0.0):
+    ret = liuliu18_solver(
+        X,
+        y,
+        step_size,
+        sparsity_ub,
+        max_iter,
+        drv,
+        theta_star,
+        sigma,
+        C_gamma=C_gamma,
+        corrupt_lvl=corrupt_lvl,
+    )
+
+    return ret
+
+
+def run_liuliu19(X, y, step_size, max_iter, random_seed=random_seed, estim="tmean"):
+    # TODO : how to figure out step size ? it blows up if too much
+    ret = liuliu19_solver(
+        X,
+        y,
+        step_size,
+        sparsity_ub,
+        max_iter,
+        drv,
+        estim,
+        random_seed,
+        tm_alpha=percentage,
+        only_last=False,
+    )
+    return ret
+
+
+def run_MD(X, y, max_iter, step_size, sparsity_ub, stage_len):
+    reg = Regressor(
+        tol=0,
+        max_iter=max_iter,
+        solver="md",
+        estimator="tmean",
+        sparsity_ub=sparsity_ub,
+        fit_intercept=fit_intercept,
+        step_size=step_size,
+        stage_length=stage_len,
+        penalty="none",
+        percentage=percentage,
+        random_state=random_seed,
+    )
+    reg.fit(X, y)
+    ret = np.squeeze(reg.history_.records[0].record)
+
+    return ret
+
+
+def run_DA(X, y, max_iter, step_size, sparsity_ub, stage_len):
+    reg = Regressor(
+        tol=0,
+        max_iter=max_iter,
+        solver="da",
+        estimator="tmean",
+        sparsity_ub=sparsity_ub,
+        fit_intercept=fit_intercept,
+        step_size=step_size,
+        stage_length=stage_len,
+        penalty="none",
+        percentage=percentage,
+        random_state=random_seed,
+    )
+    reg.fit(X, y)
+    ret = np.squeeze(reg.history_.records[0].record)
+
+    return ret
+
+
+def run_linlearn_CD_lasso(X, y, max_iter, step_size, penalty_strength):
+    reg = Regressor(
+        tol=0,
+        max_iter=max_iter,
+        solver="cgd",
+        loss="leastsquares",
+        estimator="tmean",
+        # sparsity_ub=sparsity_ub,
+        fit_intercept=fit_intercept,
+        step_size=step_size,
+        # stage_length=stage_len,
+        penalty="l1",
+        percentage=percentage,
+        C=penalty_strength,
+        random_state=random_seed,
+    )
+    reg.fit(X, y)
+    ret = np.squeeze(reg.history_.records[0].record)
+
+    return ret
+
+
+col_try, col_iter, col_algo, col_metric, col_val = [], [], [], [], []
 
 if noise_dist == "gaussian":
     noise_fct = gaussian
@@ -208,21 +344,17 @@ else:
     raise Exception("unknown noise dist")
 
 
-Algorithm = namedtuple("Algorithm", ["name", "solver", "estimator"])
+def compute_objective_history(
+    out, alg_name, metrics, rep, col_try, col_iter, col_algo, col_metric, col_val
+):
 
-algorithms = [
-    Algorithm(name="erm_gd", solver="gd", estimator="erm"),
-    Algorithm(name="mom_cgd", solver="cgd", estimator="mom"),
-    Algorithm(name="catoni_cgd", solver="cgd", estimator="ch"),
-    Algorithm(name="tmean_cgd", solver="cgd", estimator="tmean"),
-    Algorithm(name="holland_gd", solver="gd", estimator="ch"),
-    Algorithm(name="gmom_gd", solver="gd", estimator="gmom"),
-    Algorithm(name="implicit_gd", solver="gd", estimator="llm"),
-    Algorithm(name="hg_gd", solver="gd", estimator="hg"),
-    # Algorithm(name="implicit_cgd", solver="cgd", estimator="implicit", max_iter=T),
-    # Algorithm(name="tmean_gd", solver="gd", estimator="tmean", max_iter=T),
-    # Algorithm(name="mom_gd", solver="gd", estimator="mom", max_iter=T),
-]
+    for ind_metric, metric in enumerate(metrics):
+        for i in range(T):
+            col_try.append(rep)
+            col_algo.append(alg_name)
+            col_metric.append(metric.__name__)
+            col_val.append(metric(out[i]))
+            col_iter.append(i)
 
 
 for rep in range(n_repeats):
@@ -234,15 +366,24 @@ for rep in range(n_repeats):
     logging.info(64 * "-")
 
     logging.info("generating data ...")
-    X = rng.multivariate_normal(mu_X, Sigma_X, size=n_samples)
+
+    Sigma_X = rng.uniform(size=n_features) * (max_Sigma - min_Sigma) + min_Sigma
+    mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
+
+    # X = rng.randn(n_samples, n_features)
+    X = multivariate_t.rvs(df=4.1, size=n_samples * n_features, random_state=rng).reshape((n_samples, n_features))
+    for j in range(n_features):
+        X[:, j] *= Sigma_X[j]
+    X += mu_X[np.newaxis, :]
+    # rng.multivariate_normal(mu_X, Sigma_X, size=n_samples)
 
     w_star = gen_w_star(n_features, dist=w_star_dist)
     noise, expect_noise, noise_2nd_moment = noise_fct(
         rng, n_samples, noise_sigma[noise_dist]
     )
 
-    noise -= expect_noise
-    expect_noise = 0.0
+    # noise -= expect_noise
+    # expect_noise = 0.0
 
     y = X @ w_star + noise
 
@@ -254,104 +395,124 @@ for rep in range(n_repeats):
 
     logging.info("generating risks and gradients ...")
 
-    def empirical_risk(w):
-        return ((X.dot(w) - y) ** 2).mean() / 2
+    def predict_error(w):
+        v = w - w_star
+        return np.sqrt(np.einsum("i, i, i->", v, Sigma_X, v))
+        # return np.sqrt(np.dot(v, Sigma_X @ v))
 
-    def true_risk(w):
-        return 0.5 * (
-            noise_2nd_moment
-            + np.dot(mu_X, w - w_star) ** 2
-            - 2 * expect_noise * np.dot(mu_X, w - w_star)
-            + np.dot(w - w_star, Sigma_X @ (w - w_star))
-        )
+    def l2_error(w):
+        return np.linalg.norm(w - w_star)
 
-    def true_gradient(w):
-        return (
-            Sigma_X @ (w - w_star) + (-expect_noise + np.dot(mu_X, w - w_star)) * mu_X
-        )
-
-    XXT = X.T @ X
-    Xy = X.T @ y
-
-    # compute the Lipschitz constant for oracle GD without the outliers
-    clean_index = list(set(range(n_samples)) - set(corrupted_indices))
-    XXT_clean = X[clean_index, :].T @ X[clean_index, :]
-    Lip = np.linalg.eigh(XXT_clean / n_samples)[0][-1]
-
-    def empirical_gradient(w):
-        return (XXT @ w - Xy) / n_samples
-
-    # optimal_risk = true_risk(w_star)
-    optimal_risk = minimize(true_risk, np.zeros(n_features), jac=true_gradient).fun
-    optimal_empirical_risk = minimize(
-        empirical_risk, np.zeros(n_features), jac=empirical_gradient
-    ).fun
-
-    def excess_empirical_risk(w):
-        return empirical_risk(w.flatten()) - optimal_empirical_risk
-
-    def excess_risk(w):
-        return true_risk(w.flatten()) - optimal_risk
+    def l1_error(w):
+        return np.sum(np.abs(w - w_star))
 
     outputs = {}
 
     logging.info("Running algorithms ...")
 
-    metrics = [excess_empirical_risk, excess_risk]  # , "gradient_error"]
+    metrics = [l2_error, l1_error, predict_error]  #
 
-    def run_algorithm(algo, out):
-        reg = Regressor(
-            tol=0,
-            max_iter=T,
-            eps=confidence,
-            solver=algo.solver,
-            estimator=algo.estimator,
-            fit_intercept=fit_intercept,
-            step_size=step_size,  # *(5 if algo.estimator=="hg" else 1),
-            penalty="none",
-            block_size=llm_block_size if algo.estimator =="llm" else block_size,
-            percentage=percentage,
-            random_state=random_seed,
-        )
-        reg.fit(X, y)
-        out[algo.name] = reg.history_.records
+    # out = run_liuliu18(X, y, T, w_star, noise_sigma[noise_dist], corrupt_lvl=corruption_rate)
+    # compute_objective_history(out, "liuliu18tmean", metrics, rep, col_try, col_iter, col_algo, col_metric, col_val)
 
-    for algo in algorithms:
-        run_algorithm(algo, outputs)
-
-    oracle_output = gradient_descent(
-        [excess_empirical_risk, excess_risk],
-        np.zeros(n_features),
-        true_gradient,
-        step_size / Lip,
-        T,
+    out = run_MD(X, y, T, step_size * 3, sparsity_ub, stage_length)
+    compute_objective_history(
+        out,
+        "linlearn_md",
+        metrics,
+        rep,
+        col_try,
+        col_iter,
+        col_algo,
+        col_metric,
+        col_val,
     )
+    logging.info("linlearn MD done")
+    out = run_DA(X, y, T, step_size * 5, sparsity_ub, stage_length)
+    compute_objective_history(
+        out,
+        "linlearn_da",
+        metrics,
+        rep,
+        col_try,
+        col_iter,
+        col_algo,
+        col_metric,
+        col_val,
+    )
+    logging.info("linlearn DA done")
+    out = run_linlearn_CD_lasso(
+        X,
+        y,
+        T,
+        1.0,
+        1
+        / (
+            n_samples
+            * 2
+            * noise_sigma[noise_dist]
+            * np.sqrt(2 * np.log(n_features) / n_samples)
+        ),
+    )
+    compute_objective_history(
+        out,
+        "linlearn_CD_lasso",
+        metrics,
+        rep,
+        col_try,
+        col_iter,
+        col_algo,
+        col_metric,
+        col_val,
+    )
+    logging.info("linlearn Lasso done")
 
-    for tt in range(T):
-        for ind_metric, metric in enumerate(metrics):
-            col_try.append(rep)
-            col_algo.append("oracle")
-            col_metric.append(metric.__name__)
-            col_val.append(oracle_output[ind_metric][tt])
-            col_time.append(tt)
+    out = run_liuliu19(X, y, step_size / (20*max_Sigma), T, random_seed=random_seed, estim="mom")
+    compute_objective_history(
+        out,
+        "liuliu19mom",
+        metrics,
+        rep,
+        col_try,
+        col_iter,
+        col_algo,
+        col_metric,
+        col_val,
+    )
+    logging.info("Liuliu 19 MOM done")
+    out = run_liuliu19(X, y, step_size / (20*max_Sigma), T, estim="tmean")
+    compute_objective_history(
+        out,
+        "liuliu19tmean",
+        metrics,
+        rep,
+        col_try,
+        col_iter,
+        col_algo,
+        col_metric,
+        col_val,
+    )
+    logging.info("Liuliu 19 TMean done")
+    out = run_Lasso_CDA(
+        X,
+        y,
+        2 * noise_sigma[noise_dist] * np.sqrt(2 * np.log(n_features) / n_samples),
+        T,
+        random_state=random_seed,
+    )
+    compute_objective_history(
+        out, "lasso", metrics, rep, col_try, col_iter, col_algo, col_metric, col_val
+    )
+    logging.info("Sklearn Lasso done")
 
     logging.info("computing objective history")
-    for alg in outputs.keys():
-        for ind_metric, metric in enumerate(metrics):
-            for i in range(T):
-                col_try.append(rep)
-                col_algo.append(alg)
-                col_metric.append(metric.__name__)
-                col_val.append(metric(outputs[alg][0].record[i]))
-                col_time.append(
-                    i
-                )  # outputs[alg][1].record[i] - outputs[alg][1].record[0])
+
     logging.info("repetition done")
 
 logging.info("Creating pandas DataFrame")
 data = pd.DataFrame(
     {
-        "t": col_time,
+        "t": col_iter,
         "repeat": col_try,
         "algo": col_algo,
         "metric": col_metric,
@@ -370,17 +531,18 @@ if save_results:
 
     filename = experiment_name + "_results_" + now + ".pickle"
 
-    specs = {"n_samples": n_samples,
+    specs = {
+        "n_samples": n_samples,
         "n_rep": n_repeats,
         "noise": noise_dist,
         "sigma": noise_sigma[noise_dist],
-        "block_size": block_size,
         "w_star_dist": w_star_dist,
     }
 
-
     with open("exp_archives/" + experiment_name + "/" + filename, "wb") as f:
-        pickle.dump({"datetime": now, "commit": commit, "results": data, "specs": specs}, f)
+        pickle.dump(
+            {"datetime": now, "commit": commit, "results": data, "specs": specs}, f
+        )
 
     logging.info("Saved results in file %s" % filename)
 
@@ -388,125 +550,32 @@ logging.info("Plotting ...")
 
 line_width = 1.2
 
-# g = sns.FacetGrid(data, col="metric", height=4, legend_out=True, sharey=False)
-# g.map(sns.lineplot, "t", "value", "algo", lw=line_width, ci=None,).set(
-#     xlabel="", ylabel=""
-# ).set(yscale="log")
+g = sns.FacetGrid(data, col="metric", height=4, sharey=False)  # , legend_out=True
+g.map(sns.lineplot, "t", "value", "algo", lw=line_width, ci=None,).set(
+    xlabel="", ylabel=""
+)  # .set(yscale="log")
+g.add_legend(loc="upper right")
 
 
 # g = sns.FacetGrid(data, col="metric", height=4, legend_out=True, sharey=False)
-ax = sns.lineplot(
-    x="t",
-    y="value",
-    hue="algo",
-    data=data.query("metric == '%s'" % metrics[1].__name__),
-    legend=False,
-    lw=line_width,
-    ci=None,
-)
 
-ax.set(yscale="log")
-
-plt.xlabel("")
-plt.ylabel("")
-
-# g.set_titles(col_template="{col_name}")
-
-#axes = [ax]  # g.axes.flatten()
-# axes[0].set_title("Excess empirical risk")
-# axes[0].set_title("Excess risk")
-
-color_palette = []
-for line in ax.get_lines():
-    color_palette.append(line.get_c())
-color_palette = color_palette[: len(algorithms) + 1]
-
-
-plt.legend(
-    [
-        "Oracle",
-        "$\\mathtt{ERM}$ GD",
-        "$\\mathtt{MOM}$ CGD",
-        "$\\mathtt{CH}$ CGD",
-        "$\\mathtt{TM}$ CGD",
-        "$\\mathtt{CH}$ GD",
-        "GMOM GD",
-        "LLM GD",
-        "HG GD",
-    ],
-    # bbox_to_anchor=(0.3, 0.7, 1.0, 0.0),
-    loc="lower left",#"upper right",
-    ncol=2,
-    borderaxespad=0.2,
-    columnspacing=1.0,
-    fontsize=10,
-)
-# axes[0].legend(
-# )
-# g.fig.subplots_adjust(top=0.9)
-# g.fig.suptitle(
-#     "n=%d , noise=%s , $\\sigma$ = %.2f, block_size=%.2f, w_star_dist=%s , outliers=%r , X_centered=%r"
-#     % (
-#         n_samples,
-#         noise_dist,
-#         noise_sigma[noise_dist],
-#         MOMreg_block_size,
-#         w_star_dist,
-#         outliers,
-#         X_centered,
-#     )
+# ax = sns.lineplot(
+#     x="t",
+#     y="value",
+#     hue="algo",
+#     data=data.query("metric == '%s' & value <= 50" % metrics[0].__name__),
+#     #legend=False,
+#     lw=line_width,
+#     ci=None,
 # )
 
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
-zoom_on = False
-
-if zoom_on:
-    axins = inset_axes(ax, "40%", "30%", loc="lower left", borderpad=1)
-
-    sns.lineplot(
-        x="t",
-        y="value",
-        hue="algo",
-        lw=line_width,
-        ci=None,
-        data=data.query(
-            "t >= %d and metric=='excess_risk' and algo not in ['oracle', 'erm_gd']"
-            % ((T * 4) // 5)
-        ),
-        ax=axins,
-        legend=False,
-        palette=color_palette[2:],
-    ).set(
-        yscale="log"
-    )  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
-
-    ax.indicate_inset_zoom(axins, edgecolor="black")
-    axins.xaxis.set_visible(False)
-    axins.yaxis.set_visible(False)
-
-# if zoom_on_excess_empirical_risk:
-#     axins0 = inset_axes(axes[0], "40%", "30%", loc="lower left", borderpad=1)
+# color_palette = []
+# for line in ax.get_lines():
+#     color_palette.append(line.get_c())
+# color_palette = color_palette[: len(algorithms) + 1]
 #
-#     sns.lineplot(
-#         x="t",
-#         y="value",
-#         hue="algo",
-#         lw=line_width,
-#         ci=None,
-#         data=data.query(
-#             "t >= %d and metric=='excess_empirical_risk' and algo!='erm_gd'"
-#             % ((T * 4) // 5)
-#         ),
-#         ax=axins0,
-#         legend=False,
-#         palette=color_palette[:1] + color_palette[2:],
-#     ).set(
-#         yscale="log"
-#     )  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
-#     axes[0].indicate_inset_zoom(axins0, edgecolor="black")
-#     axins0.xaxis.set_visible(False)
-#     axins0.yaxis.set_visible(False)
+
 
 plt.tight_layout()
 plt.show()
@@ -516,7 +585,8 @@ now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
 
 ensure_directory("exp_archives/" + experiment_name + "/")
 
-fig_file_name = "exp_archives/" + experiment_name + "/linreg_results_" + now + ".pdf"
-fig = ax.get_figure()
-fig.savefig(fname=fig_file_name, bbox_inches="tight")
+fig_file_name = "exp_archives/" + experiment_name + "/linreg_HD_results_" + now + ".pdf"
+# fig = ax.get_figure()
+# fig.savefig(fname=fig_file_name, bbox_inches="tight")
+g.savefig(fname=fig_file_name, bbox_inches="tight")
 logging.info("Saved figure into file : %s" % fig_file_name)

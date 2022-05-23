@@ -203,8 +203,6 @@ class MD(Solver):
         stage_length = self.stage_length
         history = self.history
         sb = self.sparsity_ub
-        print("running MD solver with : ")
-        print("sb, R, stagelength = %d, %f, %d" % (sb, self.R, stage_length))
 
         if w0 is not None:
             weights[:] = w0

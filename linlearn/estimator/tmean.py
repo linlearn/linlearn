@@ -169,17 +169,20 @@ class TMean(Estimator):
                     deriv_loss(y[i], inner_products[i], deriv_samples[i])
 
                 for j in range(n_features):
-                    if one_hot_cols[j]:
-                        tmean_fct = trimmed_mean
-                    else:
-                        tmean_fct = fast_trimmed_mean
+                    # if one_hot_cols[j]:
+                    #     tmean_fct = trimmed_mean
+                    # else:
+                    #     tmean_fct = fast_trimmed_mean
                     for k in range(n_classes):
                         for i in range(n_samples):
                             deriv_samples_outer_prods[i, k] = (
                                     deriv_samples[i, k] * X[i, j]
                             )
 
-                        gradient[j, k] = tmean_fct(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
+                        if one_hot_cols[j]:
+                            gradient[j, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
+                        else:
+                            gradient[j, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
 
                 return 0
             return grad

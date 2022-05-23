@@ -19,7 +19,7 @@ from sklearn.metrics import (
 from sklearn.preprocessing import LabelBinarizer
 
 from sklearn.linear_model import HuberRegressor, RANSACRegressor, LinearRegression, SGDRegressor
-from scipy.optimize import minimize
+
 from linlearn import Classifier, Regressor
 sys.path.extend([".", ".."])
 
