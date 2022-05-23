@@ -10,9 +10,11 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import warnings
 import os
+import itertools
 from liuliu19 import liuliu19_solver
 from liuliu18 import liuliu18_solver
 from scipy.stats import multivariate_t
+import joblib
 from noise_generators import (
     gaussian,
     frechet,
@@ -323,8 +325,6 @@ def run_linlearn_CD_lasso(X, y, max_iter, step_size, penalty_strength):
     return ret
 
 
-col_try, col_iter, col_algo, col_metric, col_val = [], [], [], [], []
-
 if noise_dist == "gaussian":
     noise_fct = gaussian
 elif noise_dist == "lognormal":
@@ -357,7 +357,9 @@ def compute_objective_history(
             col_iter.append(i)
 
 
-for rep in range(n_repeats):
+def repeat(rep):
+    col_try, col_iter, col_algo, col_metric, col_val = [], [], [], [], []
+
     if not save_results:
         logging.info("WARNING : results will NOT be saved at the end of this session")
 
@@ -507,7 +509,27 @@ for rep in range(n_repeats):
 
     logging.info("computing objective history")
 
-    logging.info("repetition done")
+    logging.info("repetition %d done" % rep)
+    return col_try, col_iter, col_algo, col_metric, col_val
+
+
+column_try, column_iter, column_algo, column_metric, column_val = [], [], [], [], []
+
+if os.cpu_count() > 8:
+    logging.info("running parallel repetitions")
+    results = joblib.Parallel(n_jobs=-1)(
+        joblib.delayed(repeat)(rep) for rep in range(1, n_repeats+1)
+    )
+else:
+    results = [repeat(rep) for rep in range(1, n_repeats+1)]
+
+
+col_try = list(itertools.chain.from_iterable([x[0] for x in results]))
+col_iter = list(itertools.chain.from_iterable([x[1] for x in results]))
+col_algo = list(itertools.chain.from_iterable([x[2] for x in results]))
+col_metric = list(itertools.chain.from_iterable([x[3] for x in results]))
+col_val = list(itertools.chain.from_iterable([x[4] for x in results]))
+
 
 logging.info("Creating pandas DataFrame")
 data = pd.DataFrame(
