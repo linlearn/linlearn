@@ -82,6 +82,12 @@ parser.add_argument(
     default="student",
     choices=["gaussian", "student", "weibull", "loglogistic", "lognormal", "pareto"],
 )
+parser.add_argument(
+    "--covariates_dist",
+    type=str,
+    default="gaussian",
+    choices=["gaussian", "student"]#, "weibull", "loglogistic", "lognormal", "pareto"],
+)
 parser.add_argument("--X_centered", dest="X_centered", action="store_true")
 parser.add_argument("--X_not_centered", dest="X_centered", action="store_false")
 parser.set_defaults(X_centered=True)
@@ -127,6 +133,7 @@ noise_sigma = {
 
 X_centered = args.X_centered
 noise_dist = args.noise_dist
+covariates_dist = args.covariates_dist
 step_size = args.step_size
 stage_length = args.stage_length
 T = args.max_iter
@@ -142,13 +149,11 @@ logging.info(
     % (w_star_dist, noise_dist, noise_sigma[noise_dist])
 )
 
-rng = np.random.RandomState(random_seed)  ## Global random generator
-
 min_Sigma = 1.0
 max_Sigma = 10.0
 
 
-def corrupt_data(X, y, types, corruption_rate):
+def corrupt_data(X, y, types, corruption_rate, rng, Sigma_X):
     number = int(n_samples * corruption_rate)
     corrupted_indices = rng.choice(n_samples, size=number, replace=False)
 
@@ -194,7 +199,7 @@ def hardthresh(u, k):
             u[i] = 0.0
 
 
-def gen_w_star(d, dist="normal"):
+def gen_w_star(d, rng, dist="normal"):
     if dist == "normal":
         w = rng.randn(d)
     elif dist == "uniform":
@@ -263,7 +268,7 @@ def run_liuliu19(X, y, step_size, max_iter, random_seed=random_seed, estim="tmea
     return ret
 
 
-def run_MD(X, y, max_iter, step_size, sparsity_ub, stage_len):
+def run_MD(X, y, max_iter, step_size, sparsity_ub, stage_len, random_seed=random_seed):
     reg = Regressor(
         tol=0,
         max_iter=max_iter,
@@ -283,7 +288,7 @@ def run_MD(X, y, max_iter, step_size, sparsity_ub, stage_len):
     return ret
 
 
-def run_DA(X, y, max_iter, step_size, sparsity_ub, stage_len):
+def run_DA(X, y, max_iter, step_size, sparsity_ub, stage_len, random_seed=random_seed):
     reg = Regressor(
         tol=0,
         max_iter=max_iter,
@@ -303,7 +308,7 @@ def run_DA(X, y, max_iter, step_size, sparsity_ub, stage_len):
     return ret
 
 
-def run_linlearn_CD_lasso(X, y, max_iter, step_size, penalty_strength):
+def run_linlearn_CD_lasso(X, y, max_iter, step_size, penalty_strength, random_seed=random_seed):
     reg = Regressor(
         tol=0,
         max_iter=max_iter,
@@ -337,9 +342,9 @@ elif noise_dist == "weibull":
     noise_fct = weibull
 elif noise_dist == "frechet":
     noise_fct = frechet
-elif noise_dist == "loglogistic":
-    np.random.seed(seed=random_seed)
-    noise_fct = loglogistic
+# elif noise_dist == "loglogistic":
+#     np.random.seed(seed=random_seed)
+#     noise_fct = loglogistic
 else:
     raise Exception("unknown noise dist")
 
@@ -359,12 +364,13 @@ def compute_objective_history(
 
 def repeat(rep):
     col_try, col_iter, col_algo, col_metric, col_val = [], [], [], [], []
+    rng = np.random.RandomState(random_seed+rep)  ## Global random generator
 
     if not save_results:
         logging.info("WARNING : results will NOT be saved at the end of this session")
 
     logging.info(64 * "-")
-    logging.info("repeat : %d/%d" % (rep + 1, n_repeats))
+    logging.info("repeat : %d/%d" % (rep, n_repeats))
     logging.info(64 * "-")
 
     logging.info("generating data ...")
@@ -373,13 +379,21 @@ def repeat(rep):
     mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
 
     # X = rng.randn(n_samples, n_features)
-    X = multivariate_t.rvs(df=4.1, size=n_samples * n_features, random_state=rng).reshape((n_samples, n_features))
+    if covariates_dist == "student":
+        X = multivariate_t.rvs(
+            df=4.1, size=n_samples * n_features, random_state=rng
+        ).reshape((n_samples, n_features))
+    elif covariates_dist == "gaussian":
+        X = rng.normal(size=n_samples * n_features).reshape((n_samples, n_features))
+    else:
+        raise Exception("unknown covariate dist : %s" % covariates_dist)
+
     for j in range(n_features):
         X[:, j] *= Sigma_X[j]
     X += mu_X[np.newaxis, :]
     # rng.multivariate_normal(mu_X, Sigma_X, size=n_samples)
 
-    w_star = gen_w_star(n_features, dist=w_star_dist)
+    w_star = gen_w_star(n_features, rng, dist=w_star_dist)
     noise, expect_noise, noise_2nd_moment = noise_fct(
         rng, n_samples, noise_sigma[noise_dist]
     )
@@ -391,7 +405,7 @@ def repeat(rep):
 
     # outliers
     if len(outlier_types) > 0:
-        corrupted_indices = corrupt_data(X, y, outlier_types, corruption_rate)
+        corrupted_indices = corrupt_data(X, y, outlier_types, corruption_rate, rng, Sigma_X)
     else:
         corrupted_indices = []
 
@@ -408,8 +422,6 @@ def repeat(rep):
     def l1_error(w):
         return np.sum(np.abs(w - w_star))
 
-    outputs = {}
-
     logging.info("Running algorithms ...")
 
     metrics = [l2_error, l1_error, predict_error]  #
@@ -417,7 +429,7 @@ def repeat(rep):
     # out = run_liuliu18(X, y, T, w_star, noise_sigma[noise_dist], corrupt_lvl=corruption_rate)
     # compute_objective_history(out, "liuliu18tmean", metrics, rep, col_try, col_iter, col_algo, col_metric, col_val)
 
-    out = run_MD(X, y, T, step_size * 3, sparsity_ub, stage_length)
+    out = run_MD(X, y, T, step_size * 3, sparsity_ub, stage_length, random_seed=random_seed+rep)
     compute_objective_history(
         out,
         "linlearn_md",
@@ -430,7 +442,7 @@ def repeat(rep):
         col_val,
     )
     logging.info("linlearn MD done")
-    out = run_DA(X, y, T, step_size * 5, sparsity_ub, stage_length)
+    out = run_DA(X, y, T, step_size * 5, sparsity_ub, stage_length, random_seed=random_seed+rep)
     compute_objective_history(
         out,
         "linlearn_da",
@@ -455,6 +467,7 @@ def repeat(rep):
             * noise_sigma[noise_dist]
             * np.sqrt(2 * np.log(n_features) / n_samples)
         ),
+        random_seed=random_seed+rep,
     )
     compute_objective_history(
         out,
@@ -469,7 +482,9 @@ def repeat(rep):
     )
     logging.info("linlearn Lasso done")
 
-    out = run_liuliu19(X, y, step_size / (20*max_Sigma), T, random_seed=random_seed, estim="mom")
+    out = run_liuliu19(
+        X, y, step_size / (10 * max_Sigma), T, random_seed=random_seed+rep, estim="mom"
+    )
     compute_objective_history(
         out,
         "liuliu19mom",
@@ -482,7 +497,7 @@ def repeat(rep):
         col_val,
     )
     logging.info("Liuliu 19 MOM done")
-    out = run_liuliu19(X, y, step_size / (20*max_Sigma), T, estim="tmean")
+    out = run_liuliu19(X, y, step_size / (10 * max_Sigma), T, estim="tmean")
     compute_objective_history(
         out,
         "liuliu19tmean",
@@ -500,7 +515,7 @@ def repeat(rep):
         y,
         2 * noise_sigma[noise_dist] * np.sqrt(2 * np.log(n_features) / n_samples),
         T,
-        random_state=random_seed,
+        random_state=random_seed+rep,
     )
     compute_objective_history(
         out, "lasso", metrics, rep, col_try, col_iter, col_algo, col_metric, col_val
@@ -518,10 +533,10 @@ column_try, column_iter, column_algo, column_metric, column_val = [], [], [], []
 if os.cpu_count() > 8:
     logging.info("running parallel repetitions")
     results = joblib.Parallel(n_jobs=-1)(
-        joblib.delayed(repeat)(rep) for rep in range(1, n_repeats+1)
+        joblib.delayed(repeat)(rep) for rep in range(1, n_repeats + 1)
     )
 else:
-    results = [repeat(rep) for rep in range(1, n_repeats+1)]
+    results = [repeat(rep) for rep in range(1, n_repeats + 1)]
 
 
 col_try = list(itertools.chain.from_iterable([x[0] for x in results]))
@@ -573,7 +588,7 @@ logging.info("Plotting ...")
 line_width = 1.2
 
 g = sns.FacetGrid(data, col="metric", height=4, sharey=False)  # , legend_out=True
-g.map(sns.lineplot, "t", "value", "algo", lw=line_width, ci=None,).set(
+g.map(sns.lineplot, "t", "value", "algo", lw=line_width, ci=None,).set(#
     xlabel="", ylabel=""
 )  # .set(yscale="log")
 g.add_legend(loc="upper right")
