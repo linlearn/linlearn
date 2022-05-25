@@ -129,7 +129,9 @@ class MD(Solver):
                 grad = state_estimator.gradient
                 # TODO : allocate w_new somewhere ?
 
-                w_new = w0 + prox(step * step_scaler(state_estimator) * grad - grad_omega(weights - w0, p, C), R, p, C)
+                g_omega = grad_omega(weights - w0, p, C)
+
+                w_new = w0 + prox(step * step_scaler(state_estimator) * grad - g_omega, R, p, C)
 
                 for k in range(n_classes):
                     abs_delta_j = fabs(w_new[0, k] - weights[0, k])
@@ -203,7 +205,8 @@ class MD(Solver):
         stage_length = self.stage_length
         history = self.history
         sb = self.sparsity_ub
-
+        print("called MD solver")
+        print("stage length is %d " % stage_length)
         if w0 is not None:
             weights[:] = w0
         else:
@@ -233,6 +236,7 @@ class MD(Solver):
 
         n_iter = 0
         while n_iter + stage_length <= max_iter:
+            print("starting stage %d" % (n_iter // stage_length))
 
             for t in range(stage_length):
                 max_abs_delta, max_abs_weight = cycle(

@@ -135,6 +135,7 @@ class TMean(Estimator):
                 gradient = state.gradient
 
                 for i in range(n_samples):
+
                     deriv_loss(y[i], inner_products[i], deriv_samples[i])
 
                     for k in range(n_classes):

@@ -39,10 +39,12 @@ def grad_omega(th, p, C):
     if th.shape[1] <= 1:
         return 2 * C * ((np.linalg.norm(th.flatten(), p))**(2-p)) * np.sign(th) * np.power(np.abs(th), p-1)
     d, k = th.shape
-    euc_norms = np.empty(d)
+    euc_norms = np.zeros(d)
+
     for j in range(th.shape[1]):
         for i in range(d):
             euc_norms[i] += th[i, j] ** 2
+
     np.power(euc_norms, (2-p)/2, euc_norms)
     # for i in range(d):
     #     euc_norms[i] = np.sqrt(euc_norms[i])
