@@ -51,10 +51,10 @@ def grad_omega(th, p, C):
 
     #euc_norms = np.sqrt(np.power(th, 2).sum(axis=1))
     scaled_th = th.copy()
-    for i in range(d):
-        if euc_norms[i] > 0:
-            for j in range(k):
-                scaled_th[i, k] /= euc_norms[i]
+    # for i in range(d):
+    #     if euc_norms[i] > 0:
+    #         for j in range(k):
+    #             scaled_th[i, j] /= euc_norms[i]
 
     scale = 0.0
     for j in range(k):
@@ -65,11 +65,11 @@ def grad_omega(th, p, C):
     for i in range(d):
         scale += (euc_norms[i] ** (p / (2 - p)))
 
-    scale = scale ** ((2-p)/p)
+    scale = 2 * C * (scale ** ((2-p)/p))
 
     for j in range(k):
         for i in range(d):
-            scaled_th[i, j] *= 2 * C * scale
+            scaled_th[i, j] *= scale
 
     return scaled_th
 
@@ -120,13 +120,13 @@ def prox(u, R, p, C):
             lamda2 = mid
     lamda = lamda1
     if u.shape[1] > 1:
-        stu = np.maximum(np.sqrt((u ** 2).sum(axis=1)) - lamda, 0)# softthresh(np.sqrt((uu ** 2).sum(axis=1)), lamda)
+        stu = np.maximum(np.sqrt((u ** 2).sum(axis=1)) - lamda, 0.)# softthresh(np.sqrt((uu ** 2).sum(axis=1)), lamda)
         th = -u.copy()
         for i in range(u.shape[0]):
-            if stu[i] <= 0:
-                th[i,:] = 0
+            if stu[i] <= 0.:
+                th[i, :] = 0.
             else:
-                th[i,:] /= stu[i] ** ((p-2)/(p-1)) + lamda * (stu[i] ** (-1/(p-1)))
+                th[i, :] /= max(1e-16, stu[i] ** ((p-2)/(p-1)) + lamda * (stu[i] ** (-1/(p-1))))
         return th / (2 * C * (np.power(stu, p / (p - 1)).sum() ** ((2 - p) / p)))
     else:
         stu = np.maximum(np.abs(u) - lamda, 0)# softthresh(uu, lamda)
