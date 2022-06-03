@@ -57,7 +57,7 @@ def liuliu19_solver(X, y, step_size, k_prime, n_iter, loss_deriv, estim, random_
         print("You must provide a random state for MOM estimator")
         return
     # seed numba's random generator
-    np.random.seed(random_state)
+    np.random.seed(random_state or 0)
 
 
     if not only_last:

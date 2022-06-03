@@ -155,11 +155,14 @@ def hardthresh(u, k):
         abs_u = np.sqrt(np.power(u, 2).sum(axis=1))
 
     thresh = np.partition(abs_u, -k)[-k]
-    u_s = u.copy()
+    # u_s = u.copy()
+    # for i in range(u.shape[0]):
+    #     if abs_u[i] < thresh:
+    #         u_s[i, :] = 0
+    # return u_s
     for i in range(u.shape[0]):
         if abs_u[i] < thresh:
-            u_s[i, :] = 0
-    return u_s
+            u[i, :] = 0
 
 
 @jit(**jit_kwargs)
@@ -256,6 +259,16 @@ def trimmed_mean(x, n_samples, n_excluded_tails):  # , percentage):
     result /= n_samples
     return result
 
+@jit(**jit_kwargs)
+def trimmed_mean_variant(x, n_samples, n_excluded_tails):  # , percentage):
+    # n_excluded_tails = max(1, int(n_samples * percentage))
+    n_excluded_tails = int(n_excluded_tails)
+    partitioned = np.partition(x, [n_excluded_tails, n_samples - n_excluded_tails - 1])
+    result = 0.0
+    for i in range(n_excluded_tails, n_samples - n_excluded_tails):
+        result += partitioned[i]
+    result /= (n_samples - 2 * n_excluded_tails)
+    return result
 
 @jit(**jit_kwargs)
 def fast_trimmed_mean(x, n_samples, n_excluded_tails):  # , percentage):

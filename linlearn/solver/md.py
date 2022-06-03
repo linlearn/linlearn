@@ -225,7 +225,7 @@ class MD(Solver):
         # TODO: First value for tolerance is 1.0 or NaN
         # history.update(epoch=0, obj=obj, tol=1.0, update_bar=True)
         if dummy_first_step:
-            cycle(sample_indices, weights, inner_products, state_estimator)
+            cycle(w0, weights, inner_products, state_estimator)
             if w0 is not None:
                 weights[:] = w0
             else:
@@ -261,7 +261,7 @@ class MD(Solver):
                     )
                 n_iter += 1
 
-            weights = hardthresh(weights, sb)
+            hardthresh(weights, sb)
             w0[:] = weights[:]
 
 

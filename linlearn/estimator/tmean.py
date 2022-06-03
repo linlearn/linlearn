@@ -13,7 +13,7 @@ from collections import namedtuple
 import numpy as np
 from numba import jit
 from ._base import Estimator, jit_kwargs
-from .._utils import np_float, trimmed_mean, fast_trimmed_mean
+from .._utils import np_float, trimmed_mean, fast_trimmed_mean, trimmed_mean_variant
 
 StateTMean = namedtuple(
     "StateTMean",
@@ -142,7 +142,6 @@ class TMean(Estimator):
                         deriv_samples_outer_prods[i, k] = deriv_samples[i, k]
 
                 for k in range(n_classes):
-
                     gradient[0, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
                     # gradient[0, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
 
@@ -187,3 +186,127 @@ class TMean(Estimator):
 
                 return 0
             return grad
+
+class TMean_variant(TMean):
+    """variant of Trimmed-mean estimator"""
+
+    def __init__(self, X, y, loss, n_classes, fit_intercept, percentage):
+        super(TMean_variant, self).__init__(
+                X=X,
+                y=y,
+                loss=loss,
+                n_classes=n_classes,
+                fit_intercept=fit_intercept,
+                percentage=percentage
+            )
+
+    def partial_deriv_factory(self):
+        X = self.X
+        y = self.y
+        loss = self.loss
+        deriv_loss = loss.deriv_factory()
+        n_samples = self.n_samples
+        n_classes = self.n_classes
+        n_excluded_tails = self.n_excluded_tails
+
+        if self.fit_intercept:
+
+            @jit(**jit_kwargs)
+            def partial_deriv(j, inner_products, state):
+                deriv_samples = state.deriv_samples
+                partial_derivative = state.partial_derivative
+                if j == 0:
+                    for i in range(n_samples):
+                        deriv_loss(y[i], inner_products[i], deriv_samples[i])
+                else:
+                    for i in range(n_samples):
+                        deriv_loss(y[i], inner_products[i], deriv_samples[i])
+                        for k in range(n_classes):
+                            deriv_samples[i, k] *= X[i, j - 1]
+
+                # TODO: Hand-made mean ?
+                # TODO: Try out different sorting mechanisms, since at some point the
+                #  sorting order won't change much...
+
+                for k in range(n_classes):
+                    partial_derivative[k] = trimmed_mean_variant(deriv_samples[:, k], n_samples, n_excluded_tails)
+
+            return partial_deriv
+
+        else:
+
+            @jit(**jit_kwargs)
+            def partial_deriv(j, inner_products, state):
+                deriv_samples = state.deriv_samples
+                partial_derivative = state.partial_derivative
+                for i in range(n_samples):
+                    deriv_loss(y[i], inner_products[i], deriv_samples[i])
+                    for k in range(n_classes):
+                        deriv_samples[i, k] *= X[i, j]
+
+                for k in range(n_classes):
+                    partial_derivative[k] = trimmed_mean_variant(deriv_samples[:, k], n_samples, n_excluded_tails)
+
+            return partial_deriv
+
+    def grad_factory(self):
+        X = self.X
+        y = self.y
+        loss = self.loss
+        deriv_loss = loss.deriv_factory()
+        n_samples = self.n_samples
+        n_features = self.n_features
+        n_classes = self.n_classes
+        n_excluded_tails = self.n_excluded_tails
+
+        if self.fit_intercept:
+
+            @jit(**jit_kwargs)
+            def grad(inner_products, state):
+                deriv_samples = state.deriv_samples
+                deriv_samples_outer_prods = state.deriv_samples_outer_prods
+                gradient = state.gradient
+
+                for i in range(n_samples):
+
+                    deriv_loss(y[i], inner_products[i], deriv_samples[i])
+
+                    for k in range(n_classes):
+                        deriv_samples_outer_prods[i, k] = deriv_samples[i, k]
+
+                for k in range(n_classes):
+                    gradient[0, k] = trimmed_mean_variant(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
+
+                for k in range(n_classes):
+                    for j in range(n_features):
+                        for i in range(n_samples):
+                            deriv_samples_outer_prods[i, k] = (
+                                deriv_samples[i, k] * X[i, j]
+                            )
+                        gradient[j + 1, k] = trimmed_mean_variant(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
+
+            return grad
+        else:
+
+            @jit(**jit_kwargs)
+            def grad(inner_products, state):
+                deriv_samples = state.deriv_samples
+                deriv_samples_outer_prods = state.deriv_samples_outer_prods
+                gradient = state.gradient
+
+                for i in range(n_samples):
+                    deriv_loss(y[i], inner_products[i], deriv_samples[i])
+
+                for j in range(n_features):
+
+                    for k in range(n_classes):
+                        for i in range(n_samples):
+                            deriv_samples_outer_prods[i, k] = (
+                                    deriv_samples[i, k] * X[i, j]
+                            )
+
+                        gradient[j, k] = trimmed_mean_variant(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
+
+                return 0
+            return grad
+

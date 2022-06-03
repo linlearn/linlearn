@@ -13,4 +13,5 @@ from .da import DA
 from .sgd import SGD
 from .saga import SAGA
 from .svrg import SVRG
+from .llc19 import LLC19
 from .history import History, plot_history

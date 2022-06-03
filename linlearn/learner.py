@@ -36,8 +36,8 @@ from ._loss import (
     decision_function_factory,
 )
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
-from .solver import CGD, GD, MD, DA, SGD, SVRG, SAGA, batch_GD, History
-from .estimator import ERM, MOM, TMean, LLM, GMOM, CH, HG, DKK
+from .solver import CGD, GD, MD, DA, SGD, SVRG, SAGA, LLC19, batch_GD, History
+from .estimator import ERM, MOM, TMean, TMean_variant, LLM, GMOM, CH, HG, DKK
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float, numba_seed_numpy
 
 jit_kwargs = {
@@ -66,8 +66,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         "multisquaredhinge",
     ]
     _penalties = ["none", "l2", "l1", "elasticnet"]
-    _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch", "hg", "dkk"]
-    _solvers = ["cgd", "gd", "md", "da", "sgd", "svrg", "saga", "batch_gd"]
+    _estimators = ["erm", "mom", "tmean", "tmean_variant", "llm", "gmom", "ch", "hg", "dkk"]
+    _solvers = ["cgd", "gd", "md", "da", "sgd", "svrg", "saga", "batch_gd", "llc19"]
 
     def __init__(
         self,
@@ -385,9 +385,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 X, y, loss, self.n_classes, self.fit_intercept, n_samples_in_block
             )
         elif self.estimator == "tmean":
-            return TMean(
-                X, y, loss, self.n_classes, self.fit_intercept, self.percentage
-            )
+            if self.solver == "llc19":
+                return TMean_variant(
+                    X, y, loss, self.n_classes, self.fit_intercept, self.percentage
+                )
+            else:
+                return TMean(
+                    X, y, loss, self.n_classes, self.fit_intercept, self.percentage
+                )
         elif self.estimator == "ch":
             return CH(X, y, loss, self.n_classes, self.fit_intercept, self.eps)
         elif self.estimator == "llm":
@@ -448,7 +453,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         if self.solver == "cgd":
             step = compute_steps_cgd(X, self.estimator, self.fit_intercept, loss.lip, self.percentage,
                                      n_samples_in_block, self.eps)
-        elif self.solver in ["md", "da"]:
+        elif self.solver in ["md", "da", "llc19"]:
             step = 1.0
         else:
             step = compute_steps(X, self.solver, self.estimator, self.fit_intercept, loss.lip, self.percentage,
@@ -530,6 +535,23 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 history,
                 self.stage_length,
                 self.R,
+                self.sparsity_ub,
+            )
+        elif self.solver == "llc19":
+            # Create an history object for the solver
+            history = History("LLC19", self.max_iter, self.verbose)
+            self.history_ = history
+            return LLC19(
+                X,
+                y,
+                loss,
+                self.n_classes,
+                self.fit_intercept,
+                estimator,
+                self.max_iter,
+                self.tol,
+                self.step_size,
+                history,
                 self.sparsity_ub,
             )
 

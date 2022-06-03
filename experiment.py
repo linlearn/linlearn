@@ -8,6 +8,7 @@ import time
 from datetime import datetime
 import pickle as pkl
 import sys
+from scipy.special import expit
 
 from sklearn.metrics import (
     roc_auc_score,
@@ -20,7 +21,25 @@ from sklearn.preprocessing import LabelBinarizer
 
 from sklearn.linear_model import HuberRegressor, RANSACRegressor, LinearRegression, SGDRegressor
 
+from liuliu19 import liuliu19_solver
+
 from linlearn import Classifier, Regressor
+
+from numba import jit, objmode
+
+NOPYTHON = True
+NOGIL = True
+BOUNDSCHECK = False
+FASTMATH = True
+PARALLEL = False
+
+jit_kwargs = {
+    "nopython": NOPYTHON,
+    "nogil": NOGIL,
+    "boundscheck": BOUNDSCHECK,
+    "fastmath": FASTMATH,
+}
+
 sys.path.extend([".", ".."])
 
 
@@ -33,6 +52,9 @@ max_mom_block_size = np.log(0.2)
 min_tmean_percentage = 1e-5
 default_tmean_percentage = 0.01
 max_tmean_percentage = 0.3
+
+stage_length = 20
+max_iter = 100
 
 # min_C_reg = np.log(1e-4)
 # max_C_reg = np.log(1e4)
@@ -825,4 +847,270 @@ class Huber_Experiment(Experiment):
         params_ = params.copy()
         return params_
 
+class MD_TMEAN_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+        # hard-coded params search space here
+        self.space = {
+            "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+        }
+        # hard-coded default params here
+        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "md_tmean"
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "tmean",
+                "stage_length": stage_length,
+                "solver": "md",
+                "random_state": self.random_state,
+            }
+        )
+        return params_
+
+class MD_DKK_Experiment(Experiment):
+
+    def __init__(
+            self,
+            learning_task,
+            max_hyperopt_evals=50,
+            random_state=0,
+            output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+        # hard-coded params search space here
+        self.space = {
+            "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+        }
+        # hard-coded default params here
+        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "md_dkk"
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "dkk",
+                "solver": "md",
+                "stage_length": stage_length,
+                "random_state": self.random_state,
+            }
+        )
+        return params_
+
+class DA_TMEAN_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+        # hard-coded params search space here
+        self.space = {
+            "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+        }
+        # hard-coded default params here
+        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "da_tmean"
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "tmean",
+                "stage_length": stage_length,
+                "solver": "da",
+                "random_state": self.random_state,
+            }
+        )
+        return params_
+
+class DA_DKK_Experiment(Experiment):
+
+    def __init__(
+            self,
+            learning_task,
+            max_hyperopt_evals=50,
+            random_state=0,
+            output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+        # hard-coded params search space here
+        self.space = {
+            "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+        }
+        # hard-coded default params here
+        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "da_dkk"
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "dkk",
+                "solver": "da",
+                "stage_length": stage_length,
+                "random_state": self.random_state,
+            }
+        )
+        return params_
+
+# def get_llc_deriv_func(learning_task):
+#     if learning_task == "regression":
+#         @jit(**jit_kwargs)
+#         def drv(y1, y2):
+#             return y1 - y2
+#
+#         return drv
+#     elif learning_task == "binary-classification":
+#         @jit(inline="always", **jit_kwargs)
+#         def drv(z, y):
+#             return -y * expit(-y * z)  # sigmoid(-y * z[0])#
+#
+#         return drv
+#     else:  # multiclass classification
+#
+#         @jit(**jit_kwargs)
+#         def drv(y, z):
+#             n_classes = len(z)
+#             out = np.empty_like(z)
+#             max_z = z[0]
+#             for k in range(1, n_classes):
+#                 if z[k] > max_z:
+#                     max_z = z[k]
+#
+#             norm = 0.0
+#             for k in range(n_classes):
+#                 out[k] = np.exp(z[k] - max_z)  # not much speed difference between exp and np.exp
+#                 norm += out[k]
+#             for k in range(n_classes):
+#                 out[k] /= norm
+#             # out /= out.sum()
+#
+#             out[y] -= 1
+#             return out
+#
+#         return drv
+
+
+class LLC19_TMEAN_Experiment(Experiment):
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+        # hard-coded params search space here
+        self.space = {
+            "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+        }
+        # hard-coded default params here
+        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "llc19_tmean"
+
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "tmean",
+                "solver": "llc19",
+                "random_state": self.random_state,
+                "sparsity_ub": None
+            }
+        )
+        return params_
+
+class LLC19_MOM_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+
+        # hard-coded params search space here
+        self.space = {
+            "block_size": hp.loguniform("block_size", min_mom_block_size, max_mom_block_size),
+        }
+        # hard-coded default params here
+        self.default_params = {"block_size": default_mom_block_size}
+        # self.default_params = self.preprocess_params(self.default_params)
+        self.title = "llc19_mom"
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "mom",
+                "solver": "llc19",
+                "random_state": self.random_state,
+                "sparsity_ub": None
+            }
+        )
+        return params_
 

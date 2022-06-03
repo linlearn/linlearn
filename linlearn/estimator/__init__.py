@@ -11,6 +11,6 @@ from .mom import MOM, StateMOM
 from .ch import CH, StateCH
 from .llm import LLM, StateLLM
 from .gmom import GMOM, StateGMOM
-from .tmean import TMean, StateTMean
+from .tmean import TMean, TMean_variant, StateTMean
 from .hg import HG, StateHG
 from .dkk import DKK, StateDKK

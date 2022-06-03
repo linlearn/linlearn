@@ -75,7 +75,12 @@ from linlearn.datasets import (  # noqa: E402
     load_nyctaxi,
     load_wine,
     load_airbnb,
-    load_statlog
+    load_statlog,
+    load_arcene,
+    load_glaucoma,
+    load_gisette,
+    load_madelon,
+    load_gene_expression
 )
 
 from experiment import (  # noqa: E402
@@ -92,6 +97,12 @@ from experiment import (  # noqa: E402
     ModifiedHuber_CGD_Experiment,
     LAD_Experiment,
     RANSAC_Experiment,
+    MD_TMEAN_Experiment,
+    MD_DKK_Experiment,
+    DA_TMEAN_Experiment,
+    DA_DKK_Experiment,
+    LLC19_TMEAN_Experiment,
+    LLC19_MOM_Experiment,
     # TMEAN_HUBER_CGD_Experiment,
 )
 
@@ -117,6 +128,12 @@ def set_experiment(
         "LAD": LAD_Experiment,
         "HUBER": Huber_Experiment,
         "MODIFHUBER": ModifiedHuber_CGD_Experiment,
+        "MD_TMEAN": MD_TMEAN_Experiment,
+        "MD_DKK": MD_DKK_Experiment,
+        "DA_TMEAN": DA_TMEAN_Experiment,
+        "DA_DKK": DA_DKK_Experiment,
+        "LLC_MOM": LLC19_MOM_Experiment,
+        "LLC_TMEAN": LLC19_TMEAN_Experiment,
         # "TMEAN_HUBER_CGD": TMEAN_HUBER_CGD_Experiment,
     }
     return experiment_select[clf_name](
@@ -174,6 +191,11 @@ def set_dataloader(dataset_name):
         "wine": load_wine,
         "airbnb": load_airbnb,
         "statlog": load_statlog,
+        "arcene": load_arcene,
+        "madelon": load_madelon,
+        "gisette": load_gisette,
+        "gene_expression": load_gene_expression,
+        "glaucoma": load_glaucoma
     }
     return loaders_mapping[dataset_name]
 
@@ -725,6 +747,12 @@ parser.add_argument(
         "LAD",
         "HUBER",
         "MODIFHUBER",
+        "MD_TMEAN",
+        "MD_DKK",
+        "DA_TMEAN",
+        "DA_DKK",
+        "LLC_MOM",
+        "LLC_TMEAN",
     ],
 )
 parser.add_argument(
@@ -775,6 +803,11 @@ parser.add_argument(
         "wine",
         "airbnb",
         "statlog",
+        "arcene",
+        "glaucoma",
+        "gene_expression",
+        "gisette",
+        "madelon"
     ],
 )
 parser.add_argument("-n", "--hyperopt_evals", type=int, default=50)
