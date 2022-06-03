@@ -1079,7 +1079,6 @@ class LLC19_TMEAN_Experiment(Experiment):
                 "estimator": "tmean",
                 "solver": "llc19",
                 "random_state": self.random_state,
-                "sparsity_ub": None
             }
         )
         return params_
@@ -1119,7 +1118,6 @@ class LLC19_MOM_Experiment(Experiment):
                 "estimator": "mom",
                 "solver": "llc19",
                 "random_state": self.random_state,
-                "sparsity_ub": None
             }
         )
         return params_

@@ -1108,7 +1108,7 @@ class Classifier(BaseLearner):
         cgd_IS=False,
         stage_length=10,
         Radius=1000,
-        sparsity_ub=None,
+        sparsity_ub=0.01,
 
     ):
         super(Classifier, self).__init__(
@@ -1274,7 +1274,7 @@ class Regressor(BaseLearner, RegressorMixin):
         cgd_IS=False,
         stage_length=10,
         Radius=1000,
-        sparsity_ub=None,
+        sparsity_ub=0.01,
 
     ):
         super(Regressor, self).__init__(
