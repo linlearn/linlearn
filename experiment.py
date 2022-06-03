@@ -53,6 +53,10 @@ min_tmean_percentage = 1e-5
 default_tmean_percentage = 0.01
 max_tmean_percentage = 0.3
 
+min_sparsity = 0.005
+default_sparsity = 0.01
+max_sparsity = 0.1
+
 stage_length = 20
 max_iter = 100
 
@@ -867,9 +871,10 @@ class MD_TMEAN_Experiment(Experiment):
         # hard-coded params search space here
         self.space = {
             "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+            "sparsity_ub": hp.uniform("sparsity_ub", min_sparsity, max_sparsity),
         }
         # hard-coded default params here
-        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = {"percentage": default_tmean_percentage, "sparsity_ub": default_sparsity}
         self.default_params = self.preprocess_params(self.default_params)
         self.title = "md_tmean"
 
@@ -905,9 +910,10 @@ class MD_DKK_Experiment(Experiment):
         # hard-coded params search space here
         self.space = {
             "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+            "sparsity_ub": hp.uniform("sparsity_ub", min_sparsity, max_sparsity),
         }
         # hard-coded default params here
-        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = {"percentage": default_tmean_percentage, "sparsity_ub": default_sparsity}
         self.default_params = self.preprocess_params(self.default_params)
         self.title = "md_dkk"
 
@@ -943,9 +949,10 @@ class DA_TMEAN_Experiment(Experiment):
         # hard-coded params search space here
         self.space = {
             "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+            "sparsity_ub": hp.uniform("sparsity_ub", min_sparsity, max_sparsity),
         }
         # hard-coded default params here
-        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = {"percentage": default_tmean_percentage, "sparsity_ub": default_sparsity}
         self.default_params = self.preprocess_params(self.default_params)
         self.title = "da_tmean"
 
@@ -981,9 +988,10 @@ class DA_DKK_Experiment(Experiment):
         # hard-coded params search space here
         self.space = {
             "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+            "sparsity_ub": hp.uniform("sparsity_ub", min_sparsity, max_sparsity),
         }
         # hard-coded default params here
-        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = {"percentage": default_tmean_percentage, "sparsity_ub": default_sparsity}
         self.default_params = self.preprocess_params(self.default_params)
         self.title = "da_dkk"
 
@@ -1056,9 +1064,10 @@ class LLC19_TMEAN_Experiment(Experiment):
         # hard-coded params search space here
         self.space = {
             "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+            "sparsity_ub": hp.uniform("sparsity_ub", min_sparsity, max_sparsity),
         }
         # hard-coded default params here
-        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = {"percentage": default_tmean_percentage, "sparsity_ub": default_sparsity}
         self.default_params = self.preprocess_params(self.default_params)
         self.title = "llc19_tmean"
 
@@ -1096,9 +1105,10 @@ class LLC19_MOM_Experiment(Experiment):
         # hard-coded params search space here
         self.space = {
             "block_size": hp.loguniform("block_size", min_mom_block_size, max_mom_block_size),
+            "sparsity_ub": hp.uniform("sparsity_ub", min_sparsity, max_sparsity),
         }
         # hard-coded default params here
-        self.default_params = {"block_size": default_mom_block_size}
+        self.default_params = {"block_size": default_mom_block_size, "sparsity_ub": default_sparsity}
         # self.default_params = self.preprocess_params(self.default_params)
         self.title = "llc19_mom"
 

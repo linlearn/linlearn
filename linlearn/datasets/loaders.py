@@ -606,7 +606,7 @@ def load_madelon():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Madelon
     # preprocessed with parser.py in data/madelon
 
-    features = [i for i in range(500)] #+ ["label"]
+    features = [str(i) for i in range(500)] #+ ["label"]
 
 
     dtype = {x: np.float for x in features}
@@ -625,7 +625,7 @@ def load_arcene():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Arcene
     # preprocessed with parser.py in data/arcene
 
-    features = [i for i in range(10000)] #+ ["label"]
+    features = [str(i) for i in range(10000)] #+ ["label"]
 
 
     dtype = {x: np.float for x in features}
@@ -683,7 +683,7 @@ def load_gisette():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Gisette
     # preprocessed with parser.py in data/gisette
 
-    features = list(range(5000))
+    features = [str(i) for i in range(5000)]
 
     dtype = {x: np.float for x in features}
     #dtype["label"] = "category"

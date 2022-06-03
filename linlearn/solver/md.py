@@ -205,8 +205,8 @@ class MD(Solver):
         stage_length = self.stage_length
         history = self.history
         sb = self.sparsity_ub
-        print("called MD solver")
-        print("stage length is %d " % stage_length)
+        # print("called MD solver")
+        # print("stage length is %d " % stage_length)
         if w0 is not None:
             weights[:] = w0
         else:
@@ -236,7 +236,7 @@ class MD(Solver):
 
         n_iter = 0
         while n_iter + stage_length <= max_iter:
-            print("starting stage %d" % (n_iter // stage_length))
+            # print("starting stage %d" % (n_iter // stage_length))
 
             for t in range(stage_length):
                 max_abs_delta, max_abs_weight = cycle(

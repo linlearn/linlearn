@@ -92,8 +92,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         sgd_exponent=0.5,
         cgd_IS=False,
         stage_length=10,
-        R=1000,
-        sparsity_ub=None,
+        Radius=1000,
+        sparsity_ub=0.01,
     ):
         self.penalty = penalty
         self.C = C
@@ -115,7 +115,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         self.sgd_exponent = sgd_exponent
         self.cgd_IS = cgd_IS
         self.stage_length = stage_length
-        self.R = R
+        self.Radius = Radius
         self.sparsity_ub = sparsity_ub
 
 
@@ -306,6 +306,34 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
         else:
             self._sgd_exponent = float(val)
+
+    @property
+    def sparsity_ub(self):
+        return self._sparsity_ub
+
+    @sparsity_ub.setter
+    def sparsity_ub(self, val):
+        if isinstance(val, numbers.Integral) and val > 0:
+            self._sparsity_ub = val
+        elif isinstance(val, numbers.Real) and val > 0 and val <= 1:
+            self._sparsity_ub = val
+        else:
+            raise ValueError(
+                "sparsity_ub (sparsity upperbound) must be a postive integer or a ratio between 0 and 1; got (sparsity_ub=%r)" % val
+            )
+
+    @property
+    def Radius(self):
+        return self._Radius
+
+    @Radius.setter
+    def Radius(self, val):
+        if isinstance(val, numbers.Real) and val > 0:
+            self._Radius = val
+        else:
+            raise ValueError(
+                "Radius must be a postive real number; got (Radius=%r)" % val
+            )
 
     @property
     def cgd_IS(self):
@@ -515,7 +543,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.step_size,
                 history,
                 self.stage_length,
-                self.R,
+                self.Radius,
                 self.sparsity_ub,
             )
         elif self.solver == "da":
@@ -534,7 +562,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.step_size,
                 history,
                 self.stage_length,
-                self.R,
+                self.Radius,
                 self.sparsity_ub,
             )
         elif self.solver == "llc19":
@@ -896,6 +924,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         #         dtype=X.dtype,
         #     )
 
+        #preprocess sparsity_ub here
+        if self.sparsity_ub <= 1:
+            self.sparsity_ub = int(self.sparsity_ub * X.shape[1])
+
         #######
         solver = self._get_solver(X, y_encoded)
         w = self._get_initial_iterate(X, y_encoded)
@@ -1075,7 +1107,7 @@ class Classifier(BaseLearner):
         l1_ratio=0.5,
         cgd_IS=False,
         stage_length=10,
-        R=1000,
+        Radius=1000,
         sparsity_ub=None,
 
     ):
@@ -1099,7 +1131,7 @@ class Classifier(BaseLearner):
             l1_ratio=l1_ratio,
             cgd_IS=cgd_IS,
             stage_length=stage_length,
-            R=R,
+            Radius=Radius,
             sparsity_ub=sparsity_ub,
 
         )
@@ -1241,7 +1273,7 @@ class Regressor(BaseLearner, RegressorMixin):
         l1_ratio=0.5,
         cgd_IS=False,
         stage_length=10,
-        R=1000,
+        Radius=1000,
         sparsity_ub=None,
 
     ):
@@ -1265,7 +1297,7 @@ class Regressor(BaseLearner, RegressorMixin):
             l1_ratio=l1_ratio,
             cgd_IS=cgd_IS,
             stage_length=stage_length,
-            R=R,
+            Radius=Radius,
             sparsity_ub=sparsity_ub,
 
         )
