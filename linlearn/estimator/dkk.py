@@ -8,6 +8,7 @@ import numpy as np
 from numba import jit, objmode
 from ._base import Estimator, jit_kwargs
 from .._utils import np_float
+from sklearn.utils import check_array
 
 from scipy.linalg import eigh
 
@@ -153,9 +154,11 @@ def dkk(vecs, eps):
     Sigma = np.empty((d, d))
     w.fill(1.0 / len(vecs))
     sum_w = 1.0
+    # print("called dkk")
     while sum_w > 1 - 2 * eps:
         mu = np.dot(w, vecs) / sum_w
-
+        # print(mu)
+        # print("sum_w = ", sum_w)
         for i in range(n):
             for j in range(d):
                 ph1[i, j] = vecs[i, j] - mu[j]
@@ -169,17 +172,24 @@ def dkk(vecs, eps):
                     Sigma[j1, j2] += w[i] * ph1[i, j1] * ph1[i, j2]
                 Sigma[j1, j2] /= sum_w
                 Sigma[j2, j1] = Sigma[j1, j2]
+        if np.linalg.norm(Sigma) < 1e-3:
+            return mu
 
         #Sigma = ph1.T @ (w[:, np.newaxis] * ph1)
         # TODO : Figure out how to compute only first eigenvector in Numba
-        with objmode(eigvec='float64[:]'):  # annotate return type
+        with objmode(eig='float64[:]'):  # annotate return type
             # this region is executed by object-mode.
-            _, eigvec = eigh(Sigma, subset_by_index=[d - 1, d - 1])
+            _, eig = eigh(Sigma, subset_by_index=[d - 1, d - 1])
+            eig = eig.flatten()
             #np.ascontiguousarray(eigvec)
         # eigvals, eigvecs = np.linalg.eigh(Sigma)
         # eigvec = eigvecs[:, np.argmax(eigvals)]
 
-        g = np.square(ph1 @ eigvec).reshape(n)
+        g = np.zeros(n)#np.square(ph1 @ eigvec).reshape(n)
+        for i in range(n):
+            for j in range(d):
+                g[i] += ph1[i, j] * eig[j]
+            g[i] = g[i] * g[i]
         f = g.copy()
 
         # ________________________________
@@ -192,7 +202,9 @@ def dkk(vecs, eps):
         # t = g[asg[ind + 1]]
         # ________________________________
         t = find_t3(g, w, eps)
-
+        # print(np.min(g), np.max(g))
+        # print("t = ", t)
+        # print(np.linalg.norm(Sigma))
 
         # f[f < t] = 0
         m = 0.0
@@ -202,11 +214,13 @@ def dkk(vecs, eps):
                 f[i] = 0.0
             elif f[i] > m and w[i] > 0:
                 m = f[i]
+        # print("m = ", m)
         #print("pass 3")
         w = np.multiply(w, 1 - f / m)
         sum_w = np.sum(w)
+    mu = np.dot(w, vecs) / sum_w
 
-    return np.dot(w, vecs) / sum_w
+    return mu
 
 
 
@@ -281,6 +295,9 @@ class DKK(Estimator):
                                 deriv_samples[i, k] * X[i, j]
                             )
                     gradient[j + 1, :] = dkk(deriv_samples_outer_prods, eps)
+                    # with objmode():  # annotate return type
+                    #     # this region is executed by object-mode.
+                    #     check_array(gradient[j + 1:j+2, :])
 
             return grad
         else:
@@ -303,6 +320,9 @@ class DKK(Estimator):
                             )
 
                     gradient[j, :] = dkk(deriv_samples_outer_prods, eps)
+                    # with objmode():  # annotate return type
+                    #     # this region is executed by object-mode.
+                    #     check_array(gradient[j:j+1, :])
 
                 return 0
             return grad

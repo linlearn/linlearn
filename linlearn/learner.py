@@ -926,7 +926,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
 
         #preprocess sparsity_ub here
         if self.sparsity_ub <= 1:
-            self.sparsity_ub = int(self.sparsity_ub * X.shape[1])
+            self.sparsity_ub = max(1, min(int(self.sparsity_ub * X.shape[1]), X.shape[0]))
 
         #######
         solver = self._get_solver(X, y_encoded)
