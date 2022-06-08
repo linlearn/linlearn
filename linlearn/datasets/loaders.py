@@ -148,16 +148,6 @@ def load_cardio():
     )
 
 
-#
-# def load_amazon():
-#     from catboost.datasets import amazon
-#
-#     df_train, df_test = amazon()
-#     df = pd.concat([df_train, df_test], axis="column")
-#
-#     df.info()
-
-
 def load_churn():
     dtype = {
         "State": "category",
@@ -695,6 +685,23 @@ def load_gisette():
         dtype=dtype,
     )
     return dataset.load_from_csv("gisette.csv.gz", dtype=dtype)
+
+
+
+# def load_amazon():
+#     # downloaded from https://www.openml.org/search?type=data&sort=runs&id=4135&status=active
+#     # preprocessed with parser.py in data/amazon
+#
+#     dtype = {x: "category" for x in ['RESOURCE', 'MGR_ID', 'ROLE_ROLLUP_1', 'ROLE_ROLLUP_2', 'ROLE_DEPTNAME',
+#        'ROLE_TITLE', 'ROLE_FAMILY_DESC', 'ROLE_FAMILY', 'ROLE_CODE']}
+#
+#     dataset = Dataset.from_dtype(
+#         name="amazon",
+#         task="binary-classification",
+#         label_column='target',
+#         dtype=dtype,
+#     )
+#     return dataset.load_from_csv("amazon.csv.gz", dtype=dtype)
 
 
 

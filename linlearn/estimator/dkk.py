@@ -185,11 +185,13 @@ def dkk(vecs, eps):
         # eigvals, eigvecs = np.linalg.eigh(Sigma)
         # eigvec = eigvecs[:, np.argmax(eigvals)]
 
-        g = np.zeros(n)#np.square(ph1 @ eigvec).reshape(n)
-        for i in range(n):
-            for j in range(d):
-                g[i] += ph1[i, j] * eig[j]
-            g[i] = g[i] * g[i]
+        g = np.square(ph1 @ eig).reshape(n)
+
+        # g = np.zeros(n)#
+        # for i in range(n):
+        #     for j in range(d):
+        #         g[i] += ph1[i, j] * eig[j]
+        #     g[i] = g[i] * g[i]
         f = g.copy()
 
         # ________________________________
