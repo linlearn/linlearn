@@ -9,7 +9,7 @@ from ._bank import load_bank
 from ._higgs import load_higgs
 from ._car import load_car
 from ._kick import load_kick
-from ._amazon import load_amazon
+# from ._amazon import load_amazon
 from ._epsilon import load_epsilon
 from ._internet import load_internet
 
@@ -61,6 +61,7 @@ from .loaders import (
     load_gene_expression,
     load_glaucoma,
     load_gisette,
+    load_amazon,
     describe_datasets,
 )
 
