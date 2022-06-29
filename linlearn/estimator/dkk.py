@@ -150,29 +150,36 @@ def find_t3(g, w, eps):
 def dkk(vecs, eps):
     n, d = vecs.shape
     w = np.empty(len(vecs))
-    ph1 = np.empty(vecs.shape)
+    w_copy = np.empty(len(vecs))
+    # ph1 = np.empty(vecs.shape)
     Sigma = np.empty((d, d))
     w.fill(1.0 / len(vecs))
     sum_w = 1.0
+    g = np.empty(n)
+    g_copy = np.empty(n)
     # print("called dkk")
     while sum_w > 1 - 2 * eps:
         mu = np.dot(w, vecs) / sum_w
         # print(mu)
         # print("sum_w = ", sum_w)
-        for i in range(n):
-            for j in range(d):
-                ph1[i, j] = vecs[i, j] - mu[j]
+
+        # for i in range(n):
+        #     for j in range(d):
+        #         ph1[i, j] = vecs[i, j] - mu[j]
+
         # ph1 = vecs - mu[np.newaxis, :]
 
-        Sigma.fill(0.0)
+        # Sigma.fill(0.0)
+        Sigma_norm = 0.0
         for j1 in range(d):
             for j2 in range(j1, d):
                 Sigma[j1, j2] = 0.0
                 for i in range(n):
-                    Sigma[j1, j2] += w[i] * ph1[i, j1] * ph1[i, j2]
+                    Sigma[j1, j2] += w[i] * (vecs[i, j1] - mu[j1]) * (vecs[i, j2] - mu[j2])#ph1[i, j1] * ph1[i, j2]
                 Sigma[j1, j2] /= sum_w
                 Sigma[j2, j1] = Sigma[j1, j2]
-        if np.linalg.norm(Sigma) < 1e-3:
+                Sigma_norm += Sigma[j1, j2] * Sigma[j1, j2]
+        if Sigma_norm < 1e-4:
             return mu
 
         #Sigma = ph1.T @ (w[:, np.newaxis] * ph1)
@@ -185,14 +192,15 @@ def dkk(vecs, eps):
         # eigvals, eigvecs = np.linalg.eigh(Sigma)
         # eigvec = eigvecs[:, np.argmax(eigvals)]
 
-        g = np.square(ph1 @ eig).reshape(n)
+        for i in range(n):
+            g[i] = 0.0
+            for j in range(d):
+                g[i] += (vecs[i, j] - mu[j]) * eig[j]
+            g[i] = g[i] * g[i]
+            g_copy[i] = g[i]
+        # g = np.square(ph1 @ eig).reshape(n)
 
-        # g = np.zeros(n)#
-        # for i in range(n):
-        #     for j in range(d):
-        #         g[i] += ph1[i, j] * eig[j]
-        #     g[i] = g[i] * g[i]
-        f = g.copy()
+        # f = g.copy()
 
         # ________________________________
         # asg = np.argsort(g)#[::-1]
@@ -203,22 +211,22 @@ def dkk(vecs, eps):
         #     ind -= 1
         # t = g[asg[ind + 1]]
         # ________________________________
-        t = find_t3(g, w, eps)
-        # print(np.min(g), np.max(g))
-        # print("t = ", t)
-        # print(np.linalg.norm(Sigma))
+        t = find_t3(g_copy, w_copy, eps)
 
         # f[f < t] = 0
         m = 0.0
         #print("pass 2")
         for i in range(n):
-            if f[i] < t:
-                f[i] = 0.0
-            elif f[i] > m and w[i] > 0:
-                m = f[i]
+            if g[i] < t:
+                g[i] = 0.0
+            elif g[i] > m and w[i] > 0:
+                m = g[i]
         # print("m = ", m)
         #print("pass 3")
-        w = np.multiply(w, 1 - f / m)
+        for i in range(n):
+            w[i] *= 1 - g[i] / m
+            w_copy[i] = w[i]
+        # w = np.multiply(w, 1 - g / m)
         sum_w = np.sum(w)
     mu = np.dot(w, vecs) / sum_w
 

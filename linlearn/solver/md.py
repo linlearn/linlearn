@@ -256,6 +256,7 @@ class MD(Solver):
 
                 if current_tol < tol:
                     history.close_bar()
+                    hardthresh(weights, sb)
                     return OptimizationResult(
                         w=weights, n_iter=n_iter, success=True, tol=tol, message=None
                     )

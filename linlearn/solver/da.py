@@ -173,7 +173,8 @@ class DA(Solver):
                 # TODO : allocate w_new somewhere ?
 
                 s_t += grad
-                weights_plus = w0 + prox(step * step_scaler(state_estimator) * s_t / np.sqrt(t+1), R, p, C)
+                weights_plus = w0 + prox(step * step_scaler(state_estimator) * s_t# / np.sqrt(t+1)
+                                         , R, p, C)
                 w_new = (t * weights + weights_plus) / (t+1)
 
                 for k in range(n_classes):
@@ -215,7 +216,7 @@ class DA(Solver):
         decision_function = decision_function_factory(X, fit_intercept)
         decision_function(weights, inner_products)
 
-        # Get the cycle function
+            # Get the cycle function
         cycle = self.cycle_factory()
         # Get the estimator state (a place-holder for the estimator's internal
         # computations)

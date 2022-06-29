@@ -1,6 +1,8 @@
 # Authors: Stephane Gaiffas <stephane.gaiffas@gmail.com>
 # License: BSD 3 clause
 
+import os
+
 import pandas as pd
 import numpy as np
 
@@ -703,6 +705,279 @@ def load_amazon():
     )
     return dataset.load_from_csv("amazon.csv.gz", dtype=dtype)
 
+def load_atp1d():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=41475&status=active
+    # preprocessed with parser.py in data/atp (change filenames in script  1d/7d)
+    module_path = os.path.dirname(__file__)
+
+    csv = pd.read_csv(os.path.join(module_path, "data", "atp1d.csv.gz"))
+    columns = list(csv.columns)
+    del csv
+    label_names = []
+    for j in range(6):
+        label_names.append(columns.pop(-1))
+    dtype = {x: np.float for x in columns}
+
+    dataset = Dataset.from_dtype(
+        name="atp1d",
+        task="regression",
+        label_column=label_names[-1], # We select only the first task and drop the rest of the labels
+        drop_columns=label_names[:-1],
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("atp1d.csv.gz", dtype=dtype)
+
+
+def load_atp7d():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=41476&status=active
+    # preprocessed with parser.py in data/atp (change filenames in script  1d/7d)
+    module_path = os.path.dirname(__file__)
+
+    csv = pd.read_csv(os.path.join(module_path, "data", "atp7d.csv.gz"))
+    columns = list(csv.columns)
+    del csv
+    label_names = []
+    for j in range(6):
+        label_names.append(columns.pop(-1))
+    dtype = {x: np.float for x in columns}
+
+    dataset = Dataset.from_dtype(
+        name="atp7d",
+        task="regression",
+        label_column=label_names[-1], # We select only the first task and drop the rest of the labels
+        drop_columns=label_names[:-1],
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("atp7d.csv.gz", dtype=dtype)
+
+def load_parkinson():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=42176&status=active
+    # preprocessed with parser.py in data/parkinson
+    module_path = os.path.dirname(__file__)
+
+    csv = pd.read_csv(os.path.join(module_path, "data", "parkinson.csv.gz"))
+    columns = list(csv.columns)
+    del csv
+
+    dtype = {x: np.float for x in columns[2:-1]}
+    dtype[columns[1]] = "category"
+
+    dataset = Dataset.from_dtype(
+        name="parkinson",
+        task="binary-classification",
+        label_column=columns[-1],
+        drop_columns=columns[:1],
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("parkinson.csv.gz", dtype=dtype)
+
+def load_gina_prior():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=1042&status=active
+    # preprocessed with parser.py in data/gina_prior
+
+    dtype = {"pixel"+str(x+1): np.float for x in range(784)}
+
+    dataset = Dataset.from_dtype(
+        name="gina_prior",
+        task="binary-classification",
+        label_column="label",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("gina_prior.csv.gz", dtype=dtype)
+
+def load_gina():
+    # downloaded from https://www.openml.org/search?type=data&status=active&id=41158
+    # preprocessed with parser.py in data/gina
+
+    dtype = {"V"+str(x+1): np.float for x in range(970)}
+
+    dataset = Dataset.from_dtype(
+        name="gina",
+        task="binary-classification",
+        label_column="class",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("gina.csv.gz", dtype=dtype)
+
+def load_qsar():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=3987&status=active
+    # preprocessed with parser.py in data/qsar
+
+    dtype = {"FCFP6_1024_"+str(x): np.float for x in range(1024)}
+
+    dataset = Dataset.from_dtype(
+        name="qsar",
+        task="regression",
+        label_column="MEDIAN_PXC50",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("qsartid11678.csv.gz", dtype=dtype)
+
+def load_qsar10980():
+    # downloaded from https://www.openml.org/search?type=data&status=active&id=3277
+    # preprocessed with parser.py in data/qsar10980
+
+    dtype = {"FCFP6_1024_"+str(x): np.float for x in range(1024)}
+
+    dataset = Dataset.from_dtype(
+        name="qsar10980",
+        task="regression",
+        label_column="MEDIAN_PXC50",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("qsartid10980.csv.gz", dtype=dtype)
+
+def load_santander():
+    # downloaded from https://www.openml.org/search?type=data&status=active&id=42572
+    # preprocessed with parser.py in data/santander
+    module_path = os.path.dirname(__file__)
+
+    csv = pd.read_csv(os.path.join(module_path, "data", "santander.csv.gz"))
+    columns = list(csv.columns)
+    del csv
+
+    dtype = {x: np.float for x in columns[:-1]}
+
+    dataset = Dataset.from_dtype(
+        name="santander",
+        task="regression",
+        label_column=columns[-1],
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("santander.csv.gz", dtype=dtype)
+
+def load_ap_colon_kidney():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=1137&status=active
+    # preprocessed with parser.py
+    module_path = os.path.dirname(__file__)
+
+    csv = pd.read_csv(os.path.join(module_path, "data", "ap_colon_kidney.csv.gz"))
+    columns = list(csv.columns)
+    del csv
+
+    dtype = {x: np.float for x in columns[1:-1]}
+
+    dataset = Dataset.from_dtype(
+        name="ap_colon_kidney",
+        task="binary_classification",
+        label_column=columns[-1],
+        drop_columns=columns[:1],
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("ap_colon_kidney.csv.gz", dtype=dtype)
+
+def load_robert():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=41165&status=active
+    # preprocessed with parser.py
+
+    dtype = {"V"+str(x+1): np.float for x in range(7200)}
+
+    dataset = Dataset.from_dtype(
+        name="robert",
+        task="multiclass-classification",
+        label_column="class",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("robert.csv.gz", dtype=dtype)
+
+def load_bioresponse():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=4134&status=active
+    # preprocessed with parser.py
+
+    dtype = {"D"+str(x+1): np.float for x in range(1776)}
+
+    dataset = Dataset.from_dtype(
+        name="bioreponse",
+        task="binary-classification",
+        label_column="target",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("bioresponse.csv.gz", dtype=dtype)
+
+def load_christine():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=41142&status=active
+    # preprocessed with parser.py
+
+    dtype = {"V"+str(x+1): np.float for x in range(1636)}
+
+    dataset = Dataset.from_dtype(
+        name="christine",
+        task="binary-classification",
+        label_column="class",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("christine.csv.gz", dtype=dtype)
+
+def load_hiva_agnostic():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=1039&status=active
+    # preprocessed with parser.py
+
+    dtype = {"attr"+str(x): np.float for x in range(1617)}
+
+    dataset = Dataset.from_dtype(
+        name="hiva_agnostic",
+        task="binary-classification",
+        label_column="label",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("hiva_agnostic.csv.gz", dtype=dtype)
+
+def load_gpositivego():
+    # downloaded from https://www.uco.es/kdis/mllresources/
+    # preprocessed with parser.py
+
+    dtype = {str(x): np.float for x in range(912)}
+
+    dataset = Dataset.from_dtype(
+        name="gpositivego",
+        task="multiclass-classification",
+        label_column="912",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("gpositivego.csv.gz", dtype=dtype)
+
+def load_gnegativego():
+    # downloaded from https://www.uco.es/kdis/mllresources/
+    # preprocessed with parser.py
+
+    dtype = {str(x): np.float for x in range(1717)}
+
+    dataset = Dataset.from_dtype(
+        name="gnegativego",
+        task="multiclass-classification",
+        label_column="label",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("gnegativego.csv.gz", dtype=dtype)
+
+def load_gpositivepseaac():
+    # downloaded from https://www.uco.es/kdis/mllresources/
+    # preprocessed with parser.py
+
+    dtype = {str(x): np.float for x in range(440)}
+
+    dataset = Dataset.from_dtype(
+        name="gpositivepseaac",
+        task="multiclass-classification",
+        label_column="label",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("gpositivepseaac.csv.gz", dtype=dtype)
+
+
+def load_gnegativepseaac():
+    # downloaded from https://www.uco.es/kdis/mllresources/
+    # preprocessed with parser.py
+
+    dtype = {str(x): np.float for x in range(440)}
+
+    dataset = Dataset.from_dtype(
+        name="gnegativepseaac",
+        task="multiclass-classification",
+        label_column="label",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("gnegativepseaac.csv.gz", dtype=dtype)
 
 
 

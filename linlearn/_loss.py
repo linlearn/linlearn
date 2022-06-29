@@ -5,9 +5,8 @@ from abc import ABC, abstractmethod
 from math import exp, log, fabs
 import numpy as np
 from numba import jit, njit, vectorize, void, prange
+from warnings import warn
 
-from .estimator.ch import holland_catoni_estimator
-from .estimator.hg import alg2
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float, fast_median, fast_trimmed_mean, sum_sq, argmedian
 from scipy.special import expit
 
@@ -109,11 +108,17 @@ def median_of_means(x, block_size):
 
 #@jit(**jit_kwargs)
 def compute_steps_cgd(
-    X, estimator, fit_intercept, lip_const, percentage=0.0, n_samples_in_block=0, eps=0.0
+    X, estimator, fit_intercept, lip, percentage=0.0, n_samples_in_block=0, eps=0.0
 ):
     n_samples, n_features = X.shape
     int_fit_intercept = int(fit_intercept)
     steps = np.zeros(n_features + int_fit_intercept, dtype=X.dtype)
+    if not np.isfinite(lip):
+        warn("Computing fixed CGD step sizes for non Lipschitz smooth loss using L=1, solver may not converge")
+        lip_const = 1.
+    else:
+        lip_const = lip
+
     if fit_intercept:
         steps[0] = 1 / lip_const
     if estimator == "erm":
@@ -126,7 +131,7 @@ def compute_steps_cgd(
             steps[j] = n_samples / (lip_const * max(steps[j], 1e-8))
         return steps
 
-    elif estimator in ["mom", "gmom", "llm", "tmean", "ch"]:
+    else: # elif estimator in ["mom", "gmom", "llm", "tmean", "ch"]:
         if n_samples_in_block == 0:
             raise ValueError(
                 "You should provide n_samples_in_block for mom/gmom estimator"
@@ -167,15 +172,18 @@ def compute_steps_cgd(
     #         steps[j + int_fit_intercept] = 1 / (max(fast_trimmed_mean(squared_coordinates, n_samples, percentage), 1e-8) * lip_const)
     #
     #     return steps
-    else:
-        raise ValueError("Unknown estimator")
+    # else:
+    #     raise ValueError("Unknown estimator")
 
 #@jit(**jit_kwargs)
-def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0, n_blocks=0, eps=0.0):
+def compute_steps(X, solver, estimator, fit_intercept, lip, percentage=0.0, n_blocks=0, eps=0.0):
     n_samples, n_features = X.shape
     int_fit_intercept = int(fit_intercept)
-    if not np.isfinite(lip_const):
-        return 1.0
+    if not np.isfinite(lip):
+        warn("Computing step sizes for non Lipschitz smooth loss using L=1, solver may not converge")
+        lip_const = 1.0
+    else:
+        lip_const = lip
 
     if solver in ["sgd", "svrg", "saga"]:
         mean_sq_norms = np.mean(sum_sq(X, 1))
@@ -184,7 +192,7 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
         #         sum_sq_norms += X[i, j] * X[i, j]
         step = 1 / (lip_const * max(int_fit_intercept, mean_sq_norms))
         return step
-    elif solver in ["gd", "batch_gd", "md", "da"]:
+    elif solver in ["gd", "batch_gd", "llc19"]:
         if estimator == "erm":
             cov = X.T @ X
             step = n_samples / (lip_const * max(int_fit_intercept * n_samples, np.linalg.norm(cov, 2)))
@@ -243,6 +251,64 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
                 cov += np.outer(X[i], X[i])
 
             step = n_samples_in_block / (lip_const * max(int_fit_intercept * n_samples_in_block, np.linalg.norm(cov, 2)))
+            return step
+    elif solver in ["md", "da"]:
+
+        # for these two solvers, the Lipschitz smoothness condition is expressed with L1 norm
+
+        inf_norms = np.max(np.abs(X), axis=1)
+        if estimator == "erm":
+            step = n_samples / (lip_const * max(int_fit_intercept * n_samples, np.sum(inf_norms)))
+            return step
+        elif estimator == "mom":
+            if n_blocks == 0:
+                raise ValueError(
+                    "You should provide n_blocks for mom/gmom/llm estimator"
+                )
+
+            mom_inf_norm = median_of_means(inf_norms, int(n_samples / n_blocks))
+
+            step = 1 / (lip_const * max(int_fit_intercept, mom_inf_norm))
+            return step
+
+        elif estimator in ["llm", "gmom", "ch", "tmean", "hg", "dkk"]:
+            if n_blocks == 0:
+                raise ValueError(
+                    "You should provide n_blocks for mom/gmom/llm estimator"
+                )
+            # TODO : this is just an upper bound
+            n_blocks += 1 - (n_blocks % 2)
+            if n_blocks >= n_samples:
+                n_blocks = n_samples - (1 - (n_samples % 2))
+            n_samples_in_block = n_samples // n_blocks
+            block_means = np.empty(n_blocks, dtype=X.dtype)
+            # sum_sq = np.zeros(n_samples)
+            # for i in range(n_samples):
+            #     for j in range(n_features):
+            #         sum_sq[i] += X[i, j] * X[i, j]
+            # square_norms = sum_sq(X, 1)
+            sample_indices = np.arange(n_samples)  # np.arange(n_blocks * n_samples_in_block)#
+            np.random.shuffle(sample_indices)
+            # Cumulative sum in the block
+            sum_block = 0.0
+            # Block counter
+            counter = 0
+            for i, idx in enumerate(sample_indices[:n_blocks * n_samples_in_block]):
+                sum_block += inf_norms[idx]
+                if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                    block_means[counter] = sum_block / n_samples_in_block
+                    counter += 1
+                    sum_block = 0.0
+            argmed = argmedian(block_means)
+
+            # medblock_sum_inf_norms = 0.0
+            # for i in sample_indices[
+            #          argmed * n_samples_in_block: (argmed + 1) * n_samples_in_block
+            #          ]:
+            #     medblock_sum_inf_norms += inf_norms[i]
+
+            step = 1.0 / (
+                        lip_const * max(int_fit_intercept, block_means[argmed]))
             return step
 
         # elif estimator == "ch":

@@ -67,7 +67,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
     ]
     _penalties = ["none", "l2", "l1", "elasticnet"]
     _estimators = ["erm", "mom", "tmean", "tmean_variant", "llm", "gmom", "ch", "hg", "dkk"]
-    _solvers = ["cgd", "gd", "md", "da", "sgd", "svrg", "saga", "batch_gd", "llc19"]
+    _solvers = ["cgd", "gd", "md", "da", "sgd", "svrg", "saga", "batch_gd", "llc"]
 
     def __init__(
         self,
@@ -413,7 +413,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 X, y, loss, self.n_classes, self.fit_intercept, n_samples_in_block
             )
         elif self.estimator == "tmean":
-            if self.solver == "llc19":
+            if self.solver == "llc":
                 return TMean_variant(
                     X, y, loss, self.n_classes, self.fit_intercept, self.percentage
                 )
@@ -481,11 +481,16 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         if self.solver == "cgd":
             step = compute_steps_cgd(X, self.estimator, self.fit_intercept, loss.lip, self.percentage,
                                      n_samples_in_block, self.eps)
-        elif self.solver in ["md", "da", "llc19"]:
-            step = 1.0
+        # elif self.solver == "llc":
+        #     step = np.min(compute_steps_cgd(X, self.estimator, self.fit_intercept, loss.lip, self.percentage,
+        #                              n_samples_in_block, self.eps))
+        #     print("llc19 step size is : %f" % step)
+        # elif self.solver in ["md", "da"]:
+        #     step = 1.0
         else:
             step = compute_steps(X, self.solver, self.estimator, self.fit_intercept, loss.lip, self.percentage,
                                  max(1, int(1 / self.block_size)), self.eps)
+            print("step size is : %f" % step)
 
         step *= self.step_size
 
@@ -565,9 +570,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 self.Radius,
                 self.sparsity_ub,
             )
-        elif self.solver == "llc19":
+        elif self.solver == "llc":
             # Create an history object for the solver
-            history = History("LLC19", self.max_iter, self.verbose)
+            history = History("LLC", self.max_iter, self.verbose)
             self.history_ = history
             return LLC19(
                 X,
