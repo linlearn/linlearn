@@ -887,7 +887,7 @@ def load_bioresponse():
     dtype = {"D"+str(x+1): np.float for x in range(1776)}
 
     dataset = Dataset.from_dtype(
-        name="bioreponse",
+        name="bioresponse",
         task="binary-classification",
         label_column="target",
         dtype=dtype,
