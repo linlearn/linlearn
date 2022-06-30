@@ -473,9 +473,9 @@ def run_exp(
     # assert train_perc + val_perc + test_perc == 1.0
 
     dataset.test_size = 0.3
-    logging.info("test size is ", dataset.test_size)
+    logging.info("test size is " +str(dataset.test_size))
     for i, fit_seed in enumerate(fit_seeds):
-        logging.info("run #", i+1)
+        logging.info("run #"+str(i+1))
         X_train, X_test, y_train, y_test = dataset.extract_corrupt(
             corruption_rate=corruption_rate,
             random_state=random_states["data_extract_random_state"] + fit_seed,
