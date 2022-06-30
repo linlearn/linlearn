@@ -100,7 +100,6 @@ from linlearn.datasets import (  # noqa: E402
     load_bioresponse,
     load_christine,
     load_hiva_agnostic,
-
 )
 
 
@@ -358,14 +357,18 @@ def compute_regression_history(model, X_train, y_train, X_test, y_test, seed):
         seed_list, time_list, sc_prods_list = [seed], [0], [0]
         if hasattr(model, "n_iter_"):
             iter_list = [model.n_iter_]
-        else: # ransac
+        else:  # ransac
             iter_list = [model.n_trials_]
     else:
 
         total_iter = model.history_.records[0].cursor
-        train_decision_function = decision_function_factory(X_train, model.fit_intercept)
+        train_decision_function = decision_function_factory(
+            X_train, model.fit_intercept
+        )
         test_decision_function = decision_function_factory(X_test, model.fit_intercept)
-        train_inner_prods = np.empty((X_train.shape[0], model.n_classes), dtype=np_float)
+        train_inner_prods = np.empty(
+            (X_train.shape[0], model.n_classes), dtype=np_float
+        )
         test_inner_prods = np.empty((X_test.shape[0], model.n_classes), dtype=np_float)
 
         mse_list, mse_train_list, mae_list, mae_train_list = [], [], [], []
@@ -413,6 +416,7 @@ def run_exp(
     solver_params,
     learning_task,
     corruption_rate,
+    confidence,
 ):
     classification = learning_task.endswith("classification")
 
@@ -469,10 +473,12 @@ def run_exp(
     # assert train_perc + val_perc + test_perc == 1.0
 
     dataset.test_size = 0.3
-    print("test size is ", dataset.test_size)
-    for fit_seed in fit_seeds:
+    logging.info("test size is ", dataset.test_size)
+    for i, fit_seed in enumerate(fit_seeds):
+        logging.info("run #", i+1)
         X_train, X_test, y_train, y_test = dataset.extract_corrupt(
-            corruption_rate=corruption_rate, random_state=random_states["data_extract_random_state"] + fit_seed
+            corruption_rate=corruption_rate,
+            random_state=random_states["data_extract_random_state"] + fit_seed,
         )
 
         if classification:
@@ -480,12 +486,29 @@ def run_exp(
         else:
             obj = Regressor
 
-        model = obj(solver=solver_name.lower(), estimator=estimator_name.lower(), **solver_params)
+        n_samples = len(X_train)
+        percentage = np.log(4 / confidence) / n_samples + corruption_rate
+
+        llm_block_size = 1 / (4 * np.log(1 / confidence))
+        if corruption_rate > 0.0:
+            llm_block_size = min(
+                llm_block_size, 1 / (4 * (corruption_rate * n_samples))
+            )
+
+        model = obj(
+            solver=solver_name.lower(),
+            estimator=estimator_name.lower(),
+            percentage=percentage,
+            block_size=llm_block_size,
+            **solver_params
+        )
         tic = time()
         model.fit(X_train, y_train)
         toc = time()
         fit_time = toc - tic
-        logging.info("Fitted %s, %s in %.2f seconds" % (solver_name, estimator_name, fit_time))
+        logging.info(
+            "Fitted %s, %s in %.2f seconds" % (solver_name, estimator_name, fit_time)
+        )
 
         if classification:
             if learning_task == "binary-classification":
@@ -653,6 +676,7 @@ def run_exp(
 
     return results
 
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(message)s",
@@ -704,18 +728,20 @@ parser.add_argument(
         "bioresponse",
         "christine",
         "hiva_agnostic",
-
     ],
 )
 parser.add_argument("--step_size", type=float, default=1.0)
 parser.add_argument("--sparsity_ub", type=float, default=0.01)
+parser.add_argument("--confidence", type=float, default=0.01)
 parser.add_argument("--stage_length", type=int, default=40)
 parser.add_argument("--max_iter", type=int, default=400)
 parser.add_argument("--n_jobs", type=int, default=1)
 parser.add_argument("--n_runs", type=int, default=10)
 parser.add_argument("-o", "--output_folder_path", default=None)
 parser.add_argument("--random_state_seed", type=int, default=42)
-parser.add_argument("--corruption_rates", nargs="+", type=float, default=[0.0, 0.15, 0.3])
+parser.add_argument(
+    "--corruption_rates", nargs="+", type=float, default=[0.0, 0.1, 0.2]
+)
 
 args = parser.parse_args()
 
@@ -725,15 +751,18 @@ solver_name = args.solver_name
 estimator_name = args.estimator_name
 n_runs = args.n_runs
 n_jobs = args.n_jobs
+confidence = args.confidence
 dataset_name = args.dataset_name.lower()
 loader = set_dataloader(dataset_name)
 random_state_seed = args.random_state_seed
 corruption_rates = args.corruption_rates
 
-solver_params = {"step_size": args.step_size,
-                 "sparsity_ub": args.sparsity_ub,
-                 "max_iter": args.max_iter,
-                 "stage_length": args.stage_length}
+solver_params = {
+    "step_size": args.step_size,
+    "sparsity_ub": args.sparsity_ub,
+    "max_iter": args.max_iter,
+    "stage_length": args.stage_length,
+}
 
 if args.output_folder_path is None:
     if not os.path.exists("results"):
@@ -747,7 +776,7 @@ random_states = {
     "train_val_split_random_state": 1 + random_state_seed,
     "expe_random_state": 2 + random_state_seed,
 }
-fit_seeds = list(range(n_runs))#[0, 1, 2, 3, 4]
+fit_seeds = list(range(n_runs))  # [0, 1, 2, 3, 4]
 
 logging.info("=" * 128)
 dataset = loader()
@@ -759,8 +788,9 @@ if not os.path.exists(results_home_path + dataset.name):
     os.mkdir(results_home_path + dataset.name)
 results_dataset_path = results_home_path + dataset.name + "/"
 
+
 def run_cr(corruption_rate):
-    logging.info("Running hyperoptimisation for corruption rate %.2f" % corruption_rate)
+    logging.info("Running for corruption rate %.2f" % corruption_rate)
     dataset = loader()
     results = run_exp(
         dataset,
@@ -769,6 +799,7 @@ def run_cr(corruption_rate):
         solver_params,
         learning_task,
         corruption_rate,
+        confidence,
     )
 
     print(results)
@@ -781,7 +812,8 @@ def run_cr(corruption_rate):
 
     filename = (
         "exp_HD_"
-        + dataset_name + str(corruption_rate)
+        + dataset_name
+        + str(corruption_rate)
         + "_"
         + solver_name
         + "_"
@@ -797,6 +829,7 @@ def run_cr(corruption_rate):
                 "datetime": now,
                 "commit": commit,
                 "n_run": n_runs,
+                "confidence": confidence,
                 "results": results,
                 **solver_params,
             },
@@ -806,7 +839,7 @@ def run_cr(corruption_rate):
     logging.info("Saved results in file %s" % results_dataset_path + filename)
 
 
-with parallel_backend('threading', n_jobs=n_jobs):
+with parallel_backend("threading", n_jobs=n_jobs):
     Parallel()(delayed(run_cr)(corruption_rate) for corruption_rate in corruption_rates)
 
 # pqdm(corruption_rates, run_cr, n_jobs=n_jobs)
