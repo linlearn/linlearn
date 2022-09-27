@@ -24,17 +24,20 @@ from ._loss import (
     MultiLogistic,
     LeastSquares,
     Huber,
+    Hinge,
+    AbsVal,
     ModifiedHuber,
     MultiModifiedHuber,
     SquaredHinge,
     MultiSquaredHinge,
+    MultiHinge,
     compute_steps,
     compute_steps_cgd,
     decision_function_factory,
 )
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
-from .solver import CGD, GD, SGD, SVRG, SAGA, batch_GD, History
-from .estimator import ERM, MOM, TMean, LLM, GMOM, CH, HG
+from .solver import CGD, GD, MD, DA, SGD, SVRG, SAGA, LLC19, batch_GD, History
+from .estimator import ERM, MOM, TMean, TMean_variant, LLM, GMOM, CH, HG, DKK
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float, numba_seed_numpy
 
 jit_kwargs = {
@@ -53,6 +56,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         "logistic",
         "leastsquares",
         "huber",
+        "hinge",
+        "multihinge",
+        "absolute",
         "modifiedhuber",
         "multimodifiedhuber",
         "multilogistic",
@@ -60,8 +66,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         "multisquaredhinge",
     ]
     _penalties = ["none", "l2", "l1", "elasticnet"]
-    _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch", "hg"]
-    _solvers = ["cgd", "gd", "sgd", "svrg", "saga", "batch_gd"]
+    _estimators = ["erm", "mom", "tmean", "tmean_variant", "llm", "gmom", "ch", "hg", "dkk"]
+    _solvers = ["cgd", "gd", "md", "da", "sgd", "svrg", "saga", "batch_gd", "llc"]
 
     def __init__(
         self,
@@ -85,6 +91,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         l1_ratio=0.5,
         sgd_exponent=0.5,
         cgd_IS=False,
+        stage_length=10,
+        Radius=1000,
+        sparsity_ub=0.01,
     ):
         self.penalty = penalty
         self.C = C
@@ -105,6 +114,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         self.l1_ratio = l1_ratio
         self.sgd_exponent = sgd_exponent
         self.cgd_IS = cgd_IS
+        self.stage_length = stage_length
+        self.Radius = Radius
+        self.sparsity_ub = sparsity_ub
+
 
         self.history_ = None
         self.intercept_ = None
@@ -295,6 +308,34 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             self._sgd_exponent = float(val)
 
     @property
+    def sparsity_ub(self):
+        return self._sparsity_ub
+
+    @sparsity_ub.setter
+    def sparsity_ub(self, val):
+        if isinstance(val, numbers.Integral) and val > 0:
+            self._sparsity_ub = val
+        elif isinstance(val, numbers.Real) and val > 0 and val <= 1:
+            self._sparsity_ub = val
+        else:
+            raise ValueError(
+                "sparsity_ub (sparsity upperbound) must be a postive integer or a ratio between 0 and 1; got (sparsity_ub=%r)" % val
+            )
+
+    @property
+    def Radius(self):
+        return self._Radius
+
+    @Radius.setter
+    def Radius(self, val):
+        if isinstance(val, numbers.Real) and val > 0:
+            self._Radius = val
+        else:
+            raise ValueError(
+                "Radius must be a postive real number; got (Radius=%r)" % val
+            )
+
+    @property
     def cgd_IS(self):
         return self._cgd_IS
 
@@ -348,10 +389,17 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return MultiModifiedHuber(self.n_classes)
         elif self.loss == "multilogistic":
             return MultiLogistic(self.n_classes)
+        elif self.loss == "multihinge":
+            return MultiHinge(self.n_classes)
         elif self.loss == "squaredhinge":
             return SquaredHinge()
         elif self.loss == "multisquaredhinge":
             return MultiSquaredHinge(self.n_classes)
+        elif self.loss == "hinge":
+            return Hinge()
+        elif self.loss == "absolute":
+            return AbsVal()
+
         else:
             raise ValueError("Loss unknown")
 
@@ -365,9 +413,14 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 X, y, loss, self.n_classes, self.fit_intercept, n_samples_in_block
             )
         elif self.estimator == "tmean":
-            return TMean(
-                X, y, loss, self.n_classes, self.fit_intercept, self.percentage
-            )
+            if self.solver == "llc":
+                return TMean_variant(
+                    X, y, loss, self.n_classes, self.fit_intercept, self.percentage
+                )
+            else:
+                return TMean(
+                    X, y, loss, self.n_classes, self.fit_intercept, self.percentage
+                )
         elif self.estimator == "ch":
             return CH(X, y, loss, self.n_classes, self.fit_intercept, self.eps)
         elif self.estimator == "llm":
@@ -382,6 +435,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
         elif self.estimator == "hg":
             return HG(
+                X, y, loss, self.n_classes, self.fit_intercept, eps=self.percentage
+            )
+        elif self.estimator == "dkk":
+            return DKK(
                 X, y, loss, self.n_classes, self.fit_intercept, eps=self.percentage
             )
         else:
@@ -424,9 +481,16 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         if self.solver == "cgd":
             step = compute_steps_cgd(X, self.estimator, self.fit_intercept, loss.lip, self.percentage,
                                      n_samples_in_block, self.eps)
+        # elif self.solver == "llc":
+        #     step = np.min(compute_steps_cgd(X, self.estimator, self.fit_intercept, loss.lip, self.percentage,
+        #                              n_samples_in_block, self.eps))
+        #     print("llc19 step size is : %f" % step)
+        # elif self.solver in ["md", "da"]:
+        #     step = 1.0
         else:
             step = compute_steps(X, self.solver, self.estimator, self.fit_intercept, loss.lip, self.percentage,
                                  max(1, int(1 / self.block_size)), self.eps)
+            print("step size is : %f" % step)
 
         step *= self.step_size
 
@@ -468,6 +532,62 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                 step,
                 history,
             )
+        elif self.solver == "md":
+            # Create an history object for the solver
+            history = History("MD", self.max_iter, self.verbose)
+            self.history_ = history
+            return MD(
+                X,
+                y,
+                loss,
+                self.n_classes,
+                self.fit_intercept,
+                estimator,
+                self.max_iter,
+                self.tol,
+                self.step_size,
+                history,
+                self.stage_length,
+                self.Radius,
+                self.sparsity_ub,
+            )
+        elif self.solver == "da":
+            # Create an history object for the solver
+            history = History("DA", self.max_iter, self.verbose)
+            self.history_ = history
+            return DA(
+                X,
+                y,
+                loss,
+                self.n_classes,
+                self.fit_intercept,
+                estimator,
+                self.max_iter,
+                self.tol,
+                self.step_size,
+                history,
+                self.stage_length,
+                self.Radius,
+                self.sparsity_ub,
+            )
+        elif self.solver == "llc":
+            # Create an history object for the solver
+            history = History("LLC", self.max_iter, self.verbose)
+            self.history_ = history
+            return LLC19(
+                X,
+                y,
+                loss,
+                self.n_classes,
+                self.fit_intercept,
+                estimator,
+                self.max_iter,
+                self.tol,
+                self.step_size,
+                history,
+                self.sparsity_ub,
+            )
+
         elif self.solver == "sgd":
             # Create an history object for the solver
             history = History("SGD", self.max_iter, self.verbose)
@@ -571,6 +691,11 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             self.loss = "multisquaredhinge"
         elif self.loss == "multisquaredhinge":
             pass
+        elif self.loss == "hinge":
+            # if we are in the multiclass case switch to multiclass loss
+            self.loss = "multihinge"
+        elif self.loss == "multihinge":
+            pass
         elif self.loss == "modifiedhuber":
             # if we are in the multiclass case switch to multiclass loss
             self.loss = "multimodifiedhuber"
@@ -578,7 +703,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             pass
         else:
             raise ValueError(
-                "You should specify a classification loss, got loss=%s" % self.loss
+                "You should specify a multiclass classification loss, got loss=%s" % self.loss
             )
 
     def _check_binary_loss(self):
@@ -586,6 +711,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             self.loss = "logistic"
         elif self.loss == "logistic":
             pass
+        elif self.loss == "hinge":
+            pass
+        elif self.loss == "multihinge":
+            self.loss = "hinge"
         elif self.loss == "multisquaredhinge":
             self.loss = "squaredhinge"
         elif self.loss == "squaredhinge":
@@ -600,7 +729,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             )
 
     def _check_regression_loss(self):
-        if self.loss not in ["leastsquares", "huber"]:
+        if self.loss not in ["leastsquares", "huber", "absolute"]:
             raise ValueError(
                 "You should specify a regression loss, got loss=%s" % self.loss
             )
@@ -800,6 +929,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         #         dtype=X.dtype,
         #     )
 
+        #preprocess sparsity_ub here
+        if self.sparsity_ub <= 1:
+            self.sparsity_ub = max(1, min(int(self.sparsity_ub * X.shape[1]), X.shape[0]))
+
         #######
         solver = self._get_solver(X, y_encoded)
         w = self._get_initial_iterate(X, y_encoded)
@@ -978,6 +1111,10 @@ class Classifier(BaseLearner):
         n_jobs=None,
         l1_ratio=0.5,
         cgd_IS=False,
+        stage_length=10,
+        Radius=1000,
+        sparsity_ub=0.01,
+
     ):
         super(Classifier, self).__init__(
             penalty=penalty,
@@ -998,6 +1135,10 @@ class Classifier(BaseLearner):
             n_jobs=n_jobs,
             l1_ratio=l1_ratio,
             cgd_IS=cgd_IS,
+            stage_length=stage_length,
+            Radius=Radius,
+            sparsity_ub=sparsity_ub,
+
         )
 
         self.class_weight = class_weight
@@ -1136,6 +1277,10 @@ class Regressor(BaseLearner, RegressorMixin):
         n_jobs=None,
         l1_ratio=0.5,
         cgd_IS=False,
+        stage_length=10,
+        Radius=1000,
+        sparsity_ub=0.01,
+
     ):
         super(Regressor, self).__init__(
             penalty=penalty,
@@ -1156,6 +1301,10 @@ class Regressor(BaseLearner, RegressorMixin):
             n_jobs=n_jobs,
             l1_ratio=l1_ratio,
             cgd_IS=cgd_IS,
+            stage_length=stage_length,
+            Radius=Radius,
+            sparsity_ub=sparsity_ub,
+
         )
 
     def predict(self, X):

@@ -9,7 +9,7 @@ from ._bank import load_bank
 from ._higgs import load_higgs
 from ._car import load_car
 from ._kick import load_kick
-from ._amazon import load_amazon
+# from ._amazon import load_amazon
 from ._epsilon import load_epsilon
 from ._internet import load_internet
 
@@ -56,6 +56,29 @@ from .loaders import (
     load_wine,
     load_airbnb,
     load_statlog,
+    load_madelon,
+    load_arcene,
+    load_gene_expression,
+    load_glaucoma,
+    load_gisette,
+    load_amazon,
+    load_atp1d,
+    load_atp7d,
+    load_gpositivego,
+    load_gnegativego,
+    load_gpositivepseaac,
+    load_gnegativepseaac,
+    load_parkinson,
+    load_gina_prior,
+    load_gina,
+    load_qsar,
+    load_qsar10980,
+    load_santander,
+    load_ap_colon_kidney,
+    load_robert,
+    load_bioresponse,
+    load_christine,
+    load_hiva_agnostic,
     describe_datasets,
 )
 

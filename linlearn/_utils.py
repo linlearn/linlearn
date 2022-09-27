@@ -31,6 +31,141 @@ nb_float = float64
 np_float = np.float64
 
 @jit(**jit_kwargs)
+def omega(th, p, C):
+    return C * ((np.power(np.abs(th), p).sum()) ** (2/p))
+
+@jit(**jit_kwargs)
+def grad_omega(th, p, C):
+    if th.shape[1] <= 1:
+        return 2 * C * ((np.linalg.norm(th.flatten(), p))**(2-p)) * np.sign(th) * np.power(np.abs(th), p-1)
+    d, k = th.shape
+    euc_norms = np.zeros(d)
+
+    for j in range(th.shape[1]):
+        for i in range(d):
+            euc_norms[i] += th[i, j] ** 2
+
+    np.power(euc_norms, (2-p)/2, euc_norms)
+    # for i in range(d):
+    #     euc_norms[i] = np.sqrt(euc_norms[i])
+
+    #euc_norms = np.sqrt(np.power(th, 2).sum(axis=1))
+    scaled_th = th.copy()
+    # for i in range(d):
+    #     if euc_norms[i] > 0:
+    #         for j in range(k):
+    #             scaled_th[i, j] /= euc_norms[i]
+
+    scale = 0.0
+    for j in range(k):
+        for i in range(d):
+            if euc_norms[i] > 0:
+                scaled_th[i, j] /= euc_norms[i]
+
+    for i in range(d):
+        scale += (euc_norms[i] ** (p / (2 - p)))
+
+    scale = 2 * C * (scale ** ((2-p)/p))
+
+    for j in range(k):
+        for i in range(d):
+            scaled_th[i, j] *= scale
+
+    return scaled_th
+
+
+@jit(**jit_kwargs)
+def h(uu, lamda, p):
+    if uu.shape[1] > 1:
+        stu = np.maximum(np.sqrt((uu ** 2).sum(axis=1)) - lamda, 0)# softthresh(np.sqrt((uu ** 2).sum(axis=1)), lamda)
+    else:
+        stu = np.maximum(np.abs(uu) - lamda, 0).sum(axis=1)# softthresh(uu, lamda)
+    a = np.power(stu, 1 / (p - 1)).sum()
+    b = np.power(stu, p / (p - 1)).sum() ** (1 - 2 / p)
+    return a * b
+
+# @jit(**jit_kwargs)
+# def prox(u, R, p, C):
+#     # first figure out lambda
+#
+#     lamda1, lamda2 = 0, np.max(np.abs(u))
+#     while np.abs(lamda2 - lamda1) > 1e-5:
+#         mid = (lamda1 + lamda2) / 2
+#         if h(u, mid, p)/(2*C) > R:
+#             lamda1 = mid
+#         else:
+#             lamda2 = mid
+#     lamda = lamda1
+#     if u.shape[1] > 1:
+#         stu = np.maximum(np.sqrt((u ** 2).sum(axis=1)) - lamda, 0)# softthresh(np.sqrt((uu ** 2).sum(axis=1)), lamda)
+#     else:
+#         stu = np.maximum(np.abs(u) - lamda, 0)# softthresh(uu, lamda)
+#
+#     # stu = softthresh(u, lamda)
+#     # return - np.sign(u) * np.power(stu, 1 / (p - 1)) / (
+#     #         (2 * C) * (np.linalg.norm(stu.flatten(), p / (p - 1)) ** ((2 - p) / (p - 1))))
+#
+
+
+@jit(**jit_kwargs)
+def prox(u, R, p, C):
+    # first figure out lambda
+
+    lamda1, lamda2 = 0, np.max(np.abs(u))
+    while np.abs(lamda2 - lamda1) > 1e-5:
+        mid = (lamda1 + lamda2) / 2
+        if h(u, mid, p)/(2*C) > R:
+            lamda1 = mid
+        else:
+            lamda2 = mid
+    lamda = lamda1
+    if u.shape[1] > 1:
+        stu = np.maximum(np.sqrt((u ** 2).sum(axis=1)) - lamda, 0.)# softthresh(np.sqrt((uu ** 2).sum(axis=1)), lamda)
+        th = -u.copy()
+        for i in range(u.shape[0]):
+            if stu[i] <= 0.:
+                th[i, :] = 0.
+            else:
+                th[i, :] /= max(1e-16, stu[i] ** ((p-2)/(p-1)) + lamda * (stu[i] ** (-1/(p-1))))
+        return th / (2 * C * (np.power(stu, p / (p - 1)).sum() ** ((2 - p) / p)))
+    else:
+        stu = np.maximum(np.abs(u) - lamda, 0)# softthresh(uu, lamda)
+        th = -np.power(stu, 1/(p-1)) * np.sign(u)
+        return th / (2 * C * (np.power(stu, p / (p - 1)).sum() ** ((2 - p) / p)))
+
+    #return th / (2 * C * (np.power(stu, p/(p-1)).sum() ** ((2-p)/p)))
+    #return th / (2 * C * (np.power(stu, p / (p - 1)).sum() ** ((2 - p) / p)))
+
+    # stu = softthresh(u, lamda)
+    # return - np.sign(u) * np.power(stu, 1 / (p - 1)) / (
+    #         (2 * C) * (np.linalg.norm(stu.flatten(), p / (p - 1)) ** ((2 - p) / (p - 1))))
+
+
+
+@jit(**jit_kwargs)
+def softthresh(u, lamda):
+    return np.maximum(np.abs(u) - lamda, 0)
+
+@jit(**jit_kwargs)
+def hardthresh(u, k):
+
+    if u.shape[1] <= 1:
+        abs_u = np.abs(u.flatten())
+    else:
+        abs_u = np.sqrt(np.power(u, 2).sum(axis=1))
+
+    thresh = np.partition(abs_u, -k)[-k]
+    # u_s = u.copy()
+    # for i in range(u.shape[0]):
+    #     if abs_u[i] < thresh:
+    #         u_s[i, :] = 0
+    # return u_s
+    for i in range(u.shape[0]):
+        if abs_u[i] < thresh:
+            u[i, :] = 0
+
+
+@jit(**jit_kwargs)
 def partition(A, p, r, ind):
     A[r], A[ind] = A[ind], A[r]
 
@@ -43,6 +178,8 @@ def partition(A, p, r, ind):
 
     A[i+1], A[r] = A[r], A[i+1]
     return i + 1
+
+
 
 @jit(**jit_kwargs)
 def findKth_QS(A, n, k):
@@ -62,6 +199,7 @@ def findKth_QS(A, n, k):
             AA = AA[kk1:]
             N = N - kk1
             K = K - kk1
+
 
 @jit(**jit_kwargs)
 def findK2(A, n, k1, k2):
@@ -121,6 +259,16 @@ def trimmed_mean(x, n_samples, n_excluded_tails):  # , percentage):
     result /= n_samples
     return result
 
+@jit(**jit_kwargs)
+def trimmed_mean_variant(x, n_samples, n_excluded_tails):  # , percentage):
+    # n_excluded_tails = max(1, int(n_samples * percentage))
+    n_excluded_tails = int(n_excluded_tails)
+    partitioned = np.partition(x, [n_excluded_tails, n_samples - n_excluded_tails - 1])
+    result = 0.0
+    for i in range(n_excluded_tails, n_samples - n_excluded_tails):
+        result += partitioned[i]
+    result /= (n_samples - 2 * n_excluded_tails)
+    return result
 
 @jit(**jit_kwargs)
 def fast_trimmed_mean(x, n_samples, n_excluded_tails):  # , percentage):
