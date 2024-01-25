@@ -493,6 +493,12 @@ if os.cpu_count() > 8:
 else:
     results = [repeat(rep) for rep in range(1, n_repeats + 1)]
 
+loader = set_dataloader(dataset_name)
+dataset = loader()
+
+learning_task = dataset.task
+classification_task = learning_task.endswith("classification")
+
 col_try = list(itertools.chain.from_iterable([x[0] for x in results]))
 col_iter = list(itertools.chain.from_iterable([x[1] for x in results]))
 col_algo = list(itertools.chain.from_iterable([x[2] for x in results]))
