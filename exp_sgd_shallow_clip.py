@@ -373,6 +373,8 @@ def repeat(rep):
         col_try, col_iter, col_algo, col_mse, col_mae = [], [], [], [], []
 
 
+    torch.manual_seed(random_seed + rep)
+
     X_train, X_test, y_train, y_test = dataset.extract_corrupt2(
         corruption_rate=corruption_rate,
         random_state=random_seed + rep,
@@ -406,8 +408,6 @@ def repeat(rep):
         optimizers.append(optimizer)
         othermodel.train()
         models.append(othermodel)
-
-    torch.manual_seed(random_seed + rep)
 
     buffer = np.zeros(buffer_size)
     ages = np.arange(buffer_size)
