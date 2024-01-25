@@ -89,7 +89,7 @@ def load_californiahousing():
 
 
 def load_letor():
-    dtype = {str(i): np.float for i in range(1, 47)}
+    dtype = {str(i): float for i in range(1, 47)}
     dataset = Dataset.from_dtype(
         name="letor",
         task="multiclass-classification",
@@ -101,41 +101,41 @@ def load_letor():
 
 def load_cardio():
     dtype = {
-        "b": np.int,
-        "e": np.int,
-        "LBE": np.int,
-        "LB": np.int,
-        "AC": np.int,
-        "FM": np.int,
-        "UC": np.int,
-        "ASTV": np.int,
-        "MSTV": np.float,
-        "ALTV": np.int,
-        "MLTV": np.float,
-        "DL": np.int,
-        "DS": np.int,
-        "DP": np.int,
-        "DR": np.int,
-        "Width": np.int,
-        "Min": np.int,
-        "Max": np.int,
-        "Nmax": np.int,
-        "Nzeros": np.int,
-        "Mode": np.int,
-        "Mean": np.int,
-        "Median": np.int,
-        "Variance": np.int,
-        "Tendency": np.int,
-        "A": np.int,
-        "B": np.int,
-        "C": np.int,
-        "D": np.int,
-        "E": np.int,
-        "AD": np.int,
-        "DE": np.int,
-        "LD": np.int,
-        "FS": np.int,
-        "SUSP": np.int,
+        "b": int,
+        "e": int,
+        "LBE": int,
+        "LB": int,
+        "AC": int,
+        "FM": int,
+        "UC": int,
+        "ASTV": int,
+        "MSTV": float,
+        "ALTV": int,
+        "MLTV": float,
+        "DL": int,
+        "DS": int,
+        "DP": int,
+        "DR": int,
+        "Width": int,
+        "Min": int,
+        "Max": int,
+        "Nmax": int,
+        "Nzeros": int,
+        "Mode": int,
+        "Mean": int,
+        "Median": int,
+        "Variance": int,
+        "Tendency": int,
+        "A": int,
+        "B": int,
+        "C": int,
+        "D": int,
+        "E": int,
+        "AD": int,
+        "DE": int,
+        "LD": int,
+        "FS": int,
+        "SUSP": int,
     }
     dataset = Dataset.from_dtype(
         name="cardio",
@@ -153,24 +153,24 @@ def load_cardio():
 def load_churn():
     dtype = {
         "State": "category",
-        "Account Length": np.int,
+        "Account Length": int,
         "Area Code": "category",
         "Int'l Plan": "category",
         "VMail Plan": "category",
-        "VMail Message": np.int,
-        "Day Mins": np.float,
-        "Day Calls": np.int,
-        "Day Charge": np.float,
-        "Eve Mins": np.float,
-        "Eve Calls": np.int,
-        "Eve Charge": np.float,
-        "Night Mins": np.float,
-        "Night Calls": np.int,
-        "Night Charge": np.float,
-        "Intl Mins": np.float,
-        "Intl Calls": np.int,
-        "Intl Charge": np.float,
-        "CustServ Calls": np.int,
+        "VMail Message": int,
+        "Day Mins": float,
+        "Day Calls": int,
+        "Day Charge": float,
+        "Eve Mins": float,
+        "Eve Calls": int,
+        "Eve Charge": float,
+        "Night Mins": float,
+        "Night Calls": int,
+        "Night Charge": float,
+        "Intl Mins": float,
+        "Intl Calls": int,
+        "Intl Charge": float,
+        "CustServ Calls": int,
     }
     dataset = Dataset.from_dtype(
         name="churn",
@@ -186,19 +186,19 @@ def load_churn():
 def load_electrical():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Electrical+Grid+Stability+Simulated+Data+#
     dtype = {
-        "tau1": np.float,
-        "tau2": np.float,
-        "tau3": np.float,
-        "tau4": np.float,
-        "p1": np.float,
-        "p2": np.float,
-        "p3": np.float,
-        "p4": np.float,
-        "g1": np.float,
-        "g2": np.float,
-        "g3": np.float,
-        "g4": np.float,
-        "stab": np.float,
+        "tau1": float,
+        "tau2": float,
+        "tau3": float,
+        "tau4": float,
+        "p1": float,
+        "p2": float,
+        "p3": float,
+        "p4": float,
+        "g1": float,
+        "g2": float,
+        "g3": float,
+        "g4": float,
+        "stab": float,
     }
     dataset = Dataset.from_dtype(
         name="electrical",
@@ -214,11 +214,11 @@ def load_occupancy():
     # the dataframes obtained from files datatraining.txt, datatest.txt and datatest2.txt were
     # concatenated in this order with ignore_index = True
     dtype = {
-        "Temperature": np.float,
-        "Humidity": np.float,
-        "Light": np.float,
-        "CO2": np.float,
-        "HumidityRatio": np.float,
+        "Temperature": float,
+        "Humidity": float,
+        "Light": float,
+        "CO2": float,
+        "HumidityRatio": float,
     }
     dataset = Dataset.from_dtype(
         name="occupancy",
@@ -235,16 +235,16 @@ def load_avila():
     # the dataframes obtained from files avila-tr.txt and avila-ts.txt were
     # concatenated in this order with ignore_index = True
     dtype = {
-        "0": np.float,
-        "1": np.float,
-        "2": np.float,
-        "3": np.float,
-        "4": np.float,
-        "5": np.float,
-        "6": np.float,
-        "7": np.float,
-        "8": np.float,
-        "9": np.float,
+        "0": float,
+        "1": float,
+        "2": float,
+        "3": float,
+        "4": float,
+        "5": float,
+        "6": float,
+        "7": float,
+        "8": float,
+        "9": float,
     }
     dataset = Dataset.from_dtype(
         name="avila",
@@ -258,7 +258,7 @@ def load_avila():
 def load_miniboone():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/MiniBooNE+particle+identification
     # parsed with miniboone_parser.py
-    dtype = {str(i): np.float for i in range(50)}
+    dtype = {str(i): float for i in range(50)}
     dataset = Dataset.from_dtype(
         name="miniboone",
         task="binary-classification",
@@ -271,7 +271,7 @@ def load_miniboone():
 def load_eeg():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/EEG+Eye+State
     # parsed with pd.read_csv(..., skiprows=19, header=None)
-    dtype = {str(i): np.float for i in range(14)}
+    dtype = {str(i): float for i in range(14)}
     dataset = Dataset.from_dtype(
         name="eeg",
         task="binary-classification",
@@ -284,7 +284,7 @@ def load_eeg():
 def load_drybean():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Dry+Bean+Dataset
     # parsed with pd.read_csv(..., skiprows=25, header=None)
-    dtype = {str(i): np.float for i in range(16)}
+    dtype = {str(i): float for i in range(16)}
     dataset = Dataset.from_dtype(
         name="drybean",
         task="multiclass-classification",
@@ -297,7 +297,7 @@ def load_drybean():
 def load_gas():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Gas+Sensor+Array+Drift+Dataset
     # parsed with gas_parser.py
-    dtype = {str(i): np.float for i in range(1, 129)}
+    dtype = {str(i): float for i in range(1, 129)}
     dataset = Dataset.from_dtype(
         name="gas",
         task="multiclass-classification",
@@ -313,33 +313,33 @@ def load_energy():
     dtype = {
         # "date",
         # "Appliances",
-        "lights": np.float,
-        "T1": np.float,
-        "RH_1": np.float,
-        "T2": np.float,
-        "RH_2": np.float,
-        "T3": np.float,
-        "RH_3": np.float,
-        "T4": np.float,
-        "RH_4": np.float,
-        "T5": np.float,
-        "RH_5": np.float,
-        "T6": np.float,
-        "RH_6": np.float,
-        "T7": np.float,
-        "RH_7": np.float,
-        "T8": np.float,
-        "RH_8": np.float,
-        "T9": np.float,
-        "RH_9": np.float,
-        "T_out": np.float,
-        "Press_mm_hg": np.float,
-        "RH_out": np.float,
-        "Windspeed": np.float,
-        "Visibility": np.float,
-        "Tdewpoint": np.float,
-        "rv1": np.float,
-        "rv2": np.float,
+        "lights": float,
+        "T1": float,
+        "RH_1": float,
+        "T2": float,
+        "RH_2": float,
+        "T3": float,
+        "RH_3": float,
+        "T4": float,
+        "RH_4": float,
+        "T5": float,
+        "RH_5": float,
+        "T6": float,
+        "RH_6": float,
+        "T7": float,
+        "RH_7": float,
+        "T8": float,
+        "RH_8": float,
+        "T9": float,
+        "RH_9": float,
+        "T_out": float,
+        "Press_mm_hg": float,
+        "RH_out": float,
+        "Windspeed": float,
+        "Visibility": float,
+        "Tdewpoint": float,
+        "rv1": float,
+        "rv2": float,
     }
     dataset = Dataset.from_dtype(
         name="energy",
@@ -365,10 +365,10 @@ def load_bike():
         "weekday": "category",
         "workingday": "category",
         "weathersit": "category",
-        "temp": np.float,
-        "atemp": np.float,
-        "hum": np.float,
-        "windspeed": np.float,
+        "temp": float,
+        "atemp": float,
+        "hum": float,
+        "windspeed": float,
         # "casual",
         # "registered",
         # "cnt",
@@ -387,7 +387,7 @@ def load_bike():
 def load_cbm():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Condition+Based+Maintenance+of+Naval+Propulsion+Plants
     # parsed with cbm_parser.py and saved with pandas.to_csv(..., index=False, compression="gzip")
-    dtype = {str(i): np.float for i in range(16)}
+    dtype = {str(i): float for i in range(16)}
     dataset = Dataset.from_dtype(
         name="cbm",
         task="regression",
@@ -402,10 +402,10 @@ def load_ccpp():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Combined+Cycle+Power+Plant
     # converted to csv in Numbers then parsed with ccpp_parser.py
     dtype = {
-        "AT": np.float,
-        "V": np.float,
-        "AP": np.float,
-        "RH": np.float,
+        "AT": float,
+        "V": float,
+        "AP": float,
+        "RH": float,
     }
     dataset = Dataset.from_dtype(
         name="ccpp",
@@ -420,16 +420,16 @@ def load_gasturbine():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Gas+Turbine+CO+and+NOx+Emission+Data+Set
     # parsed with gasturbine_parser.py
     dtype = {
-        "AT": np.float,
-        "AP": np.float,
-        "AH": np.float,
-        "AFDP": np.float,
-        "GTEP": np.float,
-        "TIT": np.float,
-        "TAT": np.float,
-        "CDP": np.float,
-        "CO": np.float,
-        "NOX": np.float,
+        "AT": float,
+        "AP": float,
+        "AH": float,
+        "AFDP": float,
+        "GTEP": float,
+        "TIT": float,
+        "TAT": float,
+        "CDP": float,
+        "CO": float,
+        "NOX": float,
     }
     dataset = Dataset.from_dtype(
         name="gasturbine",
@@ -443,7 +443,7 @@ def load_gasturbine():
 def load_metro():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Metro+Interstate+Traffic+Volume
     # date_time column has been preprocessed into (hour - 12)**2
-    dtype = {'temp': np.float, 'rain_1h': np.float, 'snow_1h': np.float, 'clouds_all': np.int, 'weather_main': "category", 'date_time': np.float}
+    dtype = {'temp': float, 'rain_1h': float, 'snow_1h': float, 'clouds_all': int, 'weather_main': "category", 'date_time': float}
     dataset = Dataset.from_dtype(
         name="metro",
         task="regression",
@@ -456,7 +456,7 @@ def load_metro():
 def load_casp():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Physicochemical+Properties+of+Protein+Tertiary+Structure#
     # directly read with pandas and compressed
-    dtype = {'F%d' % i: np.float for i in range(1, 10)}
+    dtype = {'F%d' % i: float for i in range(1, 10)}
     dataset = Dataset.from_dtype(
         name="casp",
         task="regression",
@@ -469,7 +469,7 @@ def load_superconduct():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Superconductivty+Data
     # directly read with pandas and compressed
     feature_list = ['number_of_elements', 'mean_atomic_mass', 'wtd_mean_atomic_mass', 'gmean_atomic_mass', 'wtd_gmean_atomic_mass', 'entropy_atomic_mass', 'wtd_entropy_atomic_mass', 'range_atomic_mass', 'wtd_range_atomic_mass', 'std_atomic_mass', 'wtd_std_atomic_mass', 'mean_fie', 'wtd_mean_fie', 'gmean_fie', 'wtd_gmean_fie', 'entropy_fie', 'wtd_entropy_fie', 'range_fie', 'wtd_range_fie', 'std_fie', 'wtd_std_fie', 'mean_atomic_radius', 'wtd_mean_atomic_radius', 'gmean_atomic_radius', 'wtd_gmean_atomic_radius', 'entropy_atomic_radius', 'wtd_entropy_atomic_radius', 'range_atomic_radius', 'wtd_range_atomic_radius', 'std_atomic_radius', 'wtd_std_atomic_radius', 'mean_Density', 'wtd_mean_Density', 'gmean_Density', 'wtd_gmean_Density', 'entropy_Density', 'wtd_entropy_Density', 'range_Density', 'wtd_range_Density', 'std_Density', 'wtd_std_Density', 'mean_ElectronAffinity', 'wtd_mean_ElectronAffinity', 'gmean_ElectronAffinity', 'wtd_gmean_ElectronAffinity', 'entropy_ElectronAffinity', 'wtd_entropy_ElectronAffinity', 'range_ElectronAffinity', 'wtd_range_ElectronAffinity', 'std_ElectronAffinity', 'wtd_std_ElectronAffinity', 'mean_FusionHeat', 'wtd_mean_FusionHeat', 'gmean_FusionHeat', 'wtd_gmean_FusionHeat', 'entropy_FusionHeat', 'wtd_entropy_FusionHeat', 'range_FusionHeat', 'wtd_range_FusionHeat', 'std_FusionHeat', 'wtd_std_FusionHeat', 'mean_ThermalConductivity', 'wtd_mean_ThermalConductivity', 'gmean_ThermalConductivity', 'wtd_gmean_ThermalConductivity', 'entropy_ThermalConductivity', 'wtd_entropy_ThermalConductivity', 'range_ThermalConductivity', 'wtd_range_ThermalConductivity', 'std_ThermalConductivity', 'wtd_std_ThermalConductivity', 'mean_Valence', 'wtd_mean_Valence', 'gmean_Valence', 'wtd_gmean_Valence', 'entropy_Valence', 'wtd_entropy_Valence', 'range_Valence', 'wtd_range_Valence', 'std_Valence', 'wtd_std_Valence']#, 'critical_temp']
-    dtype = {x: np.float for x in feature_list}
+    dtype = {x: float for x in feature_list}
     dataset = Dataset.from_dtype(
         name="superconduct",
         task="regression",
@@ -483,7 +483,7 @@ def load_sgemm():
     # read with pandas and added column runs_avg as average of Run 1 2 3 4
 
     feature_list = ['MWG', 'NWG', 'KWG', 'MDIMC', 'NDIMC', 'MDIMA', 'NDIMB', 'KWI', 'VWM', 'VWN', 'STRM', 'STRN', 'SA', 'SB']
-    dtype = {x: np.float for x in feature_list}
+    dtype = {x: float for x in feature_list}
     dataset = Dataset.from_dtype(
         name="sgemm",
         task="regression",
@@ -499,7 +499,7 @@ def load_ovctt():
     # directly read file transcoding_mesurment.tsv with pd.read_csv("..", sep="\t")
 
     feature_list = ['duration', 'width', 'height', 'bitrate', 'framerate', 'i', 'p', 'b', 'frames', 'i_size', 'p_size', 'b_size', 'size', 'o_bitrate', 'o_framerate', 'o_width', 'o_height', 'umem']
-    dtype = {x: np.float for x in feature_list}
+    dtype = {x: float for x in feature_list}
     dtype.update({'codec': "category", 'o_codec': "category"})
     dataset = Dataset.from_dtype(
         name="ovctt",
@@ -515,7 +515,7 @@ def load_ypmsd():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/YearPredictionMSD
     # directly read and compressed with pandas
 
-    dtype = {str(x): np.float for x in range(1, 90)}
+    dtype = {str(x): float for x in range(1, 90)}
 
     dataset = Dataset.from_dtype(
         name="ypmsd",
@@ -530,9 +530,9 @@ def load_nupvotes():
     # only taken the train file which has labels
 
     dtype = {'Tag': "category",
-             'Reputation': np.float,
-             'Answers': np.float,
-             'Views': np.float
+             'Reputation': float,
+             'Answers': float,
+             'Views': float
              }
 
     dataset = Dataset.from_dtype(
@@ -550,14 +550,14 @@ def load_houseprices():
     # SYNTHETIC DATASET
     # directly read and compressed
 
-    dtype = {'Area':np.float,
+    dtype = {'Area':float,
              'Garage': "category",
              'FirePlace': "category",
-             'Baths': np.float,
+             'Baths': float,
              'White Marble': "category",
              'Black Marble': "category",
              'Indian Marble': "category",
-             'Floors': np.float,
+             'Floors': float,
              'City': "category",
              'Solar': "category",
              'Electric': "category",
@@ -582,7 +582,7 @@ def load_fifa19():
 
     features = ['Age', 'Potential', 'International Reputation', 'Weak Foot', 'Skill Moves', 'Crossing', 'Finishing', 'HeadingAccuracy', 'ShortPassing', 'Volleys', 'Dribbling', 'Curve', 'FKAccuracy', 'LongPassing', 'BallControl', 'Acceleration', 'SprintSpeed', 'Agility', 'Reactions', 'Balance', 'ShotPower', 'Jumping', 'Stamina', 'Strength', 'LongShots', 'Aggression', 'Interceptions', 'Positioning', 'Vision', 'Penalties', 'Composure', 'Marking', 'StandingTackle', 'SlidingTackle', 'GKDiving', 'GKHandling', 'GKKicking', 'GKPositioning', 'GKReflexes']
 
-    dtype = {x: np.float for x in features}
+    dtype = {x: float for x in features}
     dtype.update({x: "category" for x in ['Real_Face', 'Right_Foot', 'Simple_Position', 'Major_Nation', 'WorkRate1', 'WorkRate2']})
 
     dataset = Dataset.from_dtype(
@@ -601,7 +601,7 @@ def load_madelon():
     features = [str(i) for i in range(500)] #+ ["label"]
 
 
-    dtype = {x: np.float for x in features}
+    dtype = {x: float for x in features}
     #dtype["label"] = "category"
 
     dataset = Dataset.from_dtype(
@@ -620,7 +620,7 @@ def load_arcene():
     features = [str(i) for i in range(10000)] #+ ["label"]
 
 
-    dtype = {x: np.float for x in features}
+    dtype = {x: float for x in features}
     #dtype["label"] = "category"
 
     dataset = Dataset.from_dtype(
@@ -638,7 +638,7 @@ def load_gene_expression():
 
     features = ["gene_"+str(i) for i in range(20531)] #+ ["label"]
 
-    dtype = {x: np.float for x in features}
+    dtype = {x: float for x in features}
     #dtype["label"] = "category"
 
     dataset = Dataset.from_dtype(
@@ -661,7 +661,7 @@ def load_glaucoma():
        'mdg', 'mdt', 'mds', 'mdn', 'mdi', 'tmg', 'tmt', 'tms', 'tmn', 'tmi',
        'mr', 'rnf', 'mdic', 'emd', 'mv']
 
-    dtype = {x: np.float for x in features}
+    dtype = {x: float for x in features}
 
     dataset = Dataset.from_dtype(
         name="glaucoma",
@@ -677,7 +677,7 @@ def load_gisette():
 
     features = [str(i) for i in range(5000)]
 
-    dtype = {x: np.float for x in features}
+    dtype = {x: float for x in features}
     #dtype["label"] = "category"
 
     dataset = Dataset.from_dtype(
@@ -716,7 +716,7 @@ def load_atp1d():
     label_names = []
     for j in range(6):
         label_names.append(columns.pop(-1))
-    dtype = {x: np.float for x in columns}
+    dtype = {x: float for x in columns}
 
     dataset = Dataset.from_dtype(
         name="atp1d",
@@ -739,7 +739,7 @@ def load_atp7d():
     label_names = []
     for j in range(6):
         label_names.append(columns.pop(-1))
-    dtype = {x: np.float for x in columns}
+    dtype = {x: float for x in columns}
 
     dataset = Dataset.from_dtype(
         name="atp7d",
@@ -759,7 +759,7 @@ def load_parkinson():
     columns = list(csv.columns)
     del csv
 
-    dtype = {x: np.float for x in columns[2:-1]}
+    dtype = {x: float for x in columns[2:-1]}
     dtype[columns[1]] = "category"
 
     dataset = Dataset.from_dtype(
@@ -775,7 +775,7 @@ def load_gina_prior():
     # downloaded from https://www.openml.org/search?type=data&sort=runs&id=1042&status=active
     # preprocessed with parser.py in data/gina_prior
 
-    dtype = {"pixel"+str(x+1): np.float for x in range(784)}
+    dtype = {"pixel"+str(x+1): float for x in range(784)}
 
     dataset = Dataset.from_dtype(
         name="gina_prior",
@@ -789,7 +789,7 @@ def load_gina():
     # downloaded from https://www.openml.org/search?type=data&status=active&id=41158
     # preprocessed with parser.py in data/gina
 
-    dtype = {"V"+str(x+1): np.float for x in range(970)}
+    dtype = {"V"+str(x+1): float for x in range(970)}
 
     dataset = Dataset.from_dtype(
         name="gina",
@@ -803,7 +803,7 @@ def load_qsar():
     # downloaded from https://www.openml.org/search?type=data&sort=runs&id=3987&status=active
     # preprocessed with parser.py in data/qsar
 
-    dtype = {"FCFP6_1024_"+str(x): np.float for x in range(1024)}
+    dtype = {"FCFP6_1024_"+str(x): float for x in range(1024)}
 
     dataset = Dataset.from_dtype(
         name="qsar",
@@ -817,7 +817,7 @@ def load_qsar10980():
     # downloaded from https://www.openml.org/search?type=data&status=active&id=3277
     # preprocessed with parser.py in data/qsar10980
 
-    dtype = {"FCFP6_1024_"+str(x): np.float for x in range(1024)}
+    dtype = {"FCFP6_1024_"+str(x): float for x in range(1024)}
 
     dataset = Dataset.from_dtype(
         name="qsar10980",
@@ -836,7 +836,7 @@ def load_santander():
     columns = list(csv.columns)
     del csv
 
-    dtype = {x: np.float for x in columns[:-1]}
+    dtype = {x: float for x in columns[:-1]}
 
     dataset = Dataset.from_dtype(
         name="santander",
@@ -855,7 +855,7 @@ def load_ap_colon_kidney():
     columns = list(csv.columns)
     del csv
 
-    dtype = {x: np.float for x in columns[1:-1]}
+    dtype = {x: float for x in columns[1:-1]}
 
     dataset = Dataset.from_dtype(
         name="ap_colon_kidney",
@@ -870,7 +870,7 @@ def load_robert():
     # downloaded from https://www.openml.org/search?type=data&sort=runs&id=41165&status=active
     # preprocessed with parser.py
 
-    dtype = {"V"+str(x+1): np.float for x in range(7200)}
+    dtype = {"V"+str(x+1): float for x in range(7200)}
 
     dataset = Dataset.from_dtype(
         name="robert",
@@ -884,7 +884,7 @@ def load_bioresponse():
     # downloaded from https://www.openml.org/search?type=data&sort=runs&id=4134&status=active
     # preprocessed with parser.py
 
-    dtype = {"D"+str(x+1): np.float for x in range(1776)}
+    dtype = {"D"+str(x+1): float for x in range(1776)}
 
     dataset = Dataset.from_dtype(
         name="bioresponse",
@@ -898,7 +898,7 @@ def load_christine():
     # downloaded from https://www.openml.org/search?type=data&sort=runs&id=41142&status=active
     # preprocessed with parser.py
 
-    dtype = {"V"+str(x+1): np.float for x in range(1636)}
+    dtype = {"V"+str(x+1): float for x in range(1636)}
 
     dataset = Dataset.from_dtype(
         name="christine",
@@ -912,7 +912,7 @@ def load_hiva_agnostic():
     # downloaded from https://www.openml.org/search?type=data&sort=runs&id=1039&status=active
     # preprocessed with parser.py
 
-    dtype = {"attr"+str(x): np.float for x in range(1617)}
+    dtype = {"attr"+str(x): float for x in range(1617)}
 
     dataset = Dataset.from_dtype(
         name="hiva_agnostic",
@@ -926,7 +926,7 @@ def load_gpositivego():
     # downloaded from https://www.uco.es/kdis/mllresources/
     # preprocessed with parser.py
 
-    dtype = {str(x): np.float for x in range(912)}
+    dtype = {str(x): float for x in range(912)}
 
     dataset = Dataset.from_dtype(
         name="gpositivego",
@@ -936,11 +936,13 @@ def load_gpositivego():
     )
     return dataset.load_from_csv("gpositivego.csv.gz", dtype=dtype)
 
+
+
 def load_gnegativego():
     # downloaded from https://www.uco.es/kdis/mllresources/
     # preprocessed with parser.py
 
-    dtype = {str(x): np.float for x in range(1717)}
+    dtype = {str(x): float for x in range(1717)}
 
     dataset = Dataset.from_dtype(
         name="gnegativego",
@@ -954,7 +956,7 @@ def load_gpositivepseaac():
     # downloaded from https://www.uco.es/kdis/mllresources/
     # preprocessed with parser.py
 
-    dtype = {str(x): np.float for x in range(440)}
+    dtype = {str(x): float for x in range(440)}
 
     dataset = Dataset.from_dtype(
         name="gpositivepseaac",
@@ -969,7 +971,7 @@ def load_gnegativepseaac():
     # downloaded from https://www.uco.es/kdis/mllresources/
     # preprocessed with parser.py
 
-    dtype = {str(x): np.float for x in range(440)}
+    dtype = {str(x): float for x in range(440)}
 
     dataset = Dataset.from_dtype(
         name="gnegativepseaac",
@@ -988,7 +990,7 @@ def load_nyctaxi():
 
     features = ['passenger_count', 'pickup_longitude', 'pickup_latitude', 'dropoff_longitude', 'dropoff_latitude', 'pickup_month', 'pickup_hour', 'pickup_weekday']
 
-    dtype = {x: np.float for x in features}
+    dtype = {x: float for x in features}
     dtype.update({x: "category" for x in ['vendor_id', 'store_and_fwd_flag']})
 
     dataset = Dataset.from_dtype(
@@ -1008,7 +1010,7 @@ def load_wine():
 
     features = ['fixed acidity', 'volatile acidity', 'citric acid', 'residual sugar', 'chlorides', 'free sulfur dioxide', 'total sulfur dioxide', 'density', 'pH', 'sulphates', 'alcohol']
 
-    dtype = {x: np.float for x in features}
+    dtype = {x: float for x in features}
 
     dataset = Dataset.from_dtype(
         name="wine",
@@ -1025,7 +1027,7 @@ def load_airbnb():
 
     features = ['latitude', 'longitude', 'minimum_nights', 'reviews_count', 'reviews_per_month', 'host_listings_count', 'availability_365']
 
-    dtype = {x: np.float for x in features}
+    dtype = {x: float for x in features}
     dtype.update({x: "category" for x in ['neighbourhood_group', 'room_type']})
 
     dataset = Dataset.from_dtype(
@@ -1103,47 +1105,47 @@ def load_kddcup99():
     df = data["frame"]
     # We change the dtypes (for some weird reason everything is "object"...)
     dtype = {
-        "duration": np.float32,
+        "duration": float,
         "protocol_type": "category",
         "service": "category",
         "flag": "category",
-        "src_bytes": np.float32,
-        "dst_bytes": np.float32,
+        "src_bytes": float,
+        "dst_bytes": float,
         "land": "category",
-        "wrong_fragment": np.float32,
-        "urgent": np.float32,
-        "hot": np.float32,
-        "num_failed_logins": np.float32,
+        "wrong_fragment": float,
+        "urgent": float,
+        "hot": float,
+        "num_failed_logins": float,
         "logged_in": "category",
-        "num_compromised": np.float32,
+        "num_compromised": float,
         "root_shell": "category",
         "su_attempted": "category",
-        "num_root": np.float32,
-        "num_file_creations": np.float32,
-        "num_shells": np.float32,
-        "num_access_files": np.float32,
-        "num_outbound_cmds": np.float32,
+        "num_root": float,
+        "num_file_creations": float,
+        "num_shells": float,
+        "num_access_files": float,
+        "num_outbound_cmds": float,
         "is_host_login": "category",
         "is_guest_login": "category",
-        "count": np.float32,
-        "srv_count": np.float32,
-        "serror_rate": np.float32,
-        "srv_serror_rate": np.float32,
-        "rerror_rate": np.float32,
-        "srv_rerror_rate": np.float32,
-        "same_srv_rate": np.float32,
-        "diff_srv_rate": np.float32,
-        "srv_diff_host_rate": np.float32,
-        "dst_host_count": np.float32,
-        "dst_host_srv_count": np.float32,
-        "dst_host_same_srv_rate": np.float32,
-        "dst_host_diff_srv_rate": np.float32,
-        "dst_host_same_src_port_rate": np.float32,
-        "dst_host_srv_diff_host_rate": np.float32,
-        "dst_host_serror_rate": np.float32,
-        "dst_host_srv_serror_rate": np.float32,
-        "dst_host_rerror_rate": np.float32,
-        "dst_host_srv_rerror_rate": np.float32,
+        "count": float,
+        "srv_count": float,
+        "serror_rate": float,
+        "srv_serror_rate": float,
+        "rerror_rate": float,
+        "srv_rerror_rate": float,
+        "same_srv_rate": float,
+        "diff_srv_rate": float,
+        "srv_diff_host_rate": float,
+        "dst_host_count": float,
+        "dst_host_srv_count": float,
+        "dst_host_same_srv_rate": float,
+        "dst_host_diff_srv_rate": float,
+        "dst_host_same_src_port_rate": float,
+        "dst_host_srv_diff_host_rate": float,
+        "dst_host_serror_rate": float,
+        "dst_host_srv_serror_rate": float,
+        "dst_host_rerror_rate": float,
+        "dst_host_srv_rerror_rate": float,
     }
     df = df.astype(dtype)
     dataset = Dataset.from_dtype(
@@ -1158,22 +1160,22 @@ def load_kddcup99():
 
 def load_letter():
     dtype = {
-        "X0": np.float,
-        "X1": np.float,
-        "X2": np.float,
-        "X3": np.float,
-        "X4": np.float,
-        "X5": np.float,
-        "X6": np.float,
-        "X7": np.float,
-        "X8": np.float,
-        "X9": np.float,
-        "X10": np.float,
-        "X11": np.float,
-        "X12": np.float,
-        "X13": np.float,
-        "X14": np.float,
-        "X15": np.float,
+        "X0": float,
+        "X1": float,
+        "X2": float,
+        "X3": float,
+        "X4": float,
+        "X5": float,
+        "X6": float,
+        "X7": float,
+        "X8": float,
+        "X9": float,
+        "X10": float,
+        "X11": float,
+        "X12": float,
+        "X13": float,
+        "X14": float,
+        "X15": float,
     }
     dataset = Dataset.from_dtype(
         name="letter",
@@ -1187,42 +1189,42 @@ def load_letter():
 
 def load_satimage():
     dtype = {
-        "X0": np.float,
-        "X1": np.float,
-        "X2": np.float,
-        "X3": np.float,
-        "X4": np.float,
-        "X5": np.float,
-        "X6": np.float,
-        "X7": np.float,
-        "X8": np.float,
-        "X9": np.float,
-        "X10": np.float,
-        "X11": np.float,
-        "X12": np.float,
-        "X13": np.float,
-        "X14": np.float,
-        "X15": np.float,
-        "X16": np.float,
-        "X17": np.float,
-        "X18": np.float,
-        "X19": np.float,
-        "X20": np.float,
-        "X21": np.float,
-        "X22": np.float,
-        "X23": np.float,
-        "X24": np.float,
-        "X25": np.float,
-        "X26": np.float,
-        "X27": np.float,
-        "X28": np.float,
-        "X29": np.float,
-        "X30": np.float,
-        "X31": np.float,
-        "X32": np.float,
-        "X33": np.float,
-        "X34": np.float,
-        "X35": np.float,
+        "X0": float,
+        "X1": float,
+        "X2": float,
+        "X3": float,
+        "X4": float,
+        "X5": float,
+        "X6": float,
+        "X7": float,
+        "X8": float,
+        "X9": float,
+        "X10": float,
+        "X11": float,
+        "X12": float,
+        "X13": float,
+        "X14": float,
+        "X15": float,
+        "X16": float,
+        "X17": float,
+        "X18": float,
+        "X19": float,
+        "X20": float,
+        "X21": float,
+        "X22": float,
+        "X23": float,
+        "X24": float,
+        "X25": float,
+        "X26": float,
+        "X27": float,
+        "X28": float,
+        "X29": float,
+        "X30": float,
+        "X31": float,
+        "X32": float,
+        "X33": float,
+        "X34": float,
+        "X35": float,
     }
     dataset = Dataset.from_dtype(
         name="satimage",
@@ -1233,9 +1235,131 @@ def load_satimage():
     )
     return dataset.load_from_csv("satimage.csv.gz", dtype=dtype)
 
+def load_codrna():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=351&status=active
+    # parser with codrna_parser.py
+    dtype = {
+        "X1": float,
+        "X2": float,
+        "X3": float,
+        "X4": float,
+        "X5": float,
+        "X6": float,
+        "X7": float,
+        "X8": float,
+    }
+    dataset = Dataset.from_dtype(
+        name="codrna",
+        task="binary-classification",
+        label_column="Y",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("codrna.csv.gz", dtype=dtype)
+
+def load_elec2():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=151&status=active
+    dtype = {
+        "day": "category",
+        "period": float,
+        "nswprice": float,
+        "nswdemand": float,
+        "vicprice": float,
+        "vicdemand": float,
+        "transfer": float,
+    }
+    dataset = Dataset.from_dtype(
+        name="elec2",
+        task="binary-classification",
+        label_column="class",
+        drop_columns=["date"],
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("elec2.csv.gz", dtype=dtype)
+
+def load_ijcnn1():
+    # downloaded from https://www.openml.org/search?type=data&sort=runs&id=1575&status=active
+    # parsed with ijcnn1_parser.py script
+    dtype = {f"att_{i+1}": float for i in range(22)}
+
+    dataset = Dataset.from_dtype(
+        name="ijcnn1",
+        task="binary-classification",
+        label_column="class",
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("ijcnn1.csv.gz", dtype=dtype)
+
+def load_phishing():
+    # downloaded from https://www.kaggle.com/datasets/shashwatwork/web-page-phishing-detection-dataset/data
+    features = ['length_url', 'length_hostname', 'ip', 'nb_dots', 'nb_hyphens',
+       'nb_at', 'nb_qm', 'nb_and', 'nb_or', 'nb_eq', 'nb_underscore',
+       'nb_tilde', 'nb_percent', 'nb_slash', 'nb_star', 'nb_colon', 'nb_comma',
+       'nb_semicolumn', 'nb_dollar', 'nb_space', 'nb_www', 'nb_com',
+       'nb_dslash', 'http_in_path', 'https_token', 'ratio_digits_url',
+       'ratio_digits_host', 'punycode', 'port', 'tld_in_path',
+       'tld_in_subdomain', 'abnormal_subdomain', 'nb_subdomains',
+       'prefix_suffix', 'random_domain', 'shortening_service',
+       'path_extension', 'nb_redirection', 'nb_external_redirection',
+       'length_words_raw', 'char_repeat', 'shortest_words_raw',
+       'shortest_word_host', 'shortest_word_path', 'longest_words_raw',
+       'longest_word_host', 'longest_word_path', 'avg_words_raw',
+       'avg_word_host', 'avg_word_path', 'phish_hints', 'domain_in_brand',
+       'brand_in_subdomain', 'brand_in_path', 'suspecious_tld',
+       'statistical_report', 'nb_hyperlinks', 'ratio_intHyperlinks',
+       'ratio_extHyperlinks', 'ratio_nullHyperlinks', 'nb_extCSS',
+       'ratio_intRedirection', 'ratio_extRedirection', 'ratio_intErrors',
+       'ratio_extErrors', 'login_form', 'external_favicon', 'links_in_tags',
+       'submit_email', 'ratio_intMedia', 'ratio_extMedia', 'sfh', 'iframe',
+       'popup_window', 'safe_anchor', 'onmouseover', 'right_clic',
+       'empty_title', 'domain_in_title', 'domain_with_copyright',
+       'whois_registered_domain', 'domain_registration_length', 'domain_age',
+       'web_traffic', 'dns_record', 'google_index', 'page_rank']
+
+    dtype = {ft: float for ft in features}
+
+    dataset = Dataset.from_dtype(
+        name="phishing",
+        task="binary-classification",
+        label_column="status",
+        drop_columns=["url"],
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("phishing.csv.gz", dtype=dtype)
+
+def load_phishing_st():
+    # downloaded from https://www.kaggle.com/datasets/shashwatwork/phishing-dataset-for-machine-learning/data
+    features = ['NumDots', 'SubdomainLevel', 'PathLevel', 'UrlLength', 'NumDash',
+       'NumDashInHostname', 'AtSymbol', 'TildeSymbol', 'NumUnderscore',
+       'NumPercent', 'NumQueryComponents', 'NumAmpersand', 'NumHash',
+       'NumNumericChars', 'NoHttps', 'RandomString', 'IpAddress',
+       'DomainInSubdomains', 'DomainInPaths', 'HttpsInHostname',
+       'HostnameLength', 'PathLength', 'QueryLength', 'DoubleSlashInPath',
+       'NumSensitiveWords', 'EmbeddedBrandName', 'PctExtHyperlinks',
+       'PctExtResourceUrls', 'ExtFavicon', 'InsecureForms',
+       'RelativeFormAction', 'ExtFormAction', 'AbnormalFormAction',
+       'PctNullSelfRedirectHyperlinks', 'FrequentDomainNameMismatch',
+       'FakeLinkInStatusBar', 'RightClickDisabled', 'PopUpWindow',
+       'SubmitInfoToEmail', 'IframeOrFrame', 'MissingTitle',
+       'ImagesOnlyInForm', 'SubdomainLevelRT', 'UrlLengthRT',
+       'PctExtResourceUrlsRT', 'AbnormalExtFormActionR', 'ExtMetaScriptLinkRT',
+       'PctExtNullSelfRedirectHyperlinksRT']
+
+    dtype = {ft: float for ft in features}
+
+    dataset = Dataset.from_dtype(
+        name="phishing_st",
+        task="binary-classification",
+        label_column="CLASS_LABEL",
+        drop_columns=["id"],
+        dtype=dtype,
+    )
+    return dataset.load_from_csv("phishing_st.csv.gz", dtype=dtype)
+
+
+
 def load_statlog():
     # downloaded from https://archive.ics.uci.edu/ml/datasets/Statlog+%28Landsat+Satellite%29
-    dtype = {str(x): np.float for x in range(36)}
+    dtype = {str(x): float for x in range(36)}
     dataset = Dataset.from_dtype(
         name="statlog",
         task="multiclass-classification",
@@ -1251,7 +1375,7 @@ def load_mnist():
     X, y = fetch_openml("mnist_784", version=1, return_X_y=True, as_frame=True)
     df = X.join(y)
 
-    dtype = {"pixel" + str(i + 1): np.float for i in range(784)}
+    dtype = {"pixel" + str(i + 1): float for i in range(784)}
 
     dataset = Dataset.from_dtype(
         name="mnist",
@@ -1268,7 +1392,7 @@ def load_iris():
 
     X, y = ld_iris(return_X_y=True, as_frame=True)
     df = X.join(y)
-    dtype = {c: np.float for c in X.columns}
+    dtype = {c: float for c in X.columns}
 
     dataset = Dataset.from_dtype(
         name="iris",
@@ -1281,54 +1405,54 @@ def load_iris():
 
 def load_sensorless():
     dtype = {
-        0: np.float,
-        1: np.float,
-        2: np.float,
-        3: np.float,
-        4: np.float,
-        5: np.float,
-        6: np.float,
-        7: np.float,
-        8: np.float,
-        9: np.float,
-        10: np.float,
-        11: np.float,
-        12: np.float,
-        13: np.float,
-        14: np.float,
-        15: np.float,
-        16: np.float,
-        17: np.float,
-        18: np.float,
-        19: np.float,
-        20: np.float,
-        21: np.float,
-        22: np.float,
-        23: np.float,
-        24: np.float,
-        25: np.float,
-        26: np.float,
-        27: np.float,
-        28: np.float,
-        29: np.float,
-        30: np.float,
-        31: np.float,
-        32: np.float,
-        33: np.float,
-        34: np.float,
-        35: np.float,
-        36: np.float,
-        37: np.float,
-        38: np.float,
-        39: np.float,
-        40: np.float,
-        41: np.float,
-        42: np.float,
-        43: np.float,
-        44: np.float,
-        45: np.float,
-        46: np.float,
-        47: np.float,
+        0: float,
+        1: float,
+        2: float,
+        3: float,
+        4: float,
+        5: float,
+        6: float,
+        7: float,
+        8: float,
+        9: float,
+        10: float,
+        11: float,
+        12: float,
+        13: float,
+        14: float,
+        15: float,
+        16: float,
+        17: float,
+        18: float,
+        19: float,
+        20: float,
+        21: float,
+        22: float,
+        23: float,
+        24: float,
+        25: float,
+        26: float,
+        27: float,
+        28: float,
+        29: float,
+        30: float,
+        31: float,
+        32: float,
+        33: float,
+        34: float,
+        35: float,
+        36: float,
+        37: float,
+        38: float,
+        39: float,
+        40: float,
+        41: float,
+        42: float,
+        43: float,
+        44: float,
+        45: float,
+        46: float,
+        47: float,
     }
     dataset = Dataset.from_dtype(
         name="sensorless",
@@ -1341,63 +1465,63 @@ def load_sensorless():
 
 def load_spambase():
     dtype = {
-        0: np.float,
-        1: np.float,
-        2: np.float,
-        3: np.float,
-        4: np.float,
-        5: np.float,
-        6: np.float,
-        7: np.float,
-        8: np.float,
-        9: np.float,
-        10: np.float,
-        11: np.float,
-        12: np.float,
-        13: np.float,
-        14: np.float,
-        15: np.float,
-        16: np.float,
-        17: np.float,
-        18: np.float,
-        19: np.float,
-        20: np.float,
-        21: np.float,
-        22: np.float,
-        23: np.float,
-        24: np.float,
-        25: np.float,
-        26: np.float,
-        27: np.float,
-        28: np.float,
-        29: np.float,
-        30: np.float,
-        31: np.float,
-        32: np.float,
-        33: np.float,
-        34: np.float,
-        35: np.float,
-        36: np.float,
-        37: np.float,
-        38: np.float,
-        39: np.float,
-        40: np.float,
-        41: np.float,
-        42: np.float,
-        43: np.float,
-        44: np.float,
-        45: np.float,
-        46: np.float,
-        47: np.float,
-        48: np.float,
-        49: np.float,
-        50: np.float,
-        51: np.float,
-        52: np.float,
-        53: np.float,
-        54: np.float,
-        55: np.int,
-        56: np.int,
+        0: float,
+        1: float,
+        2: float,
+        3: float,
+        4: float,
+        5: float,
+        6: float,
+        7: float,
+        8: float,
+        9: float,
+        10: float,
+        11: float,
+        12: float,
+        13: float,
+        14: float,
+        15: float,
+        16: float,
+        17: float,
+        18: float,
+        19: float,
+        20: float,
+        21: float,
+        22: float,
+        23: float,
+        24: float,
+        25: float,
+        26: float,
+        27: float,
+        28: float,
+        29: float,
+        30: float,
+        31: float,
+        32: float,
+        33: float,
+        34: float,
+        35: float,
+        36: float,
+        37: float,
+        38: float,
+        39: float,
+        40: float,
+        41: float,
+        42: float,
+        43: float,
+        44: float,
+        45: float,
+        46: float,
+        47: float,
+        48: float,
+        49: float,
+        50: float,
+        51: float,
+        52: float,
+        53: float,
+        54: float,
+        55: int,
+        56: int,
     }
     dataset = Dataset.from_dtype(
         name="spambase",

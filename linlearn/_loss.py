@@ -432,7 +432,7 @@ class Logistic(Loss):
     def deriv_factory(self):
         @jit(inline="always", **jit_kwargs)
         def deriv(y, z, out):
-            out[0] = -y * expit(-y * z[0])#sigmoid(-y * z[0])#
+            out[0] = -y * sigmoid(-y * z[0])#expit(-y * z[0])#
 
         return deriv
 

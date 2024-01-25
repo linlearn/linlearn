@@ -208,7 +208,7 @@ class Dataset:
                             "categorical_transformer",
                             OneHotEncoder(
                                 drop=self.drop,
-                                sparse=self.sparse,
+                                sparse_output=self.sparse,
                                 handle_unknown="ignore",
                             ),
                             self.categorical_columns,
@@ -472,6 +472,181 @@ class Dataset:
                     # original = df_train.loc[i, cat_col]
                     # while df_train.loc[i, cat_col] == original:
                     df_train.loc[i, cat_col] = rng.choice(dist.index)# p=dist)
+
+            # finished introducing corruption
+
+            # ensure we have only modified data and not introduced new rows
+            # (previously a bug with data frame indices ...)
+            assert len(df_train) == n_samples_train
+
+        self.transformer = self.transformer.fit(df_train)
+        X_train = self.transformer.transform(df_train)
+        X_test = self.transformer.transform(df_test)
+
+        # An array holding the names of all the columns
+        columns = []
+        if self.n_features_continuous_ > 0:
+            columns.extend(self.continuous_columns_)
+
+        if self.n_features_categorical_ > 0:
+            if self.one_hot_encode:
+                # Get the list of modalities from the OneHotEncoder
+                all_modalities = (
+                    self.transformer.transformer_list[-1][1]
+                    .transformers_[0][1]
+                    .categories_
+                )
+                for categorical_column, modalities in zip(
+                    self.categorical_columns_, all_modalities
+                ):
+                    # Add the columns for this features
+                    columns.extend(
+                        [
+                            categorical_column
+                            # + "#"
+                            # + modality
+                            + "#" + str(idx_modality)
+                            for idx_modality, modality in enumerate(modalities)
+                        ]
+                    )
+            else:
+                columns.extend(self.categorical_columns_)
+        self.columns_ = columns
+
+        if self.pd_df_categories:
+            # columns = (self.continuous_columns or [])+(self.categorical_columns or [])
+            X_train = pd.DataFrame(X_train, columns=columns)
+            X_test = pd.DataFrame(X_test, columns=columns)
+            if self.categorical_columns is not None:
+                X_train[self.categorical_columns] = (
+                    X_train[self.categorical_columns].astype(int).astype("category")
+                )
+                X_test[self.categorical_columns] = (
+                    X_test[self.categorical_columns].astype(int).astype("category")
+                )
+
+        n_samples_train, n_columns = X_train.shape
+        n_samples_test, _ = X_test.shape
+        self.n_columns_ = n_columns
+        self.n_samples_train_ = n_samples_train
+        self.n_samples_test_ = n_samples_test
+
+        self.label_encoder = self.label_encoder.fit(df_train[self.label_column])
+        y_train = self.label_encoder.transform(df_train[self.label_column])
+        y_test = self.label_encoder.transform(df_test[self.label_column])
+
+        if self.task != "regression":
+            self.classes_ = self.label_encoder.classes_
+            self.n_classes_ = len(self.classes_)
+            # Encode the full column containing the labels to compute its gini index
+            y_encoded = LabelEncoder().fit_transform(df[self.label_column])
+            label_counts = np.bincount(y_encoded)
+            label_probs = label_counts / label_counts.sum()
+            self.scaled_gini_ = scaled_gini(label_probs)
+
+        return X_train, X_test, y_train, y_test
+
+    def extract_corrupt2(self, corruption_rate=0.0, random_state=None):
+        self._build_transform(robust_scaler=False)#True)
+        df = self.df_raw
+        # Don't put self.n_features_ = df.shape[1] since for now df contains the
+        # column label
+        self.n_samples_, _ = df.shape
+
+        # A list containing the names of the categorical columns
+        self.categorical_columns_ = [
+            col
+            for col, dtype in df.dtypes.items()
+            if col != self.label_column and dtype.name == "category"
+        ]
+        # A list containing the names of the continuous columns
+        self.continuous_columns_ = [
+            col
+            for col, dtype in df.dtypes.items()
+            if col != self.label_column and dtype.name != "category"
+        ]
+
+        self.n_features_categorical_ = len(self.categorical_columns_)
+        self.n_features_continuous_ = len(self.continuous_columns_)
+        self.n_features_ = self.n_features_categorical_ + self.n_features_continuous_
+
+        if not self.one_hot_encode and self.n_features_categorical_ > 0:
+            # If we do not use one-hot encoding, we compute a boolean mask indicating
+            # which features are categorical. We use the fact that by construction of
+            # the Dataset categorical features come last.
+            categorical_features = np.zeros(self.n_features_, dtype=np.bool)
+            #
+            categorical_features[-self.n_features_categorical_ :] = True
+            self.categorical_features_ = categorical_features
+
+        stratify = None if self.task == "regression" else df[self.label_column]
+
+        if self.task == "regression":
+            df[self.label_column] = MinMaxScaler((0, 10)).fit_transform(df[[self.label_column]])
+
+        df_train, df_test = train_test_split(
+            df,
+            test_size=self.test_size,
+            shuffle=True,
+            random_state=random_state,
+            stratify=stratify,
+        )
+
+        if corruption_rate > 0:
+            # introduce corruption here
+            rng = np.random.RandomState(random_state)
+            n_samples_train = len(df_train)
+            perm = rng.permutation(n_samples_train)
+            # corrupted_indices = rng.choice(df_train.index, size=int(corruption_rate * n_samples_train), replace=False)
+            corrupted_indices = np.array(df_train.index[perm[:int(corruption_rate * n_samples_train)]])
+            cnt_cols = self.continuous_columns or []
+            cat_cols = self.categorical_columns or []
+            assert self.label_column not in (cat_cols + cnt_cols)
+            if self.task == "regression":
+                cnt_cols = cnt_cols + [self.label_column]
+            else:
+                cat_cols = cat_cols + [self.label_column]
+
+
+            n_cnt_features = len(cnt_cols)
+            if n_cnt_features > 0:
+                pd.options.mode.chained_assignment = None  # silence the useless warnings
+
+                mu = df_train[cnt_cols].mean().to_numpy()
+                stds = np.array(df_train[cnt_cols].std(axis=0))#vals
+
+                for i in corrupted_indices:
+                    type = rng.randint(3)
+                    dir = rng.randn(n_cnt_features)
+                    dir /= np.sqrt((dir * dir).sum())  # random direction
+                    corrupt = np.zeros_like(mu)  # + max_Sigma_X
+                    if type == 0:
+                        for j, cnt_col in enumerate(cnt_cols):
+                            corrupt[j] = df_train.loc[rng.choice(df_train.index), cnt_col] + 1000 * stds[j] * rng.standard_t(2.1)
+
+                    elif type == 1:
+                        corrupt = mu + 1000 * np.multiply(stds, dir) + rng.randn()#n_cnt_features)
+                        # corrupt = mu + 5 * max_Sigma_X * dir + rng.randn(n_cnt_features)
+
+                    elif type == 2:
+                        corrupt = rng.randn(n_cnt_features)
+                        corrupt = mu + 1000 * np.multiply(stds, corrupt / np.linalg.norm(corrupt))
+
+                    for j, cnt_col in enumerate(cnt_cols):
+                        df_train.loc[i, cnt_col] = corrupt[j]
+
+            for cat_col in cat_cols:
+                # print("corrupting column : %s"%cat_col)
+                dist = df_train[cat_col].value_counts(normalize=True)#.apply(lambda x: 1/max(1e-8, x))
+                #dist = dist.apply(lambda x: x/dist.sum())
+                nb_vals = len(dist)
+                for i in corrupted_indices:
+                    # original = df_train.loc[i, cat_col]
+                    # while df_train.loc[i, cat_col] == original:
+                    j = 0
+                    while df_train.loc[i, cat_col] != dist.index[j]:
+                        j += 1
+                    df_train.loc[i, cat_col] = dist.index[(j+1+rng.randint(nb_vals-1))%nb_vals]#rng.choice(dist.index)# p=dist)
 
             # finished introducing corruption
 

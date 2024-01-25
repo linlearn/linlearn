@@ -78,6 +78,11 @@ from .loaders import (
     load_robert,
     load_bioresponse,
     load_christine,
+    load_codrna,
+    load_elec2,
+    load_ijcnn1,
+    load_phishing,
+    load_phishing_st,
     load_hiva_agnostic,
     describe_datasets,
 )
