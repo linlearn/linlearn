@@ -350,22 +350,22 @@ if not save_results:
 
 logging.info("Lauching experiment with parameters : \n %r" % args)
 
+loader = set_dataloader(dataset_name)
+dataset = loader()
+
+dataset.test_size = test_data_size
+learning_task = dataset.task
+classification_task = learning_task.endswith("classification")
+
+if learning_task.endswith("regression"):
+    loss = nn.MSELoss(reduction="sum")
+else:
+    loss = nn.CrossEntropyLoss(reduction="sum")
+
 model_names = ["qc", "noclip"] + [f"cst_clip{quant}" for quant in cst_clip_quants]
 
 def repeat(rep):
     logging.info("run #"+str(rep))
-
-    loader = set_dataloader(dataset_name)
-    dataset = loader()
-
-    dataset.test_size = test_data_size
-    learning_task = dataset.task
-    classification_task = learning_task.endswith("classification")
-
-    if learning_task.endswith("regression"):
-        loss = nn.MSELoss(reduction="sum")
-    else:
-        loss = nn.CrossEntropyLoss(reduction="sum")
 
     if learning_task.endswith("classification"):
         col_try, col_iter, col_algo, col_test_loss, col_acc, col_roc_auc, col_avg_prec = [], [], [], [], [], [], []
@@ -485,19 +485,13 @@ def repeat(rep):
     else:
         return col_try, col_iter, col_algo, col_mse, col_mae
 
-if os.cpu_count() > 8:
+if False:#os.cpu_count() > 8:
     logging.info("running parallel repetitions")
     results = joblib.Parallel(n_jobs=-1)(
         joblib.delayed(repeat)(rep) for rep in range(1, n_repeats + 1)
     )
 else:
     results = [repeat(rep) for rep in range(1, n_repeats + 1)]
-
-loader = set_dataloader(dataset_name)
-dataset = loader()
-
-learning_task = dataset.task
-classification_task = learning_task.endswith("classification")
 
 col_try = list(itertools.chain.from_iterable([x[0] for x in results]))
 col_iter = list(itertools.chain.from_iterable([x[1] for x in results]))
