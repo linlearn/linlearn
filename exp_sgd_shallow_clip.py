@@ -82,6 +82,7 @@ from linlearn.datasets import (  # noqa: E402
     # load_statlog,
 )
 
+MAX_PARAM_VALUE = 1e10
 
 NOPYTHON = True
 NOGIL = True
@@ -152,7 +153,6 @@ def set_dataloader(dataset_name):
         "fifa19": load_fifa19,
         "nyctaxi": load_nyctaxi,
         "codrna": load_codrna,
-        "elec2": load_elec2,
         "ijcnn1": load_ijcnn1,
         "phishing": load_phishing,
         "phishing_st": load_phishing_st,
@@ -367,11 +367,11 @@ model_names = ["qc", "noclip"] + [f"cst_clip{quant}" for quant in cst_clip_quant
 def repeat(rep):
     logging.info("run #"+str(rep))
 
+    col_try, col_iter, col_algo, col_qc_levels = [], [], [], []
     if learning_task.endswith("classification"):
-        col_try, col_iter, col_algo, col_test_loss, col_acc, col_roc_auc, col_avg_prec = [], [], [], [], [], [], []
+        col_test_loss, col_acc, col_roc_auc, col_avg_prec = [], [], [], []
     else:
-        col_try, col_iter, col_algo, col_mse, col_mae = [], [], [], [], []
-
+        col_mse, col_mae = [], []
 
     torch.manual_seed(random_seed + rep)
 
@@ -438,6 +438,7 @@ def repeat(rep):
                 col_try.append(rep)
                 col_iter.append(j)
                 col_algo.append(model_names[i])
+                col_qc_levels.append(buffer[floor(len(buffer) * quantile)])
                 if classification_task:
                     if learning_task == "binary-classification":
                         acc, roc_auc, avg_prec, lss = binary_classif_metrics(models[i], X_test, y_test)
@@ -464,12 +465,14 @@ def repeat(rep):
         optimizers[0].step()
 
         # Standard SGD
+        for p in models[1].parameters():
+            torch.clamp(p, min=-MAX_PARAM_VALUE, max=MAX_PARAM_VALUE, out=p)
         optimizers[1].zero_grad()
         pred = models[1](features)
         loss_val = loss(pred, target)
         loss_val.backward()
-        if not classification_task:
-            _ = nn.utils.clip_grad_norm_(models[1].parameters(), tau_unif)
+        # if not classification_task or dataset_name=="covtype":
+        #     _ = nn.utils.clip_grad_norm_(models[1].parameters(), tau_unif)
         optimizers[1].step()
 
         # Constant CLIPPED SGD
@@ -481,9 +484,9 @@ def repeat(rep):
             nn.utils.clip_grad_norm_(models[2+k].parameters(), cst_clip_levels[k])
             optimizers[2+k].step()
     if classification_task:
-        return col_try, col_iter, col_algo, col_test_loss, col_acc, col_roc_auc, col_avg_prec#, col_eta
+        return col_try, col_iter, col_algo, col_test_loss, col_acc, col_roc_auc, col_avg_prec, col_qc_levels, cst_clip_levels
     else:
-        return col_try, col_iter, col_algo, col_mse, col_mae
+        return col_try, col_iter, col_algo, col_mse, col_mae, col_qc_levels, cst_clip_levels
 
 if False:#os.cpu_count() > 8:
     logging.info("running parallel repetitions")
@@ -496,11 +499,13 @@ else:
 col_try = list(itertools.chain.from_iterable([x[0] for x in results]))
 col_iter = list(itertools.chain.from_iterable([x[1] for x in results]))
 col_algo = list(itertools.chain.from_iterable([x[2] for x in results]))
+cst_clips_per_seed = {j+1: results[8] for j in range(n_repeats)}
 if classification_task:
     col_test_loss = list(itertools.chain.from_iterable([x[3] for x in results]))
     col_acc = list(itertools.chain.from_iterable([x[4] for x in results]))
     col_roc_auc = list(itertools.chain.from_iterable([x[5] for x in results]))
     col_avg_prec = list(itertools.chain.from_iterable([x[6] for x in results]))
+    col_qc_levels = list(itertools.chain.from_iterable([x[7] for x in results]))
     logging.info("Creating pandas DataFrame")
     data = pd.DataFrame(
         {
@@ -508,6 +513,7 @@ if classification_task:
             "acc": col_acc,
             "roc_auc": col_roc_auc,
             "avg_prec": col_avg_prec,
+            "qc_levels": col_qc_levels,
             "t": col_iter,
         }
     )
@@ -515,11 +521,13 @@ if classification_task:
 else:
     col_mse = list(itertools.chain.from_iterable([x[3] for x in results]))
     col_mae = list(itertools.chain.from_iterable([x[4] for x in results]))
+    col_qc_levels = list(itertools.chain.from_iterable([x[5] for x in results]))
     logging.info("Creating pandas DataFrame")
     data = pd.DataFrame(
         {
             "mse": col_mse,
             "mae": col_mae,
+            "qc_levels": col_qc_levels,
             "t": col_iter,
         }
     )
@@ -538,7 +546,7 @@ if save_results:
 
     with open("exp_archives/" + experiment_name + "/" + filename, "wb") as f:
         pickle.dump(
-            {"datetime": now, "results": data, "args": args}, f
+            {"datetime": now, "results": data, "args": args, "cst_clips": cst_clips_per_seed}, f
         )
 
     logging.info("Saved results in file %s" % filename)
