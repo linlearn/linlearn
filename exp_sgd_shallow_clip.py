@@ -466,7 +466,9 @@ def repeat(rep):
 
         # Standard SGD
         for p in models[1].parameters():
+            p.requires_grad = False
             torch.clamp(p, min=-MAX_PARAM_VALUE, max=MAX_PARAM_VALUE, out=p)
+            p.requires_grad = True
         optimizers[1].zero_grad()
         pred = models[1](features)
         loss_val = loss(pred, target)
