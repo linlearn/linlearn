@@ -162,12 +162,15 @@ def set_dataloader(dataset_name):
 def binary_classif_metrics(model, Xtest, ytest):#, batch_size=100):
 
     output = model(Xtest)
-    yscores = F.softmax(output, dim=1).detach().numpy()[:, 1]
+    if learner == "shallow":
+        yscores = F.softmax(output, dim=1).detach().numpy()[:, 1]
+    else:
+        yscores = torch.sigmoid(output).detach().numpy()  # [:, 1]
     y_pred = (yscores >= 0.5).astype(int)
     roc_auc = roc_auc_score(ytest, yscores)
     acc = accuracy_score(ytest, y_pred)
     avg_prec = average_precision_score(ytest, yscores)
-    lss = loss(output, ytest).detach().numpy()/test_data_size
+    lss = loss(output, ytest if learner == "shallow" else ytest.reshape(output.shape)).detach().numpy()/test_data_size
     return acc, roc_auc, avg_prec, lss
 
 def multiclassif_metrics(model, Xtest, ytest, ytestbinary):#, batch_size=100):
@@ -307,6 +310,7 @@ parser.add_argument(
         "nyctaxi",
     ],
 )
+parser.add_argument("--learner", choices=["shallow", "logistic"], default="shallow")
 parser.add_argument("--random_seed", type=int, default=42)
 parser.add_argument("--n_repeats", type=int, default=10)
 parser.add_argument("--buffer_size", type=int, default=100)
@@ -328,6 +332,7 @@ logging.info(48 * "=")
 logging.info("Running new experiment session")
 logging.info(48 * "=")
 
+learner = args.learner
 n_repeats = args.n_repeats
 hidden_size = args.hidden_size
 test_data_size = args.test_data_size
@@ -360,7 +365,10 @@ classification_task = learning_task.endswith("classification")
 if learning_task.endswith("regression"):
     loss = nn.MSELoss(reduction="sum")
 else:
-    loss = nn.CrossEntropyLoss(reduction="sum")
+    if learner == "shallow" or learning_task == "multiclass-classification":
+        loss = nn.CrossEntropyLoss(reduction="sum")
+    else:
+        loss = nn.BCEWithLogitsLoss(reduction="sum")
 
 model_names = ["qc", "noclip"] + [f"cst_clip{quant}" for quant in cst_clip_quants]
 
@@ -379,13 +387,16 @@ def repeat(rep):
         corruption_rate=corruption_rate,
         random_state=random_seed + rep,
     )
-    output_size = 1 if learning_task.endswith("regression") else len(dataset.classes_)
+    if learner == "shallow":
+        output_size = 1 if learning_task.endswith("regression") else len(dataset.classes_)
+    else:
+        output_size = 1 if learning_task in ["regression", "binary-classification"] else len(dataset.classes_)
 
     X_train = torch.Tensor(X_train)
     X_test = torch.Tensor(X_test)
     if output_size == 1:
-        y_train = torch.Tensor(y_train.values)  # , dtype=torch.long)
-        y_test = torch.Tensor(y_test.values)  # , dtype=torch.long)
+        y_train = torch.Tensor(y_train)  # , dtype=torch.long)
+        y_test = torch.Tensor(y_test)  # , dtype=torch.long)
     else:
         y_train = torch.Tensor(y_train).long()#, dtype=torch.long)
         y_test = torch.Tensor(y_test).long()#, dtype=torch.long)
@@ -394,12 +405,17 @@ def repeat(rep):
         lbin = LabelBinarizer()
         lbin.fit_transform(y_train)
         y_test_binary = lbin.transform(y_test)
+    if learner == "shallow":
+        models = [nn.Sequential(
+            nn.Linear(X_train.shape[1], hidden_size),
+            nn.ELU(),
+            nn.Linear(hidden_size, output_size),
+        )]
+    else:
+        models = [nn.Sequential(
+            nn.Linear(X_train.shape[1], output_size),
+        )]
 
-    models = [nn.Sequential(
-        nn.Linear(X_train.shape[1], hidden_size),
-        nn.ELU(),
-        nn.Linear(hidden_size, output_size),
-    )]
     models[0].train()
     optimizers = [optim.SGD(models[0].parameters(), lr=lr)]
     for _ in model_names[:-1]:
@@ -412,6 +428,11 @@ def repeat(rep):
     buffer = np.zeros(buffer_size)
     ages = np.arange(buffer_size)
 
+    if output_size == 1:
+        reshape_if_necessary = lambda x, pred_shape : x.reshape(pred_shape)
+    else:
+        reshape_if_necessary = lambda x, pred_shape : x
+
     # Figure out cst clipping levels
 
     for j in range(buffer_size):
@@ -419,7 +440,7 @@ def repeat(rep):
                                                                            j % len(X_train):j % len(X_train) + 1]
         optimizers[-1].zero_grad()
         pred = models[-1](features)
-        loss_val = loss(pred, target)
+        loss_val = loss(pred, reshape_if_necessary(target, pred.shape))
         loss_val.backward()
         norm = 0.0
         for p in models[-1].parameters():
@@ -458,7 +479,7 @@ def repeat(rep):
         # Quantile CLIPPED SGD
         optimizers[0].zero_grad()
         pred = models[0](features)
-        loss_val = loss(pred, target)
+        loss_val = loss(pred, reshape_if_necessary(target, pred.shape))
         loss_val.backward()
         current_norm = nn.utils.clip_grad_norm_(models[0].parameters(), buffer[floor(len(buffer) * quantile)])
         update_buffer(current_norm.item(), buffer, ages, buffer_size)
@@ -471,7 +492,7 @@ def repeat(rep):
             p.requires_grad = True
         optimizers[1].zero_grad()
         pred = models[1](features)
-        loss_val = loss(pred, target)
+        loss_val = loss(pred, reshape_if_necessary(target, pred.shape))
         loss_val.backward()
         # if not classification_task or dataset_name=="covtype":
         #     _ = nn.utils.clip_grad_norm_(models[1].parameters(), tau_unif)
@@ -481,7 +502,7 @@ def repeat(rep):
         for k in range(len(cst_clip_quants)):
             optimizers[2+k].zero_grad()
             pred = models[2+k](features)
-            loss_val = loss(pred, target)
+            loss_val = loss(pred, reshape_if_necessary(target, pred.shape))
             loss_val.backward()
             nn.utils.clip_grad_norm_(models[2+k].parameters(), cst_clip_levels[k])
             optimizers[2+k].step()
@@ -501,7 +522,7 @@ else:
 col_try = list(itertools.chain.from_iterable([x[0] for x in results]))
 col_iter = list(itertools.chain.from_iterable([x[1] for x in results]))
 col_algo = list(itertools.chain.from_iterable([x[2] for x in results]))
-cst_clips_per_seed = {j+1: results[8] for j in range(n_repeats)}
+cst_clips_per_seed = {j+1: results[j][8] for j in range(n_repeats)}
 if classification_task:
     col_test_loss = list(itertools.chain.from_iterable([x[3] for x in results]))
     col_acc = list(itertools.chain.from_iterable([x[4] for x in results]))
@@ -544,7 +565,7 @@ if save_results:
     now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
     ensure_directory("exp_archives/" + experiment_name + "/")
 
-    filename = experiment_name + "_" + dataset_name+str(corruption_rate) + "_" + "_results_" + now + ".pickle"
+    filename = experiment_name + "_" + dataset_name+str(corruption_rate) + "_"+ learner + "_results_" + now + ".pickle"
 
     with open("exp_archives/" + experiment_name + "/" + filename, "wb") as f:
         pickle.dump(
@@ -626,7 +647,7 @@ now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
 ensure_directory("exp_archives/" + experiment_name + "/")
 
-fig_file_name = "exp_archives/" + experiment_name + "/" + experiment_name + "_" + dataset_name + str(corruption_rate) + "_results_" + now + ".pdf"
+fig_file_name = "exp_archives/" + experiment_name + "/" + experiment_name + "_" + dataset_name + learner + str(corruption_rate) + "_results_" + now + ".pdf"
 # fig = ax.get_figure()
 # fig.savefig(fname=fig_file_name, bbox_inches="tight")
 rlpl.savefig(fname=fig_file_name, bbox_inches="tight")
