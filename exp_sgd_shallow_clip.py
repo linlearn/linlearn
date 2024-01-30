@@ -170,7 +170,7 @@ def binary_classif_metrics(model, Xtest, ytest):#, batch_size=100):
     roc_auc = roc_auc_score(ytest, yscores)
     acc = accuracy_score(ytest, y_pred)
     avg_prec = average_precision_score(ytest, yscores)
-    lss = loss(output, ytest if learner == "shallow" else ytest.reshape(output.shape)).detach().numpy()/test_data_size
+    lss = loss(output, ytest if learner == "shallow" else ytest.reshape(output.shape)).detach().numpy()/len(Xtest)
     return acc, roc_auc, avg_prec, lss
 
 def multiclassif_metrics(model, Xtest, ytest, ytestbinary):#, batch_size=100):
@@ -181,7 +181,7 @@ def multiclassif_metrics(model, Xtest, ytest, ytestbinary):#, batch_size=100):
 
     acc = accuracy_score(ytest, y_pred)
 
-    lss = loss(output, ytest).detach().numpy()/test_data_size
+    lss = loss(output, ytest).detach().numpy()/len(Xtest)
 
     roc_auc = roc_auc_score(ytest, yscores, multi_class="ovr", average="macro")
     # roc_auc_weighted = roc_auc_score(ytest, yscores, multi_class="ovr", average="weighted")
@@ -316,7 +316,7 @@ parser.add_argument("--n_repeats", type=int, default=10)
 parser.add_argument("--buffer_size", type=int, default=100)
 parser.add_argument("--evaluation_period", type=int, default=100)
 parser.add_argument("--hidden_size", type=int, default=100)
-parser.add_argument("--test_data_size", type=int, default=5000)
+parser.add_argument("--test_data_size", type=float, default=0.1)
 parser.add_argument("--n_epochs", type=int, default=1)
 #parser.add_argument("--outlier_types", nargs="+", type=int, default=[])
 parser.add_argument("--step_size", type=float, default=0.01)
@@ -337,7 +337,7 @@ n_repeats = args.n_repeats
 hidden_size = args.hidden_size
 test_data_size = args.test_data_size
 n_epochs = args.n_epochs
-evaluation_period = args.evaluation_period
+#evaluation_period = args.evaluation_period
 dataset_name = args.dataset_name.lower()
 random_seed = args.random_seed
 lr = args.step_size
@@ -358,7 +358,7 @@ logging.info("Lauching experiment with parameters : \n %r" % args)
 loader = set_dataloader(dataset_name)
 dataset = loader()
 
-dataset.test_size = test_data_size
+dataset.test_size = test_data_size if len(dataset.df_raw)*test_data_size >= 5000 else 5000
 learning_task = dataset.task
 classification_task = learning_task.endswith("classification")
 
@@ -394,6 +394,7 @@ def repeat(rep):
 
     X_train = torch.Tensor(X_train)
     X_test = torch.Tensor(X_test)
+    evaluation_period = len(X_test) // 50
     if output_size == 1:
         y_train = torch.Tensor(y_train)  # , dtype=torch.long)
         y_test = torch.Tensor(y_test)  # , dtype=torch.long)
